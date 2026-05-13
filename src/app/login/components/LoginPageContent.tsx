@@ -111,7 +111,7 @@ function LoginForm() {
   return (
     <div className="min-h-screen flex bg-background">
       {/* Left panel — brand */}
-      <div className="hidden lg:flex lg:w-5/12 xl:w-1/2 flex-col bg-primary relative overflow-hidden">
+      <div className="hidden md:flex md:w-5/12 lg:w-5/12 xl:w-1/2 flex-col bg-primary relative overflow-hidden">
         {/* Background pattern */}
         <div className="absolute inset-0 opacity-5">
           <div className="absolute top-0 left-0 w-full h-full"
@@ -188,9 +188,9 @@ function LoginForm() {
       </div>
 
       {/* Right panel — form */}
-      <div className="flex-1 flex flex-col justify-center px-6 sm:px-10 lg:px-16 xl:px-20 py-10 overflow-y-auto">
+      <div className="flex-1 flex flex-col justify-center items-center px-6 sm:px-10 lg:px-16 xl:px-20 py-10 overflow-y-auto">
         {/* Mobile logo */}
-        <div className="lg:hidden flex items-center gap-2.5 mb-8">
+        <div className="md:hidden self-start flex items-center gap-2.5 mb-8">
           <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center flex-shrink-0">
             <svg width="20" height="20" viewBox="0 0 22 22" fill="none" aria-hidden="true">
               <path d="M2 16 C2 16 6 8 11 8 C16 8 20 16 20 16" stroke="white" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
