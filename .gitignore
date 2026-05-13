@@ -1,82 +1,38 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# IDE and editors
-.idea/
-.vscode/
-
-# Dependencies
+# Node modules
 node_modules/
-/node_modules
-/.pnp
-.pnp.js
-.yarn/install-state.gz
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+package-lock.json
 
-# Testing
-/coverage
+# Next.js build output
+.next/
+out/
 
-# Next.js
-/.next/
-/out/
-next-env.d.ts
-*.tsbuildinfo
+# Production build
+build/
 
-# Production builds
-/build
-dist/
-dist
-
-# Environment files (comprehensive coverage)
-*token.json*
-*credentials.json*
-
-# Logs and debug files
+# Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
-dump.rdb
+pnpm-debug.log*
 
-# System files
+# OS-specific files
 .DS_Store
-*.pem
+Thumbs.db
 
-# Python
-__pycache__/
-*pyc*
-venv/
-.venv/
+# Vercel deployment
+.vercel/
 
-# Development tools
-chainlit.md
-.chainlit
-.ipynb_checkpoints/
-.ac
+# Optional: if using TypeScript
+*.tsbuildinfo
 
-# Deployment
-.vercel
+# Optional: if using testing tools
+coverage/
+jest-test-results.json
 
-# Data and databases
-agenthub/agents/youtube/db
+# Optional: if using IDEs
+.vscode/
+.idea/
 
-# Archive files and large assets
-**/*.zip
-**/*.tar.gz
-**/*.tar
-**/*.tgz
-*.pack
-*.deb
-*.dylib
-
-# Build caches
-.cache/
-
-memory/test_credentials.md
-
-# Mobile development
-android-sdk/node_modules/@next/swc-linux-arm64-gnu/next-swc.linux-arm64-gnu.node
-node_modules/@next/swc-linux-arm64-musl/next-swc.linux-arm64-musl.node
+# Optional: if using TurboRepo or monorepo
+turbo/node_modules/@next/swc-linux-arm64-musl/next-swc.linux-arm64-musl.node
+node_modules/@next/swc-linux-arm64-gnu/next-swc.linux-arm64-gnu.node
