@@ -64,12 +64,14 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
           {showQuote && (
             <div className="bg-card rounded-xl border-2 border-accent/30 shadow-card p-5 bg-gradient-to-br from-orange-50/40 to-card">
               <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-700">📄 Quotation</h3><span className="text-[10px] font-600 bg-orange-100 text-orange-700 px-2 py-1 rounded">Valid till 18 May 2026</span></div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-3">
                 <div><p className="text-[10px] uppercase text-muted-foreground">Unit Price</p><p className="font-700 font-tabular text-lg">¥42</p></div>
                 <div><p className="text-[10px] uppercase text-muted-foreground">Total (CNY)</p><p className="font-700 font-tabular text-lg">¥4,200</p></div>
                 <div><p className="text-[10px] uppercase text-muted-foreground">Total (INR)</p><p className="font-700 font-tabular text-lg">{req.totalBudget}</p></div>
                 <div><p className="text-[10px] uppercase text-muted-foreground">BK Margin</p><p className="font-700 font-tabular text-lg">8%</p></div>
+                <div><p className="text-[10px] uppercase text-muted-foreground">GST (18%)</p><p className="font-700 font-tabular text-lg text-accent">₹8,100</p></div>
               </div>
+              <p className="text-[11px] text-muted-foreground italic mb-4">GST applicable as per Indian import regulations. Final invoice will include IGST.</p>
               <div className="flex flex-col sm:flex-row gap-2">
                 <button disabled={accepted} onClick={() => { setAccepted(true); addToast({ type: 'success', title: 'Quotation Accepted', description: 'Payment instructions sent via email.' }); }} className="btn-primary px-4 py-2 text-sm flex-1 inline-flex items-center justify-center gap-2">{accepted ? <><Check className="w-4 h-4" /> Accepted</> : 'Accept Quotation'}</button>
                 <button className="btn-secondary px-4 py-2 text-sm flex-1">Reject / Negotiate</button>

@@ -16,9 +16,10 @@ export default function ClientBottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 bg-card border-t border-border shadow-bottom-nav md:hidden"
+      className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-border shadow-bottom-nav md:hidden"
       role="navigation"
       aria-label="Mobile navigation"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <div className="flex items-center justify-around px-2 py-1.5 safe-area-pb">
         {navItems?.map((item) => {

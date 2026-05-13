@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { Plus, ArrowRight, TrendingUp } from 'lucide-react';
+import { Plus, ArrowRight, TrendingUp, BookOpen } from 'lucide-react';
 import Link from 'next/link';
 
 export default function DashboardWelcomeBanner() {
@@ -50,13 +50,12 @@ export default function DashboardWelcomeBanner() {
 
       <div className="relative z-10 flex items-center gap-2.5 flex-shrink-0">
         <Link
-          href="/client-dashboard"
+          href="/catalog"
           className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-600 transition-colors"
-          aria-label="View pending actions"
+          aria-label="Browse product catalog"
         >
-          <TrendingUp className="w-3.5 h-3.5" aria-hidden="true" />
-          View Actions
-          <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+          <BookOpen className="w-3.5 h-3.5" aria-hidden="true" />
+          Browse Catalog
         </Link>
         <Link
           href="/client-dashboard/requests/new"

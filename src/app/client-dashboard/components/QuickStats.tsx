@@ -1,6 +1,6 @@
 'use client';
 import React from 'react';
-import { Package, MapPin, Clock, CheckCircle2 } from 'lucide-react';
+import { Package, MapPin, Clock, CheckCircle2, Warehouse } from 'lucide-react';
 
 const pipelineStats = [
   {
@@ -11,6 +11,15 @@ const pipelineStats = [
     color: 'text-cyan-600',
     bg: 'bg-cyan-50',
     dot: 'bg-cyan-500',
+  },
+  {
+    id: 'stat-china-consolidation',
+    icon: Warehouse,
+    label: 'China Consolidation Warehouse',
+    count: 1,
+    color: 'text-indigo-600',
+    bg: 'bg-indigo-50',
+    dot: 'bg-indigo-500',
   },
   {
     id: 'stat-in-transit',
@@ -48,7 +57,7 @@ export default function QuickStats() {
         <h2 className="text-sm font-600 text-foreground">Pipeline Overview</h2>
         <span className="text-xs text-muted-foreground">Live status</span>
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         {pipelineStats?.map((stat) => (
           <div
             key={stat?.id}
@@ -92,7 +101,7 @@ export default function QuickStats() {
         </div>
       </div>
       <p className="text-[11px] text-muted-foreground text-center mt-1.5">
-        5 shipments currently in the China → India pipeline
+        6 shipments currently in the China → India pipeline
       </p>
     </div>
   );

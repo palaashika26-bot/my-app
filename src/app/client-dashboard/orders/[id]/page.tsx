@@ -5,11 +5,11 @@ import ClientShell from '@/components/ClientShell';
 import StatusBadge from '@/components/ui/StatusBadge';
 import ShipmentMapModal from '@/components/ShipmentMapModal';
 import { mockOrders, statusToLocation } from '@/lib/mockData';
-import { ArrowLeft, Download, AlertTriangle, MapPin, CheckCircle2, Circle, FileText } from 'lucide-react';
+import { ArrowLeft, Download, AlertTriangle, MapPin, CheckCircle2, Circle, FileText, Info } from 'lucide-react';
 import { notFound } from 'next/navigation';
 
-const stages = ['Order Placed', 'Payment Confirmed', 'Sourcing', 'At China Warehouse', 'Repacking/QC', 'Shipped from China', 'In Transit', 'Arrived India Warehouse', 'Out for Delivery', 'Completed'];
-const stageMap: Record<string, number> = { 'Payment Pending': 0, 'Payment Confirmed': 1, 'Sourcing': 2, 'At China Warehouse': 3, 'Repacking/QC': 4, 'Shipped from China': 5, 'In Transit': 6, 'Arrived India Warehouse': 7, 'Out for Delivery': 8, 'Completed': 9 };
+const stages = ['Order Placed', 'Payment Confirmed', 'Sourcing', 'At China Warehouse', 'China Consolidation Warehouse', 'Repacking/QC', 'Shipped from China', 'In Transit', 'Arrived India Warehouse', 'Out for Delivery', 'Completed'];
+const stageMap: Record<string, number> = { 'Payment Pending': 0, 'Payment Confirmed': 1, 'Sourcing': 2, 'At China Warehouse': 3, 'China Consolidation Warehouse': 4, 'Repacking/QC': 5, 'Shipped from China': 6, 'In Transit': 7, 'Arrived India Warehouse': 8, 'Out for Delivery': 9, 'Completed': 10 };
 
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -94,10 +94,13 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           <div className="bg-card rounded-xl border border-border shadow-card p-5">
             <h3 className="text-sm font-700 mb-3">Payment Summary</h3>
             <div className="space-y-2 text-sm">
-              {[{ l: 'Product Cost (CNY)', v: '¥5,100' }, { l: 'EliosWholesale Service Fee (8%)', v: '¥408' }, { l: 'Logistics (Sea)', v: '¥680' }, { l: 'Customs Duty (Est.)', v: '₹6,800' }].map(r => (
-                <div key={r.l} className="flex items-center justify-between"><span className="text-muted-foreground">{r.l}</span><span className="font-tabular font-500">{r.v}</span></div>
-              ))}
-              <div className="border-t border-border pt-2 mt-2 flex items-center justify-between"><span className="font-700">Total</span><div className="text-right"><p className="font-700 font-tabular text-foreground">{order.amount}</p><p className="text-[11px] text-muted-foreground font-tabular">{order.amountCny}</p></div></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Product Cost (CNY)</span><span className="font-tabular font-500">¥5,100</span></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Logistics (Sea)</span><span className="font-tabular font-500">¥680</span></div>
+              <div className="flex items-center justify-between border-t border-dashed border-border pt-2 mt-1">
+                <span className="text-muted-foreground inline-flex items-center gap-1"><Info className="w-3.5 h-3.5" /> Indian Exchange Rate</span>
+                <span className="font-tabular text-xs text-muted-foreground">1 CNY = ₹12.0</span>
+              </div>
+              <div className="border-t border-border pt-2 mt-2 flex items-center justify-between"><span className="font-700">Total</span><div className="text-right"><p className="font-700 font-tabular text-foreground">₹69,360</p><p className="text-[11px] text-muted-foreground font-tabular">¥5,780</p></div></div>
             </div>
           </div>
           <div className="bg-card rounded-xl border border-border shadow-card p-5">

@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useRef, useEffect } from 'react';
 import AppLogo from '@/components/ui/AppLogo';
-import { Bell, Search, ChevronDown, User, Settings, LogOut, Package, HelpCircle } from 'lucide-react';
+import { Bell, Search, ChevronDown, User, Settings, LogOut, Package, HelpCircle, RefreshCw, BookOpen } from 'lucide-react';
 import Link from 'next/link';
 
 interface Notification {
@@ -245,8 +245,10 @@ export default function ClientTopbar() {
                   {[
                     { icon: User, label: 'My Profile', href: '/profile' },
                     { icon: Package, label: 'My Orders', href: '/client-dashboard' },
+                    { icon: BookOpen, label: 'Product Catalog', href: '/catalog' },
                     { icon: Settings, label: 'Account Settings', href: '/settings' },
                     { icon: HelpCircle, label: 'Help & Support', href: '/support' },
+                    { icon: RefreshCw, label: 'After Sales', href: '/after-sales' },
                   ].map((item) => (
                     <Link
                       key={`profile-${item.label}`}

@@ -11,7 +11,7 @@ export default function ClientDashboardPage() {
   return (
     <div className="min-h-screen bg-background flex flex-col fade-in">
       <ClientTopbar />
-      <main className="flex-1 w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-16 py-6 pb-24 md:pb-8">
+      <main className="flex-1 w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-16 py-6 pb-28 md:pb-8">
         <div className="flex flex-col gap-6">
           <DashboardWelcomeBanner />
           <KpiCards />
