@@ -23,7 +23,8 @@ function Kpi({ icon: Icon, label, value, sub, accent, color }: any) {
 export default function AdminDashboardPage() {
   const recentOrders = mockAdminOrders.slice(0, 5);
   const recentRequestsList = mockRequests.slice(0, 5);
-  const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const [today, setToday] = React.useState('');
+  React.useEffect(() => { setToday(new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })); }, []);
 
   const pipelineNodes = [
     { label: 'China Warehouse',          count: 12, color: 'bg-cyan-500',     ring: 'ring-cyan-100' },

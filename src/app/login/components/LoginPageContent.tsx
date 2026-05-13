@@ -1,5 +1,5 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { Eye, EyeOff, ArrowRight, Copy, Check, Loader2, Globe, Shield } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';

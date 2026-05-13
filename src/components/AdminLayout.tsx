@@ -23,7 +23,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const router = useRouter();
   const { logout } = useAuth();
-  const today = new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  const [today, setToday] = useState('');
+  React.useEffect(() => { setToday(new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })); }, []);
 
   function submitSearch(e: React.FormEvent) {
     e.preventDefault();
