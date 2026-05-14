@@ -3,9 +3,11 @@ import React from 'react';
 import Link from 'next/link';
 import AdminLayout from '@/components/AdminLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { mockAdminOrders, mockRequests, adminKpis, recentActivity, pendingActions, mockClients } from '@/lib/adminMockData';
+import { mockAdminOrders, mockRequests, adminKpis, recentActivity, pendingActions } from '@/lib/adminMockData';
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, Cell } from 'recharts';
 import { ShoppingBag, Users, Truck, Clock, IndianRupee, AlertTriangle, ArrowRight, Sun, Plus, Download, MapPin, Eye, Camera } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 
 function Kpi({ icon: Icon, label, value, sub, accent, color }: any) {
   return (
@@ -21,6 +23,8 @@ function Kpi({ icon: Icon, label, value, sub, accent, color }: any) {
 }
 
 export default function AdminDashboardPage() {
+  const { user } = useAuth();
+  const perms = useAdminPermissions();
   const recentOrders = mockAdminOrders.slice(0, 5);
   const recentRequestsList = mockRequests.slice(0, 5);
   const [today, setToday] = React.useState('');
@@ -38,7 +42,7 @@ export default function AdminDashboardPage() {
     <AdminLayout>
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-700">Welcome back, Admin 👋</h1>
+          <h1 className="text-2xl font-700">Welcome back, {user?.name ?? 'there'} 👋</h1>
           <p className="text-sm text-muted-foreground mt-0.5 flex items-center gap-2">
             <span>{today}</span><span>•</span><span className="inline-flex items-center gap-1"><Sun className="w-3.5 h-3.5 text-yellow-500" /> 33°C Sunny in Mumbai</span>
           </p>
@@ -46,21 +50,30 @@ export default function AdminDashboardPage() {
         <div className="flex flex-wrap gap-2">
           <Link href="/admin/all-orders" className="btn-secondary px-3 py-2 text-xs inline-flex items-center gap-1.5"><Eye className="w-3.5 h-3.5" /> View All Orders</Link>
           <Link href="/admin/requests" className="btn-secondary px-3 py-2 text-xs inline-flex items-center gap-1.5"><Eye className="w-3.5 h-3.5" /> View All Requests</Link>
-          <Link href="/admin/suppliers" className="btn-secondary px-3 py-2 text-xs inline-flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Add Supplier</Link>
-          <button className="btn-primary px-3 py-2 text-xs inline-flex items-center gap-1.5"><Download className="w-3.5 h-3.5" /> Export Reports</button>
+          {perms.navSuppliers && (
+            <Link href="/admin/suppliers" className="btn-secondary px-3 py-2 text-xs inline-flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Add Supplier</Link>
+          )}
+          {perms.isFullAdmin && (
+            <button className="btn-primary px-3 py-2 text-xs inline-flex items-center gap-1.5"><Download className="w-3.5 h-3.5" /> Export Reports</button>
+          )}
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
+      <div className={`grid grid-cols-2 gap-3 mb-6 ${perms.canSeeGrandTotalsAndMargins ? 'lg:grid-cols-3 xl:grid-cols-6' : 'lg:grid-cols-3 xl:grid-cols-5'}`}>
         <Kpi icon={ShoppingBag} label="Total Orders"      value="247"        sub="+12 this month"  accent="border-orange-500" color="bg-orange-50 text-orange-600" />
-        <Kpi icon={Users}       label="Total Clients"     value="156"        sub="+8 this month"   accent="border-blue-500"   color="bg-blue-50 text-blue-600" />
+        {perms.isFullAdmin && (
+          <Kpi icon={Users}       label="Total Clients"     value="156"        sub="+8 this month"   accent="border-blue-500"   color="bg-blue-50 text-blue-600" />
+        )}
         <Kpi icon={Truck}       label="Active Shipments"  value="23"         sub="in pipeline"     accent="border-cyan-500"   color="bg-cyan-50 text-cyan-600" />
         <Kpi icon={Clock}       label="Pending Approvals" value="8"          sub="need attention"  accent="border-yellow-500" color="bg-yellow-50 text-yellow-600" />
-        <Kpi icon={IndianRupee} label="Revenue (MTD)"     value="₹45.2L"    sub="+18% vs last"    accent="border-emerald-500" color="bg-emerald-50 text-emerald-600" />
+        {perms.canSeeGrandTotalsAndMargins && (
+          <Kpi icon={IndianRupee} label="Revenue (MTD)"     value="₹45.2L"    sub="+18% vs last"    accent="border-emerald-500" color="bg-emerald-50 text-emerald-600" />
+        )}
         <Kpi icon={AlertTriangle} label="Exceptions"       value="3"          sub="to resolve"      accent="border-red-500"    color="bg-red-50 text-red-600" />
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-5 mb-6">
+      <div className={`grid lg:grid-cols-3 gap-5 mb-6 ${perms.canSeeGrandTotalsAndMargins ? '' : 'lg:grid-cols-1'}`}>
+        {perms.canSeeGrandTotalsAndMargins && (
         <div className="lg:col-span-2 bg-card rounded-xl border border-border shadow-card p-5">
           <div className="flex items-center justify-between mb-3"><h3 className="font-700">Monthly Revenue</h3><span className="text-xs text-muted-foreground">Last 6 months</span></div>
           <ResponsiveContainer width="100%" height={240}>
@@ -73,7 +86,8 @@ export default function AdminDashboardPage() {
             </LineChart>
           </ResponsiveContainer>
         </div>
-        <div className="bg-card rounded-xl border border-border shadow-card p-5">
+        )}
+        <div className={`bg-card rounded-xl border border-border shadow-card p-5 ${perms.canSeeGrandTotalsAndMargins ? '' : 'lg:max-w-xl'}`}>
           <div className="flex items-center justify-between mb-3"><h3 className="font-700">Orders by Status</h3></div>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={adminKpis.ordersByStatus} layout="vertical" margin={{ left: 8 }}>
@@ -137,7 +151,9 @@ export default function AdminDashboardPage() {
             {recentOrders.map(o => (
               <Link key={o.id} href={`/admin/orders/${o.id}`} className="flex items-center gap-3 p-3 hover:bg-muted/40 transition-colors">
                 <div className="flex-1 min-w-0"><p className="font-tabular font-600 text-sm truncate">{o.orderId}</p><p className="text-xs text-muted-foreground truncate">{o.client} • {o.itemNames}</p></div>
-                <span className="font-tabular font-600 text-sm flex-shrink-0">{o.amount}</span>
+                {perms.canSeeOrderListAmounts && (
+                  <span className="font-tabular font-600 text-sm flex-shrink-0">{o.amount}</span>
+                )}
                 <StatusBadge status={o.status as any} />
               </Link>
             ))}
@@ -149,7 +165,9 @@ export default function AdminDashboardPage() {
             {recentRequestsList.map(r => (
               <Link key={r.id} href={`/admin/requests/${r.id}`} className={`flex items-center gap-3 p-3 hover:bg-muted/40 transition-colors ${r.status === 'Exception' ? 'bg-red-50/40' : ''}`}>
                 <div className="flex-1 min-w-0"><div className="flex items-center gap-1.5">{r.source === 'photo_scan' && <Camera className="w-3 h-3 text-accent" />}<p className="font-tabular font-600 text-sm">{r.requestId}</p></div><p className="text-xs text-muted-foreground truncate">{r.client} • {r.itemNames}</p></div>
-                <span className="font-tabular font-600 text-sm flex-shrink-0">{r.totalBudget}</span>
+                {perms.canSeeRequestBudget && (
+                  <span className="font-tabular font-600 text-sm flex-shrink-0">{r.totalBudget}</span>
+                )}
                 <StatusBadge status={r.status as any} />
               </Link>
             ))}

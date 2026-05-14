@@ -21,11 +21,15 @@ const PIPELINE_STEP: Record<OrderStatus, number> = {
   'At China Warehouse': 7,
   'Repacking/QC': 8,
   'Ready for Shipping': 9,
+  'Ready for Logistics': 9,
+  'Return from China': 0,
   'Shipped from China': 10,
+  'In Transit': 10,
   'Arrived India Warehouse': 11,
   'Out for Delivery': 12,
   Completed: 13,
   Exception: 0,
+  Cancelled: 0,
 };
 
 function MiniProgressBar({ status }: { status: OrderStatus }) {

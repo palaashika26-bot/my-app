@@ -5,13 +5,16 @@ import AdminLayout from '@/components/AdminLayout';
 import StatusBadge, { OrderStatus } from '@/components/ui/StatusBadge';
 import { mockAdminOrders, mockClients } from '@/lib/adminMockData';
 import { useToast } from '@/components/ui/Toast';
-import { Search, Download, Eye, ChevronDown, ChevronUp, Edit3, Mail } from 'lucide-react';
+import { Search, Download, Eye, ChevronDown, ChevronUp, Mail } from 'lucide-react';
+import { useAdminPermissions } from '@/hooks/useAdminPermissions';
+import { isWarehouseShippingOrderStatus } from '@/lib/staffRoles';
 
 const statusOptions: OrderStatus[] = ['Payment Pending','Payment Confirmed','Sourcing','At China Warehouse','Repacking/QC','Ready for Shipping','Shipped from China','Arrived India Warehouse','Out for Delivery','Completed','Exception'];
 const pageSizes = [10, 25, 50];
 
 export default function AdminAllOrdersPage() {
   const { addToast } = useToast();
+  const perms = useAdminPermissions();
   const [orders, setOrders] = useState(mockAdminOrders);
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -25,24 +28,33 @@ export default function AdminAllOrdersPage() {
   const [sortDir, setSortDir] = useState<'asc'|'desc'>('desc');
 
   const filtered = useMemo(() => {
-    let arr = orders.filter(o => {
-      if (q && !(
-        o.orderId.toLowerCase().includes(q.toLowerCase()) ||
-        (o.client||'').toLowerCase().includes(q.toLowerCase()) ||
-        (o.itemNames||'').toLowerCase().includes(q.toLowerCase())
-      )) return false;
+    let arr = orders.filter((o) => {
+      if (perms.ordersScope === 'shipping_only' && !isWarehouseShippingOrderStatus(String(o.status))) {
+        return false;
+      }
+      if (
+        q &&
+        !(
+          o.orderId.toLowerCase().includes(q.toLowerCase()) ||
+          (o.client || '').toLowerCase().includes(q.toLowerCase()) ||
+          (o.itemNames || '').toLowerCase().includes(q.toLowerCase())
+        )
+      ) {
+        return false;
+      }
       if (statusFilter !== 'All' && o.status !== statusFilter) return false;
       if (clientFilter !== 'All' && o.client !== clientFilter) return false;
       return true;
     });
+    const sortKey = sortBy === 'amount' && !perms.canSeeOrderListAmounts ? 'date' : sortBy;
     arr = [...arr].sort((a, b) => {
-      const av = String(a[sortBy as keyof typeof a] || '');
-      const bv = String(b[sortBy as keyof typeof b] || '');
+      const av = String(a[sortKey as keyof typeof a] || '');
+      const bv = String(b[sortKey as keyof typeof b] || '');
       const cmp = av.localeCompare(bv, undefined, { numeric: true });
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return arr;
-  }, [orders, q, statusFilter, clientFilter, sortBy, sortDir]);
+  }, [orders, q, statusFilter, clientFilter, sortBy, sortDir, perms.ordersScope, perms.canSeeOrderListAmounts]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
   const pageRows = filtered.slice((page-1)*perPage, page*perPage);
@@ -69,14 +81,28 @@ export default function AdminAllOrdersPage() {
 
   function exportCsv() { addToast({ type: 'info', title: 'Exporting CSV...', description: `${filtered.length} rows queued.` }); }
 
-  function toggleSort(k: 'orderId'|'date'|'amount') {
-    if (sortBy === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortBy(k); setSortDir('asc'); }
+  function toggleSort(k: 'orderId' | 'date' | 'amount') {
+    if (k === 'amount' && !perms.canSeeOrderListAmounts) return;
+    if (sortBy === k) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else {
+      setSortBy(k);
+      setSortDir('asc');
+    }
   }
+
+  const colCount = perms.canSeeOrderListAmounts ? 10 : 9;
 
   return (
     <AdminLayout>
       <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3 mb-5">
-        <div><h1 className="text-2xl font-700">All Orders</h1><p className="text-sm text-muted-foreground mt-1">Manage all client orders</p></div>
+        <div>
+          <h1 className="text-2xl font-700">All Orders</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {perms.ordersScope === 'shipping_only'
+              ? 'Shipping and warehouse view — procurement-stage orders are hidden.'
+              : 'Manage all client orders'}
+          </p>
+        </div>
         <div className="flex gap-2">
           <button onClick={exportCsv} className="btn-secondary px-3 py-2 text-xs inline-flex items-center gap-1.5"><Download className="w-3.5 h-3.5" /> Export CSV</button>
         </div>
@@ -116,7 +142,11 @@ export default function AdminAllOrdersPage() {
                 <th className="px-3 py-3 text-left font-600">Client</th>
                 <th className="px-3 py-3 text-left font-600">GSTIN</th>
                 <th className="px-3 py-3 text-left font-600">Items</th>
-                <th className="px-3 py-3 text-right font-600 cursor-pointer" onClick={() => toggleSort('amount')}>Amount</th>
+                {perms.canSeeOrderListAmounts && (
+                  <th className="px-3 py-3 text-right font-600 cursor-pointer" onClick={() => toggleSort('amount')}>
+                    Amount {sortBy === 'amount' && (sortDir === 'asc' ? <ChevronUp className="w-3 h-3 inline" /> : <ChevronDown className="w-3 h-3 inline" />)}
+                  </th>
+                )}
                 <th className="px-3 py-3 text-left font-600 cursor-pointer" onClick={() => toggleSort('date')}>Date</th>
                 <th className="px-3 py-3 text-left font-600">ETA</th>
                 <th className="px-3 py-3 text-left font-600">Status</th>
@@ -125,17 +155,30 @@ export default function AdminAllOrdersPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {pageRows.length === 0 ? (
-                <tr><td colSpan={10} className="px-3 py-10 text-center text-sm text-muted-foreground">No orders match your filters.</td></tr>
-              ) : pageRows.map(o => {
-                const client = mockClients.find(c => c.name === o.client);
-                return (
+                <tr>
+                  <td colSpan={colCount} className="px-3 py-10 text-center text-sm text-muted-foreground">
+                    No orders match your filters.
+                  </td>
+                </tr>
+              ) : (
+                pageRows.map((o) => {
+                  const client = mockClients.find((c) => c.name === o.client);
+                  return (
                   <tr key={o.id} className="table-row-hover">
                     <td className="px-3 py-3"><input type="checkbox" checked={!!selected[o.id]} onChange={() => toggleSelect(o.id)} className="accent-accent" /></td>
                     <td className="px-3 py-3"><Link href={`/admin/orders/${o.id}`} className="font-tabular font-600 text-primary hover:text-accent">{o.orderId}</Link></td>
                     <td className="px-3 py-3"><p className="text-sm font-500">{o.client}</p><p className="text-[11px] text-muted-foreground">{client?.email}</p></td>
                     <td className="px-3 py-3 text-[11px] font-tabular text-muted-foreground">{client?.gstin || '—'}</td>
-                    <td className="px-3 py-3"><p className="text-sm">{o.itemCount} items</p><p className="text-[11px] text-muted-foreground truncate max-w-[180px]">{o.itemNames}</p></td>
-                    <td className="px-3 py-3 text-right"><p className="text-sm font-600 font-tabular">{o.amount}</p><p className="text-[11px] text-muted-foreground font-tabular">{o.amountCny}</p></td>
+                    <td className="px-3 py-3">
+                      <p className="text-sm">{o.itemCount} items</p>
+                      <p className="text-[11px] text-muted-foreground truncate max-w-[180px]">{o.itemNames}</p>
+                    </td>
+                    {perms.canSeeOrderListAmounts && (
+                      <td className="px-3 py-3 text-right">
+                        <p className="text-sm font-600 font-tabular">{o.amount}</p>
+                        <p className="text-[11px] text-muted-foreground font-tabular">{o.amountCny}</p>
+                      </td>
+                    )}
                     <td className="px-3 py-3 text-xs font-tabular text-muted-foreground">{o.date}</td>
                     <td className="px-3 py-3 text-xs font-tabular text-muted-foreground">{o.estimatedDelivery}</td>
                     <td className="px-3 py-3">
@@ -150,8 +193,9 @@ export default function AdminAllOrdersPage() {
                       </div>
                     </td>
                   </tr>
-                );
-              })}
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>

@@ -5,12 +5,14 @@ import AdminLayout from '@/components/AdminLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { mockRequests, mockClients } from '@/lib/adminMockData';
 import { useToast } from '@/components/ui/Toast';
-import { Search, Eye, FileText, Camera, Send, AlertTriangle, Download } from 'lucide-react';
+import { useAdminPermissions } from '@/hooks/useAdminPermissions';
+import { Search, Download, Camera, Eye, Send, AlertTriangle } from 'lucide-react';
 
 const tabs = ['All Requests','Pending Quotations','Awaiting Approval','Approved','Rejected','Exception'];
 
 export default function AdminRequestsPage() {
   const { addToast } = useToast();
+  const perms = useAdminPermissions();
   const [items, setItems] = useState(mockRequests);
   const [tab, setTab] = useState('All Requests');
   const [q, setQ] = useState('');
@@ -48,7 +50,9 @@ export default function AdminRequestsPage() {
           <p className="text-sm font-600 text-orange-800">{Object.values(selected).filter(Boolean).length} selected</p>
           <div className="ml-auto flex gap-2">
             <button onClick={exportSelected} className="btn-secondary px-3 py-1.5 text-xs inline-flex items-center gap-1"><Download className="w-3 h-3" /> Export</button>
-            <button onClick={deleteSelected} className="px-3 py-1.5 text-xs font-600 rounded-lg bg-red-100 text-red-700 hover:bg-red-200">Delete Selected</button>
+            {perms.isFullAdmin && (
+              <button onClick={deleteSelected} className="px-3 py-1.5 text-xs font-600 rounded-lg bg-red-100 text-red-700 hover:bg-red-200">Delete Selected</button>
+            )}
           </div>
         </div>
       )}
@@ -59,33 +63,50 @@ export default function AdminRequestsPage() {
             <th className="px-3 py-3 text-left font-600">Request ID</th>
             <th className="px-3 py-3 text-left font-600">Client</th>
             <th className="px-3 py-3 text-left font-600">Items</th>
-            <th className="px-3 py-3 text-right font-600">Budget</th>
+            {perms.canSeeRequestBudget && <th className="px-3 py-3 text-right font-600">Budget</th>}
             <th className="px-3 py-3 text-left font-600">Date</th>
             <th className="px-3 py-3 text-left font-600">Status</th>
             <th className="px-3 py-3 text-right font-600">Actions</th>
           </tr></thead>
           <tbody className="divide-y divide-border">
-            {filtered.length === 0 ? <tr><td colSpan={8} className="py-10 text-center text-muted-foreground text-sm">No requests match.</td></tr> : filtered.map(r => {
-              const client = mockClients.find(c => c.name === r.client);
-              return (
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={perms.canSeeRequestBudget ? 8 : 7} className="py-10 text-center text-muted-foreground text-sm">
+                  No requests match.
+                </td>
+              </tr>
+            ) : (
+              filtered.map((r) => {
+                const client = mockClients.find((c) => c.name === r.client);
+                return (
                 <tr key={r.id} className={`table-row-hover ${r.status === 'Exception' ? 'bg-red-50/40' : ''}`}>
                   <td className="px-3 py-3"><input type="checkbox" checked={!!selected[r.id]} onChange={() => setSelected(s => ({ ...s, [r.id]: !s[r.id] }))} className="accent-accent" /></td>
-                  <td className="px-3 py-3"><div className="flex items-center gap-2">{r.source === 'photo_scan' && <Camera className="w-3.5 h-3.5 text-accent" title="Photo-scan submission" />}<Link href={`/admin/requests/${r.id}`} className="font-tabular font-600 text-primary hover:text-accent">{r.requestId}</Link></div></td>
+                  <td className="px-3 py-3"><div className="flex items-center gap-2">{r.source === 'photo_scan' && <Camera className="w-3.5 h-3.5 text-accent" aria-label="Photo-scan submission" />}<Link href={`/admin/requests/${r.id}`} className="font-tabular font-600 text-primary hover:text-accent">{r.requestId}</Link></div></td>
                   <td className="px-3 py-3"><p className="text-sm">{r.client}</p><p className="text-[11px] text-muted-foreground">{client?.email}</p></td>
-                  <td className="px-3 py-3"><p className="text-sm">{r.items} items</p><p className="text-[11px] text-muted-foreground truncate max-w-[180px]">{r.itemNames}</p></td>
-                  <td className="px-3 py-3 text-right font-tabular font-600">{r.totalBudget}</td>
+                  <td className="px-3 py-3">
+                    <p className="text-sm">{r.items} items</p>
+                    <p className="text-[11px] text-muted-foreground truncate max-w-[180px]">{r.itemNames}</p>
+                  </td>
+                  {perms.canSeeRequestBudget && (
+                    <td className="px-3 py-3 text-right font-tabular font-600">{r.totalBudget}</td>
+                  )}
                   <td className="px-3 py-3 text-xs text-muted-foreground font-tabular">{r.date}</td>
                   <td className="px-3 py-3"><StatusBadge status={r.status as any} /></td>
                   <td className="px-3 py-3 text-right">
                     <div className="flex items-center justify-end gap-1">
                       <Link href={`/admin/requests/${r.id}`} className="p-1.5 rounded-md hover:bg-muted" title="View"><Eye className="w-3.5 h-3.5" /></Link>
-                      <button onClick={() => sendQuote(r.id)} className="p-1.5 rounded-md hover:bg-muted text-accent" title="Send Quotation"><Send className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => markException(r.id)} className="p-1.5 rounded-md hover:bg-muted text-red-500" title="Mark Exception"><AlertTriangle className="w-3.5 h-3.5" /></button>
+                      {perms.quotationScope === 'full' && (
+                        <button onClick={() => sendQuote(r.id)} className="p-1.5 rounded-md hover:bg-muted text-accent" title="Send Quotation"><Send className="w-3.5 h-3.5" /></button>
+                      )}
+                      {perms.isFullAdmin && (
+                        <button onClick={() => markException(r.id)} className="p-1.5 rounded-md hover:bg-muted text-red-500" title="Mark Exception"><AlertTriangle className="w-3.5 h-3.5" /></button>
+                      )}
                     </div>
                   </td>
                 </tr>
-              );
-            })}
+                );
+              })
+            )}
           </tbody>
         </table></div>
       </div>

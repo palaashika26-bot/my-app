@@ -5,6 +5,7 @@ import ClientShell from '@/components/ClientShell';
 import StatusBadge from '@/components/ui/StatusBadge';
 import ShipmentMapModal from '@/components/ShipmentMapModal';
 import { mockOrders, statusToLocation } from '@/lib/mockData';
+import { getEffectiveOrderStatus, getOrderQcBundle } from '@/lib/orderQcStore';
 import { ArrowLeft, Download, AlertTriangle, MapPin, CheckCircle2, Circle, FileText, Info, Camera, X, ChevronLeft, ChevronRight, ZoomIn } from 'lucide-react';
 import { notFound } from 'next/navigation';
 
@@ -26,6 +27,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [repackOpen, setRepackOpen] = useState(false);
   const [photoIdx, setPhotoIdx] = useState(0);
   if (!order) return notFound();
+  const qcBundle = getOrderQcBundle(order.id);
+  const displayStatus = getEffectiveOrderStatus(order.id, order.status as any);
   const currentStage = stageMap[order.status] ?? -1;
   const hasMap = !!statusToLocation[order.status];
   // Repackaging photos available once Repacking/QC stage (index 5) has been reached
@@ -47,12 +50,30 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
       <div className="bg-card rounded-xl border border-border shadow-card p-5 mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2"><span className="font-tabular font-700 text-foreground">{order.orderId}</span><StatusBadge status={order.status as any} /></div>
+          <div className="flex items-center gap-2">
+            <span className="font-tabular font-700 text-foreground">{order.orderId}</span>
+            <StatusBadge status={displayStatus as any} />
+          </div>
           <p className="text-xs text-muted-foreground mt-1">Placed: {order.date} • ETA: {order.estimatedDelivery}</p>
         </div>
-        {hasMap && (
-          <button onClick={() => setMapOpen(true)} className="btn-primary px-4 py-2 text-sm inline-flex items-center gap-2"><MapPin className="w-4 h-4" /> View Live Location</button>
-        )}
+        <div className="flex flex-wrap gap-2 justify-end">
+          {(order.status === 'Repacking/QC' ||
+            qcBundle.submittedForClient ||
+            displayStatus === 'Ready for Logistics' ||
+            displayStatus === 'Return from China') && (
+            <Link
+              href={`/client/orders/${order.id}/qc`}
+              className="btn-secondary px-4 py-2 text-sm inline-flex items-center gap-2"
+            >
+              <Camera className="w-4 h-4" /> QC approval
+            </Link>
+          )}
+          {hasMap && (
+            <button onClick={() => setMapOpen(true)} className="btn-primary px-4 py-2 text-sm inline-flex items-center gap-2">
+              <MapPin className="w-4 h-4" /> View Live Location
+            </button>
+          )}
+        </div>
       </div>
 
       {order.status === 'Exception' && (

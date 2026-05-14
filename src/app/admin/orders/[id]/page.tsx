@@ -5,17 +5,23 @@ import AdminLayout from '@/components/AdminLayout';
 import StatusBadge, { OrderStatus } from '@/components/ui/StatusBadge';
 import { mockAdminOrders, mockClients, orderNotesLog, carrierForOrder, statusToLocation } from '@/lib/adminMockData';
 import { useToast } from '@/components/ui/Toast';
-import { ArrowLeft, CheckCircle2, Circle, MapPin, Upload, Download, FileText, AlertTriangle, Mail, Edit3, MessageSquare } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Circle, MapPin, Upload, Download, FileText, AlertTriangle, Mail, Edit3, MessageSquare, Camera } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import { notFound } from 'next/navigation';
+import { getEffectiveOrderStatus } from '@/lib/orderQcStore';
 
 const stages = ['Order Placed','Payment Confirmed','Sourcing','At China Warehouse','China Consolidation Warehouse','Repacking/QC','Shipped from China','In Transit','Arrived India Warehouse','Out for Delivery','Completed'];
 const stageMap: Record<string, number> = { 'Payment Pending': 0, 'Payment Confirmed': 1, 'Sourcing': 2, 'At China Warehouse': 3, 'China Consolidation Warehouse': 4, 'Repacking/QC': 5, 'Shipped from China': 6, 'In Transit': 7, 'Arrived India Warehouse': 8, 'Out for Delivery': 9, 'Completed': 10 };
-const statusOptions: OrderStatus[] = ['Payment Pending','Payment Confirmed','Sourcing','At China Warehouse','Repacking/QC','Ready for Shipping','Shipped from China','Arrived India Warehouse','Out for Delivery','Completed','Exception'];
+const statusOptions: OrderStatus[] = ['Payment Pending','Payment Confirmed','Sourcing','At China Warehouse','Repacking/QC','Ready for Shipping','Ready for Logistics','Return from China','Shipped from China','Arrived India Warehouse','Out for Delivery','Completed','Exception'];
 const gstRates = [0, 5, 12, 18, 28];
 
 export default function AdminOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { addToast } = useToast();
+  const { user, role } = useAuth();
+  const perms = useAdminPermissions();
+  const actorName = user?.name ?? 'Team';
   const initial = mockAdminOrders.find(o => o.id === id);
   if (!initial) return notFound();
   const client = mockClients.find(c => c.name === initial.client);
@@ -42,17 +48,32 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
 
   function saveStatus(s: string) {
     setStatus(s);
-    setNotes(prev => [{ id: `n${Date.now()}`, time: new Date().toLocaleString('en-IN'), actor: 'Arjun Sharma', message: `Status changed: ${status} → ${s}`, icon: '🔄' }, ...prev]);
+    setNotes((prev) => [
+      {
+        id: `n${Date.now()}`,
+        time: new Date().toLocaleString('en-IN'),
+        actor: actorName,
+        message: `Status changed: ${status} → ${s}`,
+        icon: '🔄',
+      },
+      ...prev,
+    ]);
     addToast({ type: 'success', title: 'Status updated', description: `Order is now “${s}”.` });
   }
   function addNote() {
     if (!note.trim()) return;
-    setNotes(prev => [{ id: `n${Date.now()}`, time: new Date().toLocaleString('en-IN'), actor: 'Arjun Sharma', message: note, icon: '📝' }, ...prev]);
+    setNotes((prev) => [
+      { id: `n${Date.now()}`, time: new Date().toLocaleString('en-IN'), actor: actorName, message: note, icon: '📝' },
+      ...prev,
+    ]);
     setNote('');
     addToast({ type: 'success', title: 'Note added' });
   }
   function flagException() { saveStatus('Exception'); }
-  function refund() { addToast({ type: 'info', title: 'Refund initiated', description: 'Refund of ' + initial.amount + ' processing.' }); }
+  function refund() {
+    if (!perms.canSeeClientPayments || !initial) return;
+    addToast({ type: 'info', title: 'Refund initiated', description: 'Refund of ' + initial.amount + ' processing.' });
+  }
   function emailClient() { addToast({ type: 'info', title: 'Email composer opened', description: `To: ${client?.email}` }); }
   function uploadDoc(d: string) { addToast({ type: 'success', title: `${d} uploaded`, description: 'Visible to client now.' }); }
 
@@ -69,10 +90,24 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
           <p className="text-xs text-muted-foreground mt-1">Placed: {initial.date} • ETA: {initial.estimatedDelivery}</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {(role === 'admin' || (role === 'staff' && user?.staffRoleId === 'warehouse_staff')) &&
+            (initial.status === 'Repacking/QC' ||
+              ['Ready for Logistics', 'Return from China'].includes(
+                getEffectiveOrderStatus(initial.id, initial.status as OrderStatus) as string
+              )) && (
+              <Link
+                href={`/admin/warehouse/qc/${initial.id}`}
+                className="btn-secondary px-3 py-2 text-xs inline-flex items-center gap-1.5"
+              >
+                <Camera className="w-3.5 h-3.5" /> Warehouse QC
+              </Link>
+            )}
           <select value={status} onChange={e => saveStatus(e.target.value)} className="input-field text-sm py-2 min-w-[180px]">{statusOptions.map(s => <option key={s}>{s}</option>)}</select>
           <button onClick={emailClient} className="btn-secondary px-3 py-2 text-xs inline-flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> Email Client</button>
           <button onClick={flagException} className="px-3 py-2 text-xs font-600 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 inline-flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5" /> Mark Exception</button>
-          <button onClick={refund} className="btn-secondary px-3 py-2 text-xs">Process Refund</button>
+          {perms.canSeeClientPayments && (
+            <button onClick={refund} className="btn-secondary px-3 py-2 text-xs">Process Refund</button>
+          )}
         </div>
       </div>
 
@@ -96,10 +131,29 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
             <h3 className="font-700 mb-3">Order Items</h3>
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="border-b border-border text-[11px] uppercase text-muted-foreground">
-                <th className="py-2 text-left font-600">Item</th><th className="text-right font-600">Qty</th><th className="text-right font-600">Unit (¥)</th><th className="text-right font-600">Total (¥)</th><th className="text-right font-600">Total (₹)</th>
+                <th className="py-2 text-left font-600">Item</th><th className="text-right font-600">Qty</th>
+                {perms.canSeeSupplierCostsInOrders && (
+                  <>
+                    <th className="text-right font-600">Unit (¥)</th>
+                    <th className="text-right font-600">Total (¥)</th>
+                    <th className="text-right font-600">Total (₹)</th>
+                  </>
+                )}
               </tr></thead>
               <tbody className="divide-y divide-border">
-                {items.map(it => <tr key={it.name}><td className="py-3 font-500">{it.name}</td><td className="text-right font-tabular">{it.qty}</td><td className="text-right font-tabular">¥{it.unitCny}</td><td className="text-right font-tabular">¥{it.totalCny.toLocaleString()}</td><td className="text-right font-tabular font-600">₹{it.totalInr.toLocaleString()}</td></tr>)}
+                {items.map(it => (
+                  <tr key={it.name}>
+                    <td className="py-3 font-500">{it.name}</td>
+                    <td className="text-right font-tabular">{it.qty}</td>
+                    {perms.canSeeSupplierCostsInOrders && (
+                      <>
+                        <td className="text-right font-tabular">¥{it.unitCny}</td>
+                        <td className="text-right font-tabular">¥{it.totalCny.toLocaleString()}</td>
+                        <td className="text-right font-tabular font-600">₹{it.totalInr.toLocaleString()}</td>
+                      </>
+                    )}
+                  </tr>
+                ))}
               </tbody>
             </table></div>
           </div>
@@ -151,6 +205,7 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
 
         <div className="space-y-5">
           {/* Payment Summary */}
+          {perms.canSeeClientPayments && (
           <div className="bg-card rounded-xl border border-border shadow-card p-5">
             <h3 className="font-700 mb-3">Payment Summary</h3>
             <div className="space-y-2 text-sm">
@@ -162,6 +217,7 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
               <div className="border-t border-border pt-2 mt-1 flex items-center justify-between"><span className="font-700">Grand Total</span><span className="font-700 font-tabular text-foreground">₹{grand.toLocaleString()}</span></div>
             </div>
           </div>
+          )}
 
           {/* Logistics info */}
           <div className="bg-card rounded-xl border border-border shadow-card p-5">

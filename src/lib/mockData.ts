@@ -1,5 +1,23 @@
 import type { OrderStatus } from '@/components/ui/StatusBadge';
 
+export type PerProductQuoteStatus = 'Pending' | 'Quoted' | 'Accepted' | 'Rejected';
+
+export interface RequestLineItem {
+  id: string;
+  name: string;
+  quantity: number;
+  specs?: string;
+  /** Supplier RMB cost per unit — internal only */
+  rmbCostPerUnit: number;
+  /** Quoted selling price per unit in INR */
+  unitPriceInr?: number;
+  status: PerProductQuoteStatus;
+  /** Set when client uses counter-offer; cleared when staff saves a new unit price */
+  revisionRequested?: boolean;
+  /** Optional value captured from client counter-offer flow */
+  clientProposedInr?: number;
+}
+
 export interface RequestRow {
   id: string;
   requestId: string;
@@ -13,6 +31,14 @@ export interface RequestRow {
   imageAttached?: boolean;
   detectedProduct?: string;
   confidence?: number;
+  /** When set, drives per-product RFQ rows instead of parsing itemNames */
+  lineItems?: RequestLineItem[];
+}
+
+export interface OrderLineItemBrief {
+  id: string;
+  name: string;
+  quantity: number;
 }
 
 export interface OrderRow {
@@ -26,6 +52,8 @@ export interface OrderRow {
   estimatedDelivery: string;
   client?: string;
   itemNames?: string;
+  /** When set, drives per-product QC and line-item displays */
+  lineItems?: OrderLineItemBrief[];
 }
 
 export const mockRequests: RequestRow[] = [
@@ -38,13 +66,60 @@ export const mockRequests: RequestRow[] = [
   { id: 'req-007', requestId: 'BK-REQ-2024-0271', date: '10 Apr 2026', items: 6, itemNames: 'Fitness Bands, Yoga Mats, Resistance...', status: 'Completed', totalBudget: '₹2,34,000', client: 'Amit Patel', source: 'manual' },
   { id: 'req-008', requestId: 'BK-REQ-2024-0265', date: '05 Apr 2026', items: 3, itemNames: 'Smart Plugs, Extension Boards, Adapters', status: 'Exception', totalBudget: '₹52,600', client: 'Rajesh Kumar', source: 'manual' },
   { id: 'req-009', requestId: 'BK-REQ-2024-0258', date: '02 Apr 2026', items: 1, itemNames: 'LED Strip Light (RGB, 5m)', status: 'Quotation in Progress', totalBudget: '₹42,000', client: 'Priya Sharma', source: 'photo_scan', imageAttached: true, detectedProduct: 'LED Strip Light (RGB, 5m)', confidence: 94 },
-  { id: 'req-010', requestId: 'BK-REQ-2024-0250', date: '28 Mar 2026', items: 2, itemNames: 'Aluminum Tripods, Camera Bags', status: 'Awaiting Approval', totalBudget: '₹78,500', client: 'Rahul Mehta', source: 'manual' },
+  {
+    id: 'req-010',
+    requestId: 'BK-REQ-2024-0250',
+    date: '28 Mar 2026',
+    items: 2,
+    itemNames: 'Necklace, Earrings',
+    status: 'Awaiting Approval',
+    totalBudget: '₹78,500',
+    client: 'Rahul Mehta',
+    source: 'manual',
+    lineItems: [
+      {
+        id: 'req-010-line-0',
+        name: 'Necklace',
+        quantity: 100,
+        specs: 'Gold-plated, 18 inch chain',
+        rmbCostPerUnit: 42,
+        unitPriceInr: 500,
+        status: 'Quoted',
+      },
+      {
+        id: 'req-010-line-1',
+        name: 'Earrings',
+        quantity: 100,
+        specs: 'Matching studs, hypoallergenic posts',
+        rmbCostPerUnit: 28,
+        unitPriceInr: 300,
+        status: 'Quoted',
+      },
+    ],
+  },
 ];
 
 export const mockOrders: OrderRow[] = [
   { id: 'ord-001', orderId: 'BK-ORD-2024-0287', date: '03 May 2026', amount: '₹1,18,450', amountCny: '¥9,876', itemCount: 5, status: 'Payment Confirmed', estimatedDelivery: '28 May 2026', client: 'Rajesh Kumar', itemNames: 'Bluetooth Earbuds, Power Banks, Cables' },
   { id: 'ord-002', orderId: 'BK-ORD-2024-0281', date: '28 Apr 2026', amount: '₹38,900', amountCny: '¥3,241', itemCount: 2, status: 'Sourcing', estimatedDelivery: '25 May 2026', client: 'Amit Patel', itemNames: 'Steel Bottles, Lids' },
-  { id: 'ord-003', orderId: 'BK-ORD-2024-0274', date: '22 Apr 2026', amount: '₹67,600', amountCny: '¥5,633', itemCount: 4, status: 'Repacking/QC', estimatedDelivery: '18 May 2026', client: 'Sunita Verma', itemNames: 'Packaging Boxes, Wrap' },
+  {
+    id: 'ord-003',
+    orderId: 'BK-ORD-2024-0274',
+    date: '22 Apr 2026',
+    amount: '₹67,600',
+    amountCny: '¥5,633',
+    itemCount: 4,
+    status: 'Repacking/QC',
+    estimatedDelivery: '18 May 2026',
+    client: 'Sunita Verma',
+    itemNames: 'Packaging Boxes, Wrap',
+    lineItems: [
+      { id: 'ord-003-p1', name: 'Corrugated packaging boxes (medium)', quantity: 200 },
+      { id: 'ord-003-p2', name: 'Bubble wrap rolls (500mm)', quantity: 40 },
+      { id: 'ord-003-p3', name: 'Kraft tape (heavy duty)', quantity: 120 },
+      { id: 'ord-003-p4', name: 'Edge protectors (L-shape)', quantity: 800 },
+    ],
+  },
   { id: 'ord-004', orderId: 'BK-ORD-2024-0268', date: '16 Apr 2026', amount: '₹2,34,200', amountCny: '¥19,517', itemCount: 6, status: 'Shipped from China', estimatedDelivery: '14 May 2026', client: 'Amit Patel', itemNames: 'Fitness Bands, Yoga Mats' },
   { id: 'ord-005', orderId: 'BK-ORD-2024-0261', date: '10 Apr 2026', amount: '₹52,800', amountCny: '¥4,400', itemCount: 3, status: 'Arrived India Warehouse', estimatedDelivery: '12 May 2026', client: 'Rajesh Kumar', itemNames: 'Smart Plugs, Adapters' },
   { id: 'ord-006', orderId: 'BK-ORD-2024-0255', date: '04 Apr 2026', amount: '₹89,400', amountCny: '¥7,450', itemCount: 4, status: 'Out for Delivery', estimatedDelivery: '11 May 2026', client: 'Priya Sharma', itemNames: 'Phone Cases, Screen Guards' },
@@ -55,6 +130,22 @@ export const mockOrders: OrderRow[] = [
   { id: 'ord-011', orderId: 'BK-ORD-2024-0221', date: '06 Mar 2026', amount: '₹56,900', amountCny: '¥4,742', itemCount: 4, status: 'Payment Pending', estimatedDelivery: '30 May 2026', client: 'Sunita Verma', itemNames: 'Hand Tools, Gloves' },
   { id: 'ord-012', orderId: 'BK-ORD-2024-0215', date: '01 Mar 2026', amount: '₹1,12,300', amountCny: '¥9,358', itemCount: 6, status: 'Completed', estimatedDelivery: '20 Apr 2026', client: 'Rahul Mehta', itemNames: 'Tripods, Camera Bags' },
   { id: 'ord-013', orderId: 'BK-ORD-2024-0208', date: '24 Feb 2026', amount: '₹32,400', amountCny: '¥2,700', itemCount: 2, status: 'Cancelled' as OrderStatus, estimatedDelivery: '-', client: 'Rajesh Kumar', itemNames: 'Power Strips' },
+  {
+    id: 'ord-022',
+    orderId: 'BK-ORD-2024-0199',
+    date: '12 May 2026',
+    amount: '₹54,200',
+    amountCny: '¥4,517',
+    itemCount: 2,
+    status: 'Repacking/QC',
+    estimatedDelivery: '22 May 2026',
+    client: 'Rajesh Kumar',
+    itemNames: 'USB Hubs, Cable organisers',
+    lineItems: [
+      { id: 'ord-022-p1', name: 'USB 3.0 hub (7-port, powered)', quantity: 80 },
+      { id: 'ord-022-p2', name: 'Cable organiser box (medium)', quantity: 80 },
+    ],
+  },
 ];
 
 export const kpiData = {
@@ -133,6 +224,8 @@ export const statusToLocation: Record<string, { label: string; query: string; pr
   'At China Warehouse':      { label: 'Shenzhen, China',    query: 'Shenzhen China',                 progress: 20 },
   'Repacking/QC':            { label: 'Shenzhen, China',    query: 'Shenzhen China',                 progress: 25 },
   'Ready for Shipping':      { label: 'Shenzhen Port',      query: 'Shenzhen Port China',            progress: 35 },
+  'Ready for Logistics':     { label: 'Shenzhen Port',      query: 'Shenzhen logistics China',       progress: 36 },
+  'Return from China':       { label: 'Return — China',     query: 'Shenzhen China',                 progress: 22 },
   'Shipped from China':      { label: 'South China Sea',    query: 'South China Sea',                progress: 45 },
   'In Transit':              { label: 'Arabian Sea',        query: 'Arabian Sea',                    progress: 65 },
   'Arrived India Warehouse': { label: 'JNPT, Mumbai',       query: 'Jawaharlal Nehru Port Mumbai',   progress: 82 },

@@ -1,7 +1,7 @@
 import React from 'react';
 
 export type OrderStatus =
-  | 'Request Submitted' |'Quotation in Progress' |'Awaiting Approval' |'Payment Pending' |'Payment Confirmed' |'Sourcing' |'At China Warehouse' |'Repacking/QC' |'Ready for Shipping' |'Shipped from China' |'Arrived India Warehouse' |'Out for Delivery' |'Completed' |'Exception';
+  | 'Request Submitted' |'Quotation in Progress' |'Awaiting Approval' |'Payment Pending' |'Payment Confirmed' |'Sourcing' |'At China Warehouse' |'Repacking/QC' |'Ready for Shipping' |'Ready for Logistics' |'Return from China' |'Shipped from China' |'In Transit' |'Arrived India Warehouse' |'Out for Delivery' |'Completed' |'Exception' |'Cancelled';
 
 interface StatusBadgeProps {
   status: OrderStatus;
@@ -45,9 +45,25 @@ const statusConfig: Record<OrderStatus, { className: string; dot: string }> = {
     className: 'status-shipping',
     dot: 'bg-orange-500',
   },
+  'Ready for Logistics': {
+    className: 'status-shipping',
+    dot: 'bg-amber-500',
+  },
+  'Return from China': {
+    className: 'status-exception',
+    dot: 'bg-rose-600',
+  },
+  Cancelled: {
+    className: 'status-exception',
+    dot: 'bg-slate-500',
+  },
   'Shipped from China': {
     className: 'status-transit',
     dot: 'bg-orange-600',
+  },
+  'In Transit': {
+    className: 'status-transit',
+    dot: 'bg-sky-600',
   },
   'Arrived India Warehouse': {
     className: 'status-india',

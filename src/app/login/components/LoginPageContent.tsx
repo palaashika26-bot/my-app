@@ -6,6 +6,8 @@ import { Eye, EyeOff, ArrowRight, Copy, Check, Loader2, Globe, Shield } from 'lu
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/context/AuthContext';
 import { eliosWholesale } from '@/lib/brandAssets';
+import { authenticateStaff, getStaffRegistry, touchStaffLastLogin, type StaffMember } from '@/lib/staffStore';
+import { STAFF_ROLE_LABELS } from '@/lib/staffRoles';
 
 // Mock credentials for demo — backend integration point
 const DEMO_CREDENTIALS = [
@@ -26,7 +28,7 @@ const DEMO_CREDENTIALS = [
 interface LoginFormValues {
   email: string;
   password: string;
-  role: 'client' | 'admin';
+  role: 'client' | 'admin' | 'staff';
   rememberMe: boolean;
 }
 
@@ -36,6 +38,11 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [staffRows, setStaffRows] = useState<StaffMember[]>([]);
+
+  useEffect(() => {
+    setStaffRows(getStaffRegistry());
+  }, []);
 
   const {
     register,
@@ -56,38 +63,81 @@ function LoginForm() {
 
   async function onSubmit(data: LoginFormValues) {
     setIsLoading(true);
-    // TODO: Backend integration — POST /api/auth/login with { email, password, role }
-    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, 800));
 
-    const validCredential = DEMO_CREDENTIALS.find(
-      (c) => c.email === data.email && c.password === data.password
-    );
+    if (data.role === 'client') {
+      const validCredential = DEMO_CREDENTIALS.find(
+        (c) => c.role === 'Client' && c.email === data.email && c.password === data.password
+      );
+      if (!validCredential) {
+        setIsLoading(false);
+        addToast({
+          type: 'error',
+          title: 'Login failed',
+          description: 'Invalid client credentials — use the Client demo row below.',
+        });
+        return;
+      }
+      addToast({
+        type: 'success',
+        title: 'Welcome back!',
+        description: 'Redirecting to your client dashboard...',
+      });
+      await new Promise((r) => setTimeout(r, 600));
+      login('client', { name: 'Rajesh Kumar', email: validCredential.email, company: 'TechImports India' });
+      window.location.href = '/client-dashboard';
+      return;
+    }
 
-    if (!validCredential) {
+    if (data.role === 'admin') {
+      const adminCred = DEMO_CREDENTIALS.find(
+        (c) => c.role === 'Admin' && c.email === data.email && c.password === data.password
+      );
+      if (!adminCred) {
+        setIsLoading(false);
+        addToast({
+          type: 'error',
+          title: 'Login failed',
+          description: 'Invalid administrator credentials — use the Admin demo row below.',
+        });
+        return;
+      }
+      addToast({
+        type: 'success',
+        title: 'Welcome back!',
+        description: 'Redirecting to the admin workspace...',
+      });
+      await new Promise((r) => setTimeout(r, 600));
+      login('admin', { name: 'Arjun Sharma', email: adminCred.email });
+      window.location.href = '/admin';
+      return;
+    }
+
+    const staff = authenticateStaff(data.email, data.password);
+    if (!staff) {
       setIsLoading(false);
       addToast({
         type: 'error',
         title: 'Login failed',
-        description: 'Invalid credentials — use the demo accounts below to sign in.',
+        description: 'Invalid staff email or password. Your administrator can reset access under Admin → Staff.',
       });
       return;
     }
-
+    touchStaffLastLogin(staff.id);
     addToast({
       type: 'success',
-      title: `Welcome back!`,
-      description: `Redirecting to your ${validCredential.role.toLowerCase()} dashboard...`,
+      title: `Welcome, ${staff.name}`,
+      description: `Signed in as ${STAFF_ROLE_LABELS[staff.role]}.`,
     });
-
-    await new Promise((r) => setTimeout(r, 800));
-    // Persist auth state in context + localStorage + cookie
-    if (validCredential.role === 'Client') {
-      login('client', { name: 'Rajesh Kumar', email: validCredential.email, company: 'TechImports India' });
-      window.location.href = '/client-dashboard';
-    } else {
-      login('admin', { name: 'Arjun Sharma', email: validCredential.email });
-      window.location.href = '/admin';
-    }
+    await new Promise((r) => setTimeout(r, 600));
+    login('staff', {
+      name: staff.name,
+      email: staff.email,
+      phone: staff.phone,
+      staffId: staff.id,
+      staffRoleId: staff.role,
+    });
+    window.location.href = '/admin';
   }
 
   function handleGoogleSignIn() {
@@ -104,7 +154,7 @@ function LoginForm() {
     setTimeout(() => setCopiedField(null), 2000);
   }
 
-  function fillCredentials(email: string, password: string, role: 'client' | 'admin') {
+  function fillCredentials(email: string, password: string, role: 'client' | 'admin' | 'staff') {
     setValue('email', email);
     setValue('password', password);
     setValue('role', role);
@@ -210,8 +260,8 @@ function LoginForm() {
             <label className="block text-xs font-600 text-muted-foreground uppercase tracking-wider mb-2">
               Sign in as
             </label>
-            <div className="grid grid-cols-2 gap-2 p-1 bg-muted rounded-xl">
-              {(['client', 'admin'] as const).map((role) => (
+            <div className="grid grid-cols-3 gap-2 p-1 bg-muted rounded-xl">
+              {(['client', 'admin', 'staff'] as const).map((role) => (
                 <button
                   key={`role-${role}`}
                   type="button"
@@ -224,7 +274,7 @@ function LoginForm() {
                   aria-pressed={selectedRole === role}
                   suppressHydrationWarning
                 >
-                  {role === 'client' ? '👤 Client' : '🛡️ Admin'}
+                  {role === 'client' ? '👤 Client' : role === 'admin' ? '🛡️ Admin' : '👥 Staff'}
                 </button>
               ))}
             </div>
@@ -384,7 +434,7 @@ function LoginForm() {
                     <div className="flex items-center gap-2">
                       <span
                         className={`badge text-[10px] px-2 py-0.5 ${
-                          cred.role === 'Admin' ?'bg-primary text-primary-foreground' :'bg-accent/15 text-accent'
+                          cred.role === 'Admin' ? 'bg-primary text-primary-foreground' : 'bg-accent/15 text-accent'
                         }`}
                       >
                         {cred.role}
@@ -397,7 +447,7 @@ function LoginForm() {
                         fillCredentials(
                           cred.email,
                           cred.password,
-                          cred.role.toLowerCase() as 'client' | 'admin'
+                          cred.role === 'Admin' ? 'admin' : 'client'
                         )
                       }
                       className="text-xs text-accent hover:text-orange-600 font-600 transition-colors px-2 py-1 rounded hover:bg-accent/10"
@@ -421,6 +471,55 @@ function LoginForm() {
                           <span className="text-xs font-500 text-foreground font-tabular truncate">
                             {field.value}
                           </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(field.value, field.id)}
+                          className="flex-shrink-0 ml-2 text-muted-foreground hover:text-foreground transition-colors"
+                          aria-label={`Copy ${field.label}`}
+                        >
+                          {copiedField === field.id ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-500" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {staffRows.map((s) => (
+                <div key={`staff-${s.id}`} className="px-4 py-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="badge text-[10px] px-2 py-0.5 bg-slate-700 text-white">Staff</span>
+                      <span className="text-xs text-muted-foreground truncate">
+                        {STAFF_ROLE_LABELS[s.role]} — workspace access only
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => fillCredentials(s.email, s.password, 'staff')}
+                      className="text-xs text-accent hover:text-orange-600 font-600 transition-colors px-2 py-1 rounded hover:bg-accent/10 flex-shrink-0"
+                    >
+                      Use
+                    </button>
+                  </div>
+                  <div className="space-y-1.5">
+                    {[
+                      { label: 'Email', value: s.email, id: `${s.id}-email` },
+                      { label: 'Password', value: s.password, id: `${s.id}-password` },
+                    ].map((field) => (
+                      <div
+                        key={`staff-field-${field.id}`}
+                        className="flex items-center justify-between bg-secondary rounded-lg px-3 py-1.5"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-[10px] text-muted-foreground font-500 w-14 flex-shrink-0">
+                            {field.label}
+                          </span>
+                          <span className="text-xs font-500 text-foreground font-tabular truncate">{field.value}</span>
                         </div>
                         <button
                           type="button"
