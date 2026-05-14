@@ -11,6 +11,7 @@ interface Notification {
   time: string;
   read: boolean;
   type: 'order' | 'payment' | 'request' | 'alert';
+  href: string;
 }
 
 const mockNotifications: Notification[] = [
@@ -21,6 +22,7 @@ const mockNotifications: Notification[] = [
     time: '10 min ago',
     read: false,
     type: 'request',
+    href: '/client-dashboard/requests/req-001',
   },
   {
     id: 'notif-002',
@@ -29,22 +31,25 @@ const mockNotifications: Notification[] = [
     time: '2 hours ago',
     read: false,
     type: 'payment',
+    href: '/client-dashboard/orders/ord-001',
   },
   {
     id: 'notif-003',
     title: 'Shipment Update',
-    description: 'Order BK-ORD-2024-0271 has arrived at India Warehouse.',
+    description: 'Order BK-ORD-2024-0268 has shipped from China.',
     time: '1 day ago',
     read: false,
     type: 'order',
+    href: '/client-dashboard/orders/ord-004',
   },
   {
     id: 'notif-004',
     title: 'Exception Alert',
-    description: 'Item out of stock in order BK-ORD-2024-0265. Admin will contact you.',
+    description: 'Item shortage on order BK-ORD-2024-0241. Admin will contact you.',
     time: '2 days ago',
     read: true,
     type: 'alert',
+    href: '/client-dashboard/orders/ord-008',
   },
   {
     id: 'notif-005',
@@ -53,6 +58,7 @@ const mockNotifications: Notification[] = [
     time: '3 days ago',
     read: true,
     type: 'order',
+    href: '/client-dashboard/orders/ord-007',
   },
 ];
 
