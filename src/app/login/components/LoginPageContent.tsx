@@ -1,9 +1,11 @@
 'use client';
 import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { useForm } from 'react-hook-form';
 import { Eye, EyeOff, ArrowRight, Copy, Check, Loader2, Globe, Shield } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/context/AuthContext';
+import { eliosWholesale } from '@/lib/brandAssets';
 
 // Mock credentials for demo — backend integration point
 const DEMO_CREDENTIALS = [
@@ -111,36 +113,30 @@ function LoginForm() {
   return (
     <div className="min-h-screen flex bg-background">
       {/* Left panel — brand */}
-      <div className="hidden md:flex md:w-5/12 lg:w-5/12 xl:w-1/2 flex-col bg-primary relative overflow-hidden">
-        {/* Background pattern */}
-        <div className="absolute inset-0 opacity-5">
-          <div className="absolute top-0 left-0 w-full h-full"
-            style={{
-              backgroundImage: `radial-gradient(circle at 25% 25%, rgba(249,115,22,0.3) 0%, transparent 50%), radial-gradient(circle at 75% 75%, rgba(249,115,22,0.2) 0%, transparent 50%)`,
-            }}
-          />
-        </div>
+      <div className="hidden md:flex md:w-5/12 lg:w-5/12 xl:w-1/2 flex-col relative overflow-hidden"
+  style={{
+    backgroundImage: `url('/bg.jpg')`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+  }}
+>
+  {/* Dark overlay */}
+  <div className="absolute inset-0 bg-black/50" />
 
-        {/* Grid lines */}
-        <div className="absolute inset-0 opacity-[0.04]"
-          style={{
-            backgroundImage: `linear-gradient(rgba(255,255,255,1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,1) 1px, transparent 1px)`,
-            backgroundSize: '48px 48px',
-          }}
-        />
-
+       
         <div className="relative z-10 flex flex-col h-full px-12 py-10">
           {/* Logo */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center flex-shrink-0">
-              <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
-                <path d="M2 16 C2 16 6 8 11 8 C16 8 20 16 20 16" stroke="white" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
-                <rect x="3" y="14" width="3" height="5" rx="1" fill="white"/>
-                <rect x="16" y="14" width="3" height="5" rx="1" fill="white"/>
-                <path d="M3 16 L19 16" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
+          <div className="flex items-center">
+            <div className="rounded-xl bg-white/95 p-2 shadow-sm ring-1 ring-white/25">
+              <Image
+                src={eliosWholesale}
+                alt="Elios Wholesale"
+                width={220}
+                height={88}
+                className="h-12 w-auto max-w-[min(220px,85vw)] object-contain object-left"
+                priority
+              />
             </div>
-            <span className="text-white font-bold text-xl tracking-tight">EliosWholesale</span>
           </div>
 
           {/* Main content */}
@@ -190,16 +186,17 @@ function LoginForm() {
       {/* Right panel — form */}
       <div className="flex-1 flex flex-col justify-center items-center px-6 sm:px-10 lg:px-16 xl:px-20 py-10 overflow-y-auto">
         {/* Mobile logo */}
-        <div className="md:hidden self-start flex items-center gap-2.5 mb-8">
-          <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center flex-shrink-0">
-            <svg width="20" height="20" viewBox="0 0 22 22" fill="none" aria-hidden="true">
-              <path d="M2 16 C2 16 6 8 11 8 C16 8 20 16 20 16" stroke="white" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
-              <rect x="3" y="14" width="3" height="5" rx="1" fill="white"/>
-              <rect x="16" y="14" width="3" height="5" rx="1" fill="white"/>
-              <path d="M3 16 L19 16" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
+        <div className="md:hidden self-start mb-8">
+          <div className="rounded-xl bg-muted p-2 ring-1 ring-border inline-block">
+            <Image
+              src={eliosWholesale}
+              alt="Elios Wholesale"
+              width={200}
+              height={80}
+              className="h-10 w-auto max-w-[min(200px,80vw)] object-contain object-left"
+              priority
+            />
           </div>
-          <span className="font-bold text-lg text-primary tracking-tight">EliosWholesale</span>
         </div>
 
         <div className="w-full max-w-md">

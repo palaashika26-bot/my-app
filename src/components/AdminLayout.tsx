@@ -1,9 +1,11 @@
 'use client';
 import React, { useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Home, ShoppingBag, FileText, Users, Truck, Settings as SettingsIcon, MessageCircle, Building2, Menu, X, Bell, Search, ChevronDown, LogOut, User as UserIcon, Globe2, Sun } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { eliosWholesale } from '@/lib/brandAssets';
 
 const items = [
   { icon: Home,         label: 'Dashboard',        href: '/admin' },
@@ -34,12 +36,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const sidebar = (
     <aside className="flex flex-col h-full w-64 bg-primary text-primary-foreground">
       <div className="px-5 py-5 flex items-center gap-2.5 border-b border-white/10">
-        <div className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center flex-shrink-0">
-          <svg width="20" height="20" viewBox="0 0 22 22" fill="none"><path d="M2 16 C2 16 6 8 11 8 C16 8 20 16 20 16" stroke="white" strokeWidth="2.5" strokeLinecap="round" fill="none"/><rect x="3" y="14" width="3" height="5" rx="1" fill="white"/><rect x="16" y="14" width="3" height="5" rx="1" fill="white"/><path d="M3 16 L19 16" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
+        <div className="rounded-lg bg-white/95 p-1.5 flex-shrink-0 shadow-sm ring-1 ring-white/20">
+          <Image
+            src={eliosWholesale}
+            alt="Elios Wholesale"
+            width={160}
+            height={64}
+            className="h-9 w-auto max-w-[130px] object-contain object-left"
+            priority
+          />
         </div>
-        <div>
-          <p className="font-700 leading-none">EliosWholesale</p>
-          <p className="text-[10px] text-slate-300 mt-1">Admin Panel</p>
+        <div className="min-w-0">
+          <p className="text-[10px] text-slate-300 leading-tight">Admin Panel</p>
         </div>
       </div>
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">

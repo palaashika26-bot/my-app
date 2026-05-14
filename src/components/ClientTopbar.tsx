@@ -103,11 +103,8 @@ export default function ClientTopbar() {
     >
       <div className="w-full max-w-screen-2xl mx-auto px-4 lg:px-8 flex items-center gap-4">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2.5 flex-shrink-0" aria-label="EliosWholesale Home">
-          <AppLogo size={32} />
-          <span className="font-bold text-lg text-primary tracking-tight hidden sm:block">
-            EliosWholesale
-          </span>
+        <Link href="/" className="flex items-center flex-shrink-0" aria-label="EliosWholesale Home">
+          <AppLogo size={36} />
         </Link>
 
         {/* Search */}

@@ -3,6 +3,7 @@
 import React, { memo, useMemo } from 'react';
 import AppIcon from './AppIcon';
 import AppImage from './AppImage';
+import { eliosWholesale } from '@/lib/brandAssets';
 
 interface AppLogoProps {
   src?: string; // Image source (optional)
@@ -13,7 +14,7 @@ interface AppLogoProps {
 }
 
 const AppLogo = memo(function AppLogo({
-  src = '/assets/images/app_logo.png',
+  src = eliosWholesale,
   iconName = 'SparklesIcon',
   size = 64,
   className = '',
@@ -33,10 +34,11 @@ const AppLogo = memo(function AppLogo({
       {src ? (
         <AppImage
           src={src}
-          alt="Logo" 
-          width={size}
+          alt="Logo"
+          width={Math.round(size * 3)}
           height={size}
-          className="flex-shrink-0"
+          className="flex-shrink-0 object-contain w-auto"
+          style={{ height: size, width: 'auto', maxWidth: size * 3.5 }}
           priority={true}
           unoptimized={src.endsWith('.svg')}
         />
