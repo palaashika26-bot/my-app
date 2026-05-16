@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find C:\\\\\\\\Users\\\\\\\\Aashi\\\\\\\\Downloads\\\\\\\\my-app-main -type f -name \"page.tsx\")",
+      "PowerShell([System.IO.File]::ReadAllText\\(\"C:\\\\Users\\\\Aashi\\\\Downloads\\\\my-app-main\\\\my-app-main\\\\src\\\\app\\\\admin\\\\shipments\\\\tracking\\\\[id]\\\\page.tsx\"\\))",
+      "Bash(mkdir -p \"C:\\\\Users\\\\Aashi\\\\Downloads\\\\my-app-main\\\\my-app-main\\\\.claude\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\Aashi\\\\Downloads\\\\my-app-main\\\\.claude\")",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(Test-Path \"C:\\\\Users\\\\Aashi\\\\Downloads\\\\my-app-main\\\\my-app-main\\\\node_modules\\\\.bin\\\\next\")",
+      "Bash(npm install *)",
+      "Bash(sleep 5 && cat /tmp/nextjs-dev.log 2>/dev/null || cat \"C:/Users/Aashi/AppData/Local/Temp/claude/C--Users-Aashi-Downloads-my-app-main/4a92a267-19b8-4aa8-9479-cb8527d6cfce/tasks/bk1tgttl8.output\" 2>/dev/null | head -30)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(npx next *)",
+      "Bash(timeout 8)"
+    ]
+  }
+}
