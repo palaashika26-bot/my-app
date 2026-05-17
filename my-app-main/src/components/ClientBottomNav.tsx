@@ -1,73 +1,63 @@
-'use client';
-import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Home, ShoppingBag, FileText, BookOpen, Truck, User } from 'lucide-react';
+'use client'
+
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { Home, ShoppingBag, FileText, BookOpen, Truck, User } from 'lucide-react'
 
 const navItems = [
-  { icon: Home,       label: 'Home',     href: '/client-dashboard' },
-  { icon: ShoppingBag,label: 'Orders',   href: '/client-dashboard/orders' },
-  { icon: FileText,   label: 'Requests', href: '/client-dashboard/requests' },
-  { icon: BookOpen,   label: 'Catalog',  href: '/catalog' },
-  { icon: Truck,      label: 'Logistics',href: '/client-dashboard/logistics' },
-  { icon: User,       label: 'Profile',  href: '/profile' },
-];
+  { href: '/', icon: Home, label: 'Home' },
+  { href: '/orders', icon: ShoppingBag, label: 'Orders' },
+  { href: '/requests', icon: FileText, label: 'Requests' },
+  { href: '/catalog', icon: BookOpen, label: 'Catalog' },
+  { href: '/logistics', icon: Truck, label: 'Logistics' },
+  { href: '/profile', icon: User, label: 'Profile' },
+]
 
 export default function ClientBottomNav() {
-  const pathname = usePathname();
-  const [hidden, setHidden] = useState(false);
+  const pathname = usePathname()
+  const [visible, setVisible] = useState(true)
+  const [lastScrollY, setLastScrollY] = useState(0)
 
   useEffect(() => {
-    let lastY = window.scrollY;
-
-    function onScroll() {
-      const currentY = window.scrollY;
-      if (currentY <= 0) {
-        setHidden(false);
-      } else if (currentY > lastY) {
-        setHidden(true);
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY
+      if (currentScrollY < 10) {
+        setVisible(true)
+      } else if (currentScrollY > lastScrollY) {
+        setVisible(false)
       } else {
-        setHidden(false);
+        setVisible(true)
       }
-      lastY = currentY;
+      setLastScrollY(currentScrollY)
     }
-
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [lastScrollY])
 
   return (
     <nav
-      className={`fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-border shadow-bottom-nav transition-transform duration-300 ${hidden ? 'translate-y-full' : 'translate-y-0'}`}
-      role="navigation"
-      aria-label="Mobile navigation"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      className={`fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 transition-transform duration-300 ${
+        visible ? 'translate-y-0' : 'translate-y-full'
+      }`}
     >
-      <div className="flex items-center justify-around px-1 py-1 safe-area-pb">
-        {navItems.map((item) => {
-          const isActive =
-            item.href === '/client-dashboard'
-              ? pathname === '/client-dashboard'
-              : pathname?.startsWith(item.href);
+      <div className="flex items-center justify-around h-16">
+        {navItems.map(({ href, icon: Icon, label }) => {
+          const isActive = pathname === href
           return (
             <Link
-              key={`bottom-nav-${item.label}`}
-              href={item.href}
-              className={`flex flex-col items-center justify-center flex-1 py-1.5 gap-0.5 ${isActive ? 'text-accent' : 'text-muted-foreground'}`}
-              aria-current={isActive ? 'page' : undefined}
-              aria-label={item.label}
+              key={href}
+              href={href}
+              className={`flex flex-col items-center justify-center flex-1 h-full gap-1 text-xs ${
+                isActive ? 'text-orange-500' : 'text-gray-500'
+              }`}
             >
-              <item.icon
-                className={`w-4.5 h-4.5 transition-colors ${isActive ? 'text-accent' : 'text-muted-foreground'}`}
-                aria-hidden="true"
-              />
-              <span className={`text-[10px] leading-none ${isActive ? 'text-accent font-600' : 'text-muted-foreground'}`}>
-                {item.label}
-              </span>
+              <Icon size={22} />
+              <span>{label}</span>
             </Link>
-          );
+          )
         })}
       </div>
     </nav>
-  );
+  )
 }
