@@ -18,7 +18,7 @@ export default function ClientBottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-border shadow-bottom-nav md:hidden"
+      className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-border shadow-bottom-nav"
       role="navigation"
       aria-label="Mobile navigation"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
