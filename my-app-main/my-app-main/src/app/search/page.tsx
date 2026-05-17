@@ -1,0 +1,37 @@
+'use client';
+import React from 'react';
+import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import ClientShell from '@/components/ClientShell';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { mockOrders, mockRequests } from '@/lib/mockData';
+
+export default function SearchPage() {
+  const params = useSearchParams();
+  const q = (params.get('q') || '').toLowerCase();
+  const orders = q ? mockOrders.filter(o => o.orderId.toLowerCase().includes(q) || (o.itemNames||'').toLowerCase().includes(q)) : [];
+  const requests = q ? mockRequests.filter(r => r.requestId.toLowerCase().includes(q) || r.itemNames.toLowerCase().includes(q)) : [];
+
+  return (
+    <ClientShell>
+      <h1 className="text-2xl font-700 mb-1">Search Results</h1>
+      <p className="text-sm text-muted-foreground mb-5">Showing results for “<span className="font-600 text-foreground">{q}</span>”</p>
+      <div className="space-y-6">
+        <div><h3 className="font-700 mb-2">Orders ({orders.length})</h3>
+          {orders.length === 0 ? <p className="text-sm text-muted-foreground">No orders found.</p> :
+            <div className="bg-card rounded-xl border border-border divide-y divide-border">{orders.map(o => (
+              <Link key={o.id} href={`/client-dashboard/orders/${o.id}`} className="flex items-center justify-between p-4 hover:bg-muted/40"><div><p className="font-tabular font-600">{o.orderId}</p><p className="text-xs text-muted-foreground">{o.itemNames}</p></div><StatusBadge status={o.status as any} /></Link>
+            ))}</div>
+          }
+        </div>
+        <div><h3 className="font-700 mb-2">Requests ({requests.length})</h3>
+          {requests.length === 0 ? <p className="text-sm text-muted-foreground">No requests found.</p> :
+            <div className="bg-card rounded-xl border border-border divide-y divide-border">{requests.map(r => (
+              <Link key={r.id} href={`/client-dashboard/requests/${r.id}`} className="flex items-center justify-between p-4 hover:bg-muted/40"><div><p className="font-tabular font-600">{r.requestId}</p><p className="text-xs text-muted-foreground">{r.itemNames}</p></div><StatusBadge status={r.status as any} /></Link>
+            ))}</div>
+          }
+        </div>
+      </div>
+    </ClientShell>
+  );
+}

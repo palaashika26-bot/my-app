@@ -1,0 +1,329 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #F8FAFC;
+  --foreground: #0F172A;
+  --primary: #0F172A;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F1F5F9;
+  --secondary-foreground: #475569;
+  --accent: #F97316;
+  --accent-foreground: #FFFFFF;
+  --muted: #F1F5F9;
+  --muted-foreground: #64748B;
+  --card: #FFFFFF;
+  --card-foreground: #0F172A;
+  --border: #E2E8F0;
+  --input: #E2E8F0;
+  --ring: #F97316;
+  --radius: 0.5rem;
+  --font-sans: 'DM Sans', sans-serif;
+
+  --status-submitted: #FEF3C7;
+  --status-submitted-text: #92400E;
+  --status-progress: #DBEAFE;
+  --status-progress-text: #1E40AF;
+  --status-approval: #FEF9C3;
+  --status-approval-text: #854D0E;
+  --status-payment: #DBEAFE;
+  --status-payment-text: #1D4ED8;
+  --status-sourcing: #E0E7FF;
+  --status-sourcing-text: #3730A3;
+  --status-warehouse: #CFFAFE;
+  --status-warehouse-text: #155E75;
+  --status-shipping: #FFEDD5;
+  --status-shipping-text: #C2410C;
+  --status-transit: #FED7AA;
+  --status-transit-text: #9A3412;
+  --status-india: #DCFCE7;
+  --status-india-text: #166534;
+  --status-delivery: #BBF7D0;
+  --status-delivery-text: #15803D;
+  --status-completed: #D1FAE5;
+  --status-completed-text: #065F46;
+  --status-exception: #FEE2E2;
+  --status-exception-text: #991B1B;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  h1, h2, h3, h4, h5, h6, p {
+    margin: 0;
+  }
+}
+
+@layer utilities {
+  .font-tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .status-submitted {
+    background-color: var(--status-submitted);
+    color: var(--status-submitted-text);
+  }
+
+  .status-progress {
+    background-color: var(--status-progress);
+    color: var(--status-progress-text);
+  }
+
+  .status-approval {
+    background-color: var(--status-approval);
+    color: var(--status-approval-text);
+  }
+
+  .status-payment {
+    background-color: var(--status-payment);
+    color: var(--status-payment-text);
+  }
+
+  .status-sourcing {
+    background-color: var(--status-sourcing);
+    color: var(--status-sourcing-text);
+  }
+
+  .status-warehouse {
+    background-color: var(--status-warehouse);
+    color: var(--status-warehouse-text);
+  }
+
+  .status-shipping {
+    background-color: var(--status-shipping);
+    color: var(--status-shipping-text);
+  }
+
+  .status-transit {
+    background-color: var(--status-transit);
+    color: var(--status-transit-text);
+  }
+
+  .status-india {
+    background-color: var(--status-india);
+    color: var(--status-india-text);
+  }
+
+  .status-delivery {
+    background-color: var(--status-delivery);
+    color: var(--status-delivery-text);
+  }
+
+  .status-completed {
+    background-color: var(--status-completed);
+    color: var(--status-completed-text);
+  }
+
+  .status-exception {
+    background-color: var(--status-exception);
+    color: var(--status-exception-text);
+  }
+
+  .nav-active {
+    background-color: rgba(249, 115, 22, 0.1);
+    color: var(--accent);
+  }
+
+  .card-hover {
+    transition: box-shadow 200ms ease, transform 150ms ease;
+  }
+
+  .card-hover:hover {
+    box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
+    transform: translateY(-1px);
+  }
+
+  .btn-primary {
+    background-color: var(--accent);
+    color: var(--accent-foreground);
+    font-weight: 600;
+    border-radius: var(--radius);
+    transition: background-color 150ms ease, transform 100ms ease, box-shadow 150ms ease;
+  }
+
+  .btn-primary:hover {
+    background-color: #EA6C0A;
+    box-shadow: 0 4px 12px rgba(249, 115, 22, 0.35);
+  }
+
+  .btn-primary:active {
+    transform: scale(0.97);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .btn-secondary {
+    background-color: var(--secondary);
+    color: var(--foreground);
+    font-weight: 500;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    transition: background-color 150ms ease, border-color 150ms ease;
+  }
+
+  .btn-secondary:hover {
+    background-color: #E2E8F0;
+    border-color: #CBD5E1;
+  }
+
+  .btn-secondary:active {
+    transform: scale(0.97);
+  }
+
+  .input-field {
+    width: 100%;
+    padding-top: 0.625rem;
+    padding-right: 0.875rem;
+    padding-bottom: 0.625rem;
+    padding-left: 0.875rem;
+    border: 1px solid var(--input);
+    border-radius: var(--radius);
+    background-color: var(--card);
+    color: var(--foreground);
+    font-size: 0.875rem;
+    font-family: var(--font-sans);
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+    outline: none;
+  }
+
+  .input-field:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15);
+  }
+
+  .input-field::placeholder {
+    color: var(--muted-foreground);
+  }
+
+  .input-error {
+    border-color: #EF4444;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+  }
+
+  .table-row-hover {
+    transition: background-color 120ms ease;
+  }
+
+  .table-row-hover:hover {
+    background-color: rgba(248, 250, 252, 1);
+  }
+
+  .skeleton-pulse {
+    background: linear-gradient(90deg, #F1F5F9 25%, #E2E8F0 50%, #F1F5F9 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  .bottom-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    transition: color 150ms ease;
+    cursor: pointer;
+    border-radius: 0.5rem;
+  }
+
+  .bottom-nav-item.active {
+    color: var(--accent);
+  }
+
+  .notification-dot {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 8px;
+    height: 8px;
+    background-color: #EF4444;
+    border-radius: 50%;
+    border: 2px solid white;
+  }
+
+  .fade-in {
+    animation: fadeIn 200ms ease forwards;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .slide-up {
+    animation: slideUp 250ms ease forwards;
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .kpi-card-accent-orange {
+    border-left: 4px solid var(--accent);
+  }
+
+  .kpi-card-accent-yellow {
+    border-left: 4px solid #F59E0B;
+  }
+
+  .kpi-card-accent-blue {
+    border-left: 4px solid #3B82F6;
+  }
+
+  .kpi-card-accent-green {
+    border-left: 4px solid #10B981;
+  }
+}
