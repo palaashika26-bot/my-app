@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import ClientShell from '@/components/ClientShell';
 import { useToast } from '@/components/ui/Toast';
-import { Search, X } from 'lucide-react';
+import { Search, X, Plus } from 'lucide-react';
 
 interface Product {
   id: string;
@@ -35,10 +35,19 @@ export default function CatalogPage() {
   const { addToast } = useToast();
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('All');
+
+  // Catalog item quote modal
   const [active, setActive] = useState<Product | null>(null);
   const [qty, setQty] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Custom product request modal
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customQty, setCustomQty] = useState('');
+  const [customNotes, setCustomNotes] = useState('');
+  const [customSubmitting, setCustomSubmitting] = useState(false);
 
   const filtered = useMemo(() => products.filter(p =>
     (cat === 'All' || p.category === cat) &&
@@ -48,20 +57,38 @@ export default function CatalogPage() {
   function openModal(p: Product) { setActive(p); setQty(String(p.moq)); setNotes(''); }
   function closeModal() { setActive(null); }
 
+  function openCustomModal() { setCustomOpen(true); setCustomName(''); setCustomQty(''); setCustomNotes(''); }
+  function closeCustomModal() { setCustomOpen(false); }
+
   async function submitRequest() {
     setSubmitting(true);
     await new Promise(r => setTimeout(r, 800));
     const id = `BK-REQ-2026-${String(Math.floor(1000 + Math.random()*9000))}`;
-    addToast({ type: 'success', title: 'Quote request submitted', description: `${id} created for ${active?.name}. Our team will contact you within 24 hours.` });
+    addToast({ type: 'success', title: 'Quotation request submitted', description: `${id} created for ${active?.name}. Our team will contact you within 24 hours.` });
     setSubmitting(false);
     closeModal();
   }
 
+  async function submitCustomRequest() {
+    if (!customName.trim()) return;
+    setCustomSubmitting(true);
+    await new Promise(r => setTimeout(r, 800));
+    const id = `BK-REQ-2026-${String(Math.floor(1000 + Math.random()*9000))}`;
+    addToast({ type: 'success', title: 'Product request submitted', description: `${id} created for "${customName}". Our team will contact you within 24 hours.` });
+    setCustomSubmitting(false);
+    closeCustomModal();
+  }
+
   return (
     <ClientShell>
-      <div className="mb-5">
-        <h1 className="text-2xl font-700">Product Catalog</h1>
-        <p className="text-sm text-muted-foreground mt-1">Browse popular products sourced from verified Chinese manufacturers</p>
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-700">Product Catalog</h1>
+          <p className="text-sm text-muted-foreground mt-1">Browse popular products sourced from verified Chinese manufacturers</p>
+        </div>
+        <button onClick={openCustomModal} className="btn-primary px-4 py-2 text-sm whitespace-nowrap flex-shrink-0 flex items-center gap-1.5">
+          <Plus className="w-4 h-4" /> Add Product Request
+        </button>
       </div>
 
       <div className="relative mb-4">
@@ -84,7 +111,7 @@ export default function CatalogPage() {
               <span className="inline-block mt-1 badge bg-muted text-muted-foreground text-[10px]">{p.category}</span>
               <p className="font-tabular font-700 text-foreground mt-2">{p.priceCny} <span className="text-[11px] text-muted-foreground font-500">/ unit</span></p>
               <p className="text-[11px] text-muted-foreground mt-0.5">MOQ: {p.moq} units</p>
-              <button onClick={() => openModal(p)} className="btn-primary w-full py-2 mt-3 text-xs">Request Quote</button>
+              <button onClick={() => openModal(p)} className="btn-primary w-full py-2 mt-3 text-xs">Request Quotation</button>
             </div>
           </div>
         ))}
@@ -93,11 +120,12 @@ export default function CatalogPage() {
         )}
       </div>
 
+      {/* Catalog item quotation modal */}
       {active && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 fade-in" onClick={closeModal}>
           <div className="bg-card rounded-2xl w-full max-w-md p-5" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-700">Request Quote</h3>
+              <h3 className="font-700">Request Quotation</h3>
               <button onClick={closeModal} className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center"><X className="w-4 h-4" /></button>
             </div>
             <div className="flex items-center gap-3 p-3 rounded-xl bg-muted/40 mb-3">
@@ -111,6 +139,37 @@ export default function CatalogPage() {
             <div className="flex gap-2 mt-4">
               <button onClick={closeModal} className="btn-secondary flex-1 py-2 text-sm">Cancel</button>
               <button onClick={submitRequest} disabled={submitting} className="btn-primary flex-1 py-2 text-sm">{submitting ? 'Submitting...' : 'Submit Request'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom product request modal */}
+      {customOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 fade-in" onClick={closeCustomModal}>
+          <div className="bg-card rounded-2xl w-full max-w-md p-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-700">Add Product Request</h3>
+              <button onClick={closeCustomModal} className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center"><X className="w-4 h-4" /></button>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">Can&apos;t find what you need? Describe the product and we&apos;ll source a quote for you.</p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-600 text-muted-foreground uppercase">Product Name / Description</label>
+                <input value={customName} onChange={e => setCustomName(e.target.value)} className="input-field mt-1" placeholder="e.g. Custom printed tote bags" />
+              </div>
+              <div>
+                <label className="text-xs font-600 text-muted-foreground uppercase">Estimated Quantity</label>
+                <input value={customQty} onChange={e => setCustomQty(e.target.value)} type="number" min={1} className="input-field mt-1" placeholder="e.g. 500" />
+              </div>
+              <div>
+                <label className="text-xs font-600 text-muted-foreground uppercase">Additional Notes</label>
+                <textarea value={customNotes} onChange={e => setCustomNotes(e.target.value)} rows={3} className="input-field mt-1" placeholder="Size, colour, material, branding requirements..." />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={closeCustomModal} className="btn-secondary flex-1 py-2 text-sm">Cancel</button>
+              <button onClick={submitCustomRequest} disabled={customSubmitting || !customName.trim()} className="btn-primary flex-1 py-2 text-sm">{customSubmitting ? 'Submitting...' : 'Submit Request'}</button>
             </div>
           </div>
         </div>

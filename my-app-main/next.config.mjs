@@ -24,6 +24,7 @@ const nextConfig = {
   images: {
     remotePatterns: imageHosts,
     minimumCacheTTL: 60,
+    qualities: [75, 85],
   },
 
   async headers() {
