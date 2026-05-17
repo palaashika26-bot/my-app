@@ -1,5 +1,5 @@
 'use client';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Home, ShoppingBag, FileText, BookOpen, Truck, User } from 'lucide-react';
@@ -15,10 +15,30 @@ const navItems = [
 
 export default function ClientBottomNav() {
   const pathname = usePathname();
+  const [hidden, setHidden] = useState(false);
+
+  useEffect(() => {
+    let lastY = window.scrollY;
+
+    function onScroll() {
+      const currentY = window.scrollY;
+      if (currentY <= 0) {
+        setHidden(false);
+      } else if (currentY > lastY) {
+        setHidden(true);
+      } else {
+        setHidden(false);
+      }
+      lastY = currentY;
+    }
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-border shadow-bottom-nav"
+      className={`fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-border shadow-bottom-nav transition-transform duration-300 ${hidden ? 'translate-y-full' : 'translate-y-0'}`}
       role="navigation"
       aria-label="Mobile navigation"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
