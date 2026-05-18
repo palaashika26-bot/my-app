@@ -31,6 +31,7 @@ import { eliosWholesale } from '@/lib/brandAssets';
 import { STAFF_ROLE_LABELS } from '@/lib/staffRoles';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import AdminRouteGuard from '@/components/AdminRouteGuard';
+import AdminBottomNav from '@/components/AdminBottomNav';
 
 import type { EffectivePermissions } from '@/lib/staffRoles';
 
@@ -192,7 +193,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             )}
           </div>
         </header>
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 fade-in">
+        <main className="flex-1 p-4 pb-20 sm:p-6 lg:p-8 md:pb-8 fade-in">
           {role === 'admin' && qcAlerts.length > 0 && (
             <div className="mb-4 space-y-2">
               {qcAlerts.map((a) => (
@@ -232,6 +233,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <AdminRouteGuard>{children}</AdminRouteGuard>
         </main>
       </div>
+      <AdminBottomNav />
     </div>
   );
 }
