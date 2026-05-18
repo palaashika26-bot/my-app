@@ -1,15 +1,18 @@
 'use client';
-import React, { useState, use, useEffect } from 'react';
+import React, { useState, use, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import AdminLayout from '@/components/AdminLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { mockRequests, mockClients } from '@/lib/adminMockData';
 import { useToast } from '@/components/ui/Toast';
-import { ArrowLeft, Camera, Check, X, MessageSquare, Send, Package, Pencil } from 'lucide-react';
+import { ArrowLeft, Camera, Check, X, MessageSquare, Send, Package, Pencil, Upload, ImageIcon } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import type { RequestLineItem, PerProductQuoteStatus } from '@/lib/mockData';
 import { defaultLineItemsFromRequest, loadRfqLineItems, persistRfqLineItems } from '@/lib/rfqLineItems';
+import { loadPaymentProof, savePaymentConfirmed, loadPaymentConfirmed } from '@/lib/paymentStore';
+
+const CNY_TO_INR = 11.5;
 
 function statusLabel(s: PerProductQuoteStatus, revisionRequested?: boolean) {
   if (s === 'Pending' && revisionRequested) return 'Pending (counter-offer)';
@@ -40,15 +43,20 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [draftUnitInr, setDraftUnitInr] = useState('');
   const [msg, setMsg] = useState('');
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [thread, setThread] = useState([
     { by: 'client', text: 'Hi team, please source these items urgently. Sample required first.', t: '2 hours ago' },
     { by: 'admin', text: 'On it — sample available in 5–7 days. We will share supplier shortlist shortly.', t: '1 hour ago' },
   ]);
+  const [paymentProof, setPaymentProof] = useState<string | null>(null);
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
 
   useEffect(() => {
     const row = mockRequests.find(r => r.id === id);
     if (!row) return;
     setLineItems(loadRfqLineItems(row));
+    setPaymentProof(loadPaymentProof(id));
+    setPaymentConfirmed(loadPaymentConfirmed(id));
   }, [id]);
 
   if (!req) return notFound();
@@ -106,6 +114,22 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
     });
   }
 
+  function handleImageUpload(lineId: string, e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const dataUrl = ev.target?.result as string;
+      setLineItems(prev => {
+        const next = prev.map(l => l.id === lineId ? { ...l, imageUrl: dataUrl } : l);
+        persistRfqLineItems(id, next);
+        return next;
+      });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  }
+
   function approve() {
     addToast({ type: 'success', title: 'Request approved', description: 'Converted to order.' });
   }
@@ -114,6 +138,11 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
   }
   function moreInfo() {
     addToast({ type: 'info', title: 'Info requested from client' });
+  }
+  function confirmPayment() {
+    savePaymentConfirmed(id);
+    setPaymentConfirmed(true);
+    addToast({ type: 'success', title: 'Payment confirmed', description: 'Order status updated to Payment Confirmed.' });
   }
   function postMsg() {
     if (!msg.trim()) return;
@@ -132,7 +161,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
         <div className="flex flex-wrap items-center gap-3 mb-2">
           {req.source === 'photo_scan' && <Camera className="w-4 h-4 text-accent" />}
           <span className="font-tabular font-700 text-lg">{req.requestId}</span>
-          <StatusBadge status={req.status as never} />
+          <StatusBadge status={paymentConfirmed ? ('Payment Confirmed' as never) : (req.status as never)} />
         </div>
         <p className="text-xs text-muted-foreground">
           {req.client} • {client?.email} • {req.date}
@@ -161,22 +190,25 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
             <h3 className="font-700 mb-1">{showFullQuoteCols ? 'Per-product quotations' : 'Items Requested'}</h3>
             {showFullQuoteCols && (
               <p className="text-xs text-muted-foreground mb-3">
-                Enter unit price in INR for each product, then Save. Client sees each line as its own quotation. RMB cost is internal only.
+                Enter unit price in INR for each product, then Save. Client sees each line as its own quotation. RMB cost and BK margin are internal only.
+                <span className="ml-2 font-600 text-accent">Rate: ¥1 = ₹{CNY_TO_INR.toFixed(2)}</span>
               </p>
             )}
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[720px]">
+              <table className="w-full text-sm min-w-[960px]">
                 <thead>
                   <tr className="border-b border-border text-[11px] uppercase text-muted-foreground">
+                    <th className="py-2 text-left font-600 w-16">Image</th>
                     <th className="py-2 text-left font-600">Product</th>
-                    <th className="text-right font-600 w-20">Qty</th>
+                    <th className="text-right font-600 w-16">Qty</th>
                     {showFullQuoteCols && (
                       <>
                         <th className="text-right font-600 w-28">RMB / unit</th>
                         <th className="text-right font-600 w-36">Unit ₹ (INR)</th>
                         <th className="text-right font-600 w-32">Total ₹</th>
+                        <th className="text-right font-600 w-28 text-orange-600">BK Margin ₹</th>
                         <th className="text-left font-600 pl-3 w-36">Status</th>
-                        <th className="text-right font-600 w-36">Actions</th>
+                        <th className="text-right font-600 w-40">Actions</th>
                       </>
                     )}
                     {!showFullQuoteCols && <th className="text-left font-600 pl-3">Specs</th>}
@@ -186,9 +218,41 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                   {lineItems.map(line => {
                     const totalInr =
                       line.unitPriceInr != null && line.unitPriceInr > 0 ? line.quantity * line.unitPriceInr : null;
+                    const marginInr =
+                      line.unitPriceInr != null ? Math.round(line.unitPriceInr - line.rmbCostPerUnit * CNY_TO_INR) : null;
                     const editing = editingLineId === line.id;
                     return (
                       <tr key={line.id}>
+                        <td className="py-3 align-middle">
+                          <div className="flex flex-col items-center gap-1">
+                            {line.imageUrl ? (
+                              <img src={line.imageUrl} alt={line.name} className="w-10 h-10 rounded-lg object-cover border border-border" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center border border-border">
+                                <ImageIcon className="w-5 h-5 text-muted-foreground" />
+                              </div>
+                            )}
+                            {showFullQuoteCols && (
+                              <>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  ref={el => { fileInputRefs.current[line.id] = el; }}
+                                  onChange={e => handleImageUpload(line.id, e)}
+                                  className="hidden"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => fileInputRefs.current[line.id]?.click()}
+                                  className="btn-secondary px-1.5 py-0.5 text-[10px] inline-flex items-center gap-0.5"
+                                  title="Upload product image"
+                                >
+                                  <Upload className="w-2.5 h-2.5" /> Upload
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
                         <td className="py-3">
                           <p className="font-500">{line.name}</p>
                           <p className="text-xs text-muted-foreground mt-0.5">{line.specs}</p>
@@ -212,6 +276,13 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                               )}
                             </td>
                             <td className="text-right font-tabular">{totalInr != null ? `₹${totalInr.toLocaleString('en-IN')}` : '—'}</td>
+                            <td className="text-right font-tabular">
+                              {marginInr != null ? (
+                                <span className={marginInr >= 0 ? 'text-emerald-600' : 'text-red-600'}>
+                                  ₹{marginInr.toLocaleString('en-IN')}
+                                </span>
+                              ) : '—'}
+                            </td>
                             <td className="pl-3 align-middle">
                               <div className="flex flex-col gap-0.5">
                                 <StatusPill status={line.status} revisionRequested={line.revisionRequested} />
@@ -272,7 +343,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
           )}
           {qs === 'verification' && (
             <div className="bg-card rounded-xl border border-border shadow-card p-5">
-              <h3 className="font-700 mb-2">QC verification</h3>
+              <h3 className="font-700 mb-2">Repacking Warehouse verification</h3>
               <p className="text-sm text-muted-foreground">
                 Use the item list above to verify goods against the request. Pricing fields are restricted — contact an administrator to update quotations.
               </p>
@@ -337,6 +408,30 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
         </div>
 
         <div className="space-y-3 h-fit">
+          {/* Payment proof card */}
+          {paymentProof && (
+            <div className="bg-card rounded-xl border border-border shadow-card p-4">
+              <h4 className="font-700 text-sm mb-3">Payment Proof</h4>
+              <img
+                src={paymentProof}
+                alt="Client payment proof"
+                className="w-full rounded-lg border border-border object-contain max-h-48 bg-muted"
+              />
+              {paymentConfirmed ? (
+                <div className="mt-3 flex items-center gap-2 text-emerald-700 text-sm font-600">
+                  <Check className="w-4 h-4" /> Payment Confirmed
+                </div>
+              ) : (
+                <button
+                  onClick={confirmPayment}
+                  className="w-full mt-3 px-4 py-2.5 rounded-lg bg-emerald-500 text-white text-sm font-600 hover:bg-emerald-600 inline-flex items-center justify-center gap-2"
+                >
+                  <Check className="w-4 h-4" /> Confirm Payment & Place Order
+                </button>
+              )}
+            </div>
+          )}
+
           {perms.isFullAdmin && (
             <>
               <button

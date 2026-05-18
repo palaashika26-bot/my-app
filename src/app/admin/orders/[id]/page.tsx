@@ -6,14 +6,15 @@ import StatusBadge, { OrderStatus } from '@/components/ui/StatusBadge';
 import { mockAdminOrders, mockClients, orderNotesLog, carrierForOrder, statusToLocation } from '@/lib/adminMockData';
 import { useToast } from '@/components/ui/Toast';
 import { ArrowLeft, CheckCircle2, Circle, MapPin, Upload, Download, FileText, AlertTriangle, Mail, Edit3, MessageSquare, Camera } from 'lucide-react';
+import ExceptionChat from '@/components/ExceptionChat';
 import { useAuth } from '@/context/AuthContext';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import { notFound } from 'next/navigation';
 import { getEffectiveOrderStatus } from '@/lib/orderQcStore';
 
-const stages = ['Order Placed','Payment Confirmed','Sourcing','At China Warehouse','China Consolidation Warehouse','Repacking/QC','Shipped from China','In Transit','Arrived India Warehouse','Out for Delivery','Completed'];
-const stageMap: Record<string, number> = { 'Payment Pending': 0, 'Payment Confirmed': 1, 'Sourcing': 2, 'At China Warehouse': 3, 'China Consolidation Warehouse': 4, 'Repacking/QC': 5, 'Shipped from China': 6, 'In Transit': 7, 'Arrived India Warehouse': 8, 'Out for Delivery': 9, 'Completed': 10 };
-const statusOptions: OrderStatus[] = ['Payment Pending','Payment Confirmed','Sourcing','At China Warehouse','Repacking/QC','Ready for Shipping','Ready for Logistics','Return from China','Shipped from China','Arrived India Warehouse','Out for Delivery','Completed','Exception'];
+const stages = ['Order Placed','Payment Confirmed','Sourcing','At China Warehouse','China Consolidation Warehouse','Repacking Warehouse','Shipped from China','In Transit','Arrived India Warehouse','Out for Delivery','Completed'];
+const stageMap: Record<string, number> = { 'Payment Pending': 0, 'Payment Confirmed': 1, 'Sourcing': 2, 'At China Warehouse': 3, 'China Consolidation Warehouse': 4, 'Repacking Warehouse': 5, 'Shipped from China': 6, 'In Transit': 7, 'Arrived India Warehouse': 8, 'Out for Delivery': 9, 'Completed': 10 };
+const statusOptions: OrderStatus[] = ['Payment Pending','Payment Confirmed','Sourcing','At China Warehouse','Repacking Warehouse','Ready for Shipping','Ready for Logistics','Return from China','Shipped from China','Arrived India Warehouse','Out for Delivery','Completed','Exception'];
 const gstRates = [0, 5, 12, 18, 28];
 
 export default function AdminOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -40,9 +41,8 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
   ];
   const productCny = 5100, logisticsCny = 680;
   const productInr = productCny * 12, logisticsInr = logisticsCny * 12;
-  const serviceFee = Math.round(productInr * 0.08);
-  const customs = 6800;
-  const subTotal = productInr + serviceFee + logisticsInr + customs;
+  const advancePaid = 15000;
+  const subTotal = productInr + logisticsInr - advancePaid;
   const gstAmt = Math.round(subTotal * gst / 100);
   const grand = subTotal + gstAmt;
 
@@ -91,7 +91,7 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
         </div>
         <div className="flex flex-wrap gap-2">
           {(role === 'admin' || (role === 'staff' && user?.staffRoleId === 'warehouse_staff')) &&
-            (initial.status === 'Repacking/QC' ||
+            (initial.status === 'Repacking Warehouse' ||
               ['Ready for Logistics', 'Return from China'].includes(
                 getEffectiveOrderStatus(initial.id, initial.status as OrderStatus) as string
               )) && (
@@ -99,7 +99,7 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
                 href={`/admin/warehouse/qc/${initial.id}`}
                 className="btn-secondary px-3 py-2 text-xs inline-flex items-center gap-1.5"
               >
-                <Camera className="w-3.5 h-3.5" /> Warehouse QC
+                <Camera className="w-3.5 h-3.5" /> Repacking Warehouse
               </Link>
             )}
           <select value={status} onChange={e => saveStatus(e.target.value)} className="input-field text-sm py-2 min-w-[180px]">{statusOptions.map(s => <option key={s}>{s}</option>)}</select>
@@ -110,6 +110,12 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
           )}
         </div>
       </div>
+
+      {status === 'Exception' && (
+        <div className="mb-5">
+          <ExceptionChat orderId={initial.id} isAdmin={true} />
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 space-y-5">
@@ -178,7 +184,7 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
           <div className="bg-card rounded-xl border border-border shadow-card p-5">
             <h3 className="font-700 mb-3">Documents</h3>
             <ul className="space-y-2">
-              {['Commercial Invoice', 'Packing List', 'Bill of Lading'].map(d => (
+              {['Commercial Invoice', 'Packing List'].map(d => (
                 <li key={d} className="flex items-center justify-between py-2 border-b border-border last:border-0 text-sm">
                   <span className="flex items-center gap-2"><FileText className="w-4 h-4 text-muted-foreground" />{d}</span>
                   <div className="flex gap-1">
@@ -210,9 +216,8 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
             <h3 className="font-700 mb-3">Payment Summary</h3>
             <div className="space-y-2 text-sm">
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Product Cost</span><span className="font-tabular font-500">¥{productCny.toLocaleString()} / ₹{productInr.toLocaleString()}</span></div>
-              <div className="flex items-center justify-between"><span className="text-muted-foreground">Service Fee (8%)</span><span className="font-tabular font-500">₹{serviceFee.toLocaleString()}</span></div>
+              <div className="flex items-center justify-between"><span className="text-emerald-600 font-500">Advance Paid</span><span className="font-tabular font-500 text-emerald-600">− ₹{advancePaid.toLocaleString()}</span></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Logistics (Sea)</span><span className="font-tabular font-500">₹{logisticsInr.toLocaleString()}</span></div>
-              <div className="flex items-center justify-between"><span className="text-muted-foreground">Customs Duty (Est.)</span><span className="font-tabular font-500">₹{customs.toLocaleString()}</span></div>
               <div className="flex items-center justify-between border-t border-dashed border-border pt-2"><span className="text-muted-foreground inline-flex items-center gap-1">GST <select value={gst} onChange={e => setGst(+e.target.value)} className="input-field text-[10px] py-0.5 px-1">{gstRates.map(r => <option key={r} value={r}>{r}%</option>)}</select></span><span className="font-tabular font-500">₹{gstAmt.toLocaleString()}</span></div>
               <div className="border-t border-border pt-2 mt-1 flex items-center justify-between"><span className="font-700">Grand Total</span><span className="font-700 font-tabular text-foreground">₹{grand.toLocaleString()}</span></div>
             </div>
