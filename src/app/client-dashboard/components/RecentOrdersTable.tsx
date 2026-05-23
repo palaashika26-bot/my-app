@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import React, { useState } from 'react';
 import { Eye, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle, Truck } from 'lucide-react';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -19,7 +19,7 @@ const PIPELINE_STEP: Record<OrderStatus, number> = {
   'Payment Confirmed': 5,
   Sourcing: 6,
   'At China Warehouse': 7,
-  'Repacking/QC': 8,
+  'Repacking Warehouse': 8,
   'Ready for Shipping': 9,
   'Ready for Logistics': 9,
   'Return from China': 0,
@@ -50,7 +50,7 @@ function MiniProgressBar({ status }: { status: OrderStatus }) {
       <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
         <div
           className={`h-1 rounded-full transition-all duration-500 ${
-            status === 'Completed' ? 'bg-emerald-500' : 'bg-accent'
+            status === 'Completed' ? 'bg-emerald-500' : 'bg-[#4A3B52]'
           }`}
           style={{ width: `${pct}%` }}
           role="progressbar"
@@ -92,8 +92,8 @@ export default function RecentOrdersTable() {
     if (sortKey !== col)
       return <ChevronsUpDown className="w-3.5 h-3.5 text-muted-foreground/50 ml-1 inline" aria-hidden="true" />;
     if (sortDir === 'asc')
-      return <ChevronUp className="w-3.5 h-3.5 text-accent ml-1 inline" aria-hidden="true" />;
-    return <ChevronDown className="w-3.5 h-3.5 text-accent ml-1 inline" aria-hidden="true" />;
+      return <ChevronUp className="w-3.5 h-3.5 text-[#4A3B52] ml-1 inline" aria-hidden="true" />;
+    return <ChevronDown className="w-3.5 h-3.5 text-[#4A3B52] ml-1 inline" aria-hidden="true" />;
   }
 
   return (
@@ -132,7 +132,7 @@ export default function RecentOrdersTable() {
 
       {/* Table */}
       <div className="overflow-x-auto scrollbar-hide">
-        <table className="w-full min-w-[700px]" role="table" aria-label="Recent orders">
+        <table className="w-full min-w-0 sm:min-w-[700px]" role="table" aria-label="Recent orders">
           <thead>
             <tr className="border-b border-border bg-muted/40">
               <th
@@ -144,27 +144,27 @@ export default function RecentOrdersTable() {
               </th>
               <th
                 scope="col"
-                className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider cursor-pointer select-none hover:text-foreground transition-colors"
+                className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider cursor-pointer select-none hover:text-foreground transition-colors hidden sm:table-cell"
                 onClick={() => handleSort('date')}
               >
                 Date <SortIcon col="date" />
               </th>
               <th
                 scope="col"
-                className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider"
+                className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider hidden sm:table-cell"
               >
                 Items
               </th>
               <th
                 scope="col"
-                className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider cursor-pointer select-none hover:text-foreground transition-colors"
+                className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider cursor-pointer select-none hover:text-foreground transition-colors hidden sm:table-cell"
                 onClick={() => handleSort('amount')}
               >
                 Amount <SortIcon col="amount" />
               </th>
               <th
                 scope="col"
-                className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider"
+                className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider hidden sm:table-cell"
               >
                 Est. Delivery
               </th>
@@ -210,19 +210,19 @@ export default function RecentOrdersTable() {
                       </span>
                     </div>
                   </td>
-                  <td className="px-4 py-3.5">
+                  <td className="px-4 py-3.5 hidden sm:table-cell">
                     <span className="text-sm text-muted-foreground font-tabular">{row.date}</span>
                   </td>
-                  <td className="px-4 py-3.5">
+                  <td className="px-4 py-3.5 hidden sm:table-cell">
                     <span className="text-sm font-500 text-foreground">{row.itemCount} items</span>
                   </td>
-                  <td className="px-4 py-3.5">
+                  <td className="px-4 py-3.5 hidden sm:table-cell">
                     <div>
                       <span className="text-sm font-600 text-foreground font-tabular">{row.amount}</span>
                       <p className="text-[11px] text-muted-foreground font-tabular">{row.amountCny}</p>
                     </div>
                   </td>
-                  <td className="px-4 py-3.5">
+                  <td className="px-4 py-3.5 hidden sm:table-cell">
                     <span
                       className={`text-xs font-500 font-tabular ${
                         row.estimatedDelivery === 'On Hold' ? 'text-red-500' : 'text-muted-foreground'
@@ -238,16 +238,14 @@ export default function RecentOrdersTable() {
                     </div>
                   </td>
                   <td className="px-4 py-3.5 text-right">
-                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Link
-                        href={`/client-dashboard/orders/${row.id}`}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-500 text-accent border border-accent/30 rounded-lg hover:bg-accent/10 transition-colors"
-                        aria-label={`View order ${row.orderId}`}
-                      >
-                        <Eye className="w-3.5 h-3.5" aria-hidden="true" />
-                        Track
-                      </Link>
-                    </div>
+                    <Link
+                      href={`/client-dashboard/orders/${row.id}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-500 text-[#4A3B52] border border-[#4A3B52]/30 rounded-lg hover:bg-[#4A3B52]/10 transition-colors"
+                      aria-label={`View order ${row.orderId}`}
+                    >
+                      <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+                      Track
+                    </Link>
                   </td>
                 </tr>
               ))
@@ -271,7 +269,7 @@ export default function RecentOrdersTable() {
               key={`ord-page-${p}`}
               className={`w-7 h-7 flex items-center justify-center text-xs font-500 rounded-lg transition-colors ${
                 p === 1
-                  ? 'bg-accent text-accent-foreground'
+                  ? 'bg-[#4A3B52] text-[#4A3B52]-foreground'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
               aria-current={p === 1 ? 'page' : undefined}

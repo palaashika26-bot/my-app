@@ -22,7 +22,7 @@ function seedStaff(): StaffMember[] {
       name: 'Meera Nair',
       email: 'sourcing.staff@elioswholesale.in',
       phone: '+91 22 4000 1001',
-      role: 'sourcing_staff',
+      role: 'sourcing-logistics',
       password: 'staff-demo-24',
       lastLogin: null,
       createdAt,
@@ -32,28 +32,8 @@ function seedStaff(): StaffMember[] {
       name: 'Vikram Desai',
       email: 'warehouse.staff@elioswholesale.in',
       phone: '+91 22 4000 1002',
-      role: 'warehouse_staff',
-      password: 'staff-demo-24',
-      lastLogin: null,
-      createdAt,
-    },
-    {
-      id: 'st-seed-qc',
-      name: 'Ananya Bose',
-      email: 'qc.staff@elioswholesale.in',
-      phone: '+91 22 4000 1003',
-      role: 'qc_staff',
-      password: 'staff-demo-24',
-      lastLogin: null,
-      createdAt,
-    },
-    {
-      id: 'st-seed-logistics',
-      name: 'Rohit Menon',
-      email: 'logistics.staff@elioswholesale.in',
-      phone: '+91 22 4000 1004',
-      role: 'logistics_staff',
-      password: 'staff-demo-24',
+      role: 'warehouse-qc',
+      password: 'warehouse-24',
       lastLogin: null,
       createdAt,
     },
@@ -75,7 +55,17 @@ export function getStaffRegistry(): StaffMember[] {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
       return initial;
     }
-    return parsed;
+    // Migrate old role IDs to new combined roles
+    const migrated = parsed.map((s) => {
+      if ((s.role as string) === 'sourcing_staff' || (s.role as string) === 'logistics_staff') {
+        return { ...s, role: 'sourcing-logistics' as StaffRoleId };
+      }
+      if ((s.role as string) === 'warehouse_staff' || (s.role as string) === 'qc_staff') {
+        return { ...s, role: 'warehouse-qc' as StaffRoleId };
+      }
+      return s;
+    });
+    return migrated;
   } catch {
     return seedStaff();
   }

@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import React, { useState, useEffect, useRef } from 'react';
 import { Package, Upload } from 'lucide-react';
 
@@ -76,7 +76,7 @@ export default function ProductImage({ productName, canUpload, fill = false, onU
         type="button"
         onClick={() => fileRef.current?.click()}
         title="Click to upload product image"
-        className="group relative w-10 h-10 rounded-lg overflow-hidden border border-border hover:border-accent transition-colors focus:outline-none focus:ring-2 focus:ring-accent"
+        className="group relative w-10 h-10 rounded-lg overflow-hidden border border-border hover:border-[#4A3B52] transition-colors focus:outline-none focus:ring-2 focus:ring-accent"
       >
         {img ? (
           <>
@@ -86,15 +86,15 @@ export default function ProductImage({ productName, canUpload, fill = false, onU
             </span>
           </>
         ) : (
-          <span className="w-full h-full bg-muted flex items-center justify-center group-hover:bg-accent/10 transition-colors">
-            <Package className="w-5 h-5 text-muted-foreground group-hover:text-accent transition-colors" />
+          <span className="w-full h-full bg-muted flex items-center justify-center group-hover:bg-[#4A3B52]/10 transition-colors">
+            <Package className="w-5 h-5 text-muted-foreground group-hover:text-[#4A3B52] transition-colors" />
           </span>
         )}
       </button>
       <button
         type="button"
         onClick={() => fileRef.current?.click()}
-        className="text-[10px] text-muted-foreground hover:text-accent transition-colors"
+        className="text-[10px] text-muted-foreground hover:text-[#4A3B52] transition-colors"
       >
         📷 Change
       </button>

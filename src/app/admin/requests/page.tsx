@@ -1,6 +1,7 @@
-'use client';
-import React, { useState, useMemo } from 'react';
+﻿'use client';
+import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import AdminLayout from '@/components/AdminLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { mockRequests, mockClients } from '@/lib/adminMockData';
@@ -13,8 +14,14 @@ const tabs = ['All Requests','Pending Quotations','Awaiting Approval','Approved'
 export default function AdminRequestsPage() {
   const { addToast } = useToast();
   const perms = useAdminPermissions();
+  const searchParams = useSearchParams();
   const [items, setItems] = useState(mockRequests);
   const [tab, setTab] = useState('All Requests');
+
+  useEffect(() => {
+    const filter = searchParams.get('filter');
+    if (filter === 'awaiting-approval') setTab('Awaiting Approval');
+  }, [searchParams]);
   const [q, setQ] = useState('');
   const [clientFilter, setClientFilter] = useState('All');
   const [selected, setSelected] = useState<Record<string, boolean>>({});
@@ -39,15 +46,15 @@ export default function AdminRequestsPage() {
     <AdminLayout>
       <div className="mb-5"><h1 className="text-2xl font-700">Sourcing Requests</h1><p className="text-sm text-muted-foreground mt-1">Manage client requests</p></div>
       <div className="flex gap-1 mb-4 overflow-x-auto scrollbar-hide">
-        {tabs.map(t => <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 rounded-lg text-sm font-600 whitespace-nowrap ${tab === t ? 'bg-accent text-white' : 'text-muted-foreground hover:bg-muted'}`}>{t}</button>)}
+        {tabs.map(t => <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 rounded-full text-sm font-600 whitespace-nowrap ${tab === t ? 'bg-[#5c5470] text-white' : 'text-muted-foreground hover:bg-muted'}`}>{t}</button>)}
       </div>
       <div className="bg-card rounded-xl border border-border shadow-card p-4 mb-4 grid md:grid-cols-3 gap-3">
-        <div className="relative md:col-span-2"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search Request ID, client, items..." className="input-field pl-9" /></div>
+        <div className="relative md:col-span-2"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none z-10" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search Request ID, client, items..." className="input-field !pl-10" /></div>
         <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="input-field"><option>All</option>{mockClients.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select>
       </div>
       {Object.values(selected).some(Boolean) && (
-        <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 mb-4 flex items-center gap-2 flex-wrap">
-          <p className="text-sm font-600 text-orange-800">{Object.values(selected).filter(Boolean).length} selected</p>
+        <div className="bg-[#f5f4f7] border border-[#e8e4f0] rounded-xl p-3 mb-4 flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-600 text-[#5c5470]">{Object.values(selected).filter(Boolean).length} selected</p>
           <div className="ml-auto flex gap-2">
             <button onClick={exportSelected} className="btn-secondary px-3 py-1.5 text-xs inline-flex items-center gap-1"><Download className="w-3 h-3" /> Export</button>
             {perms.isFullAdmin && (
@@ -81,7 +88,7 @@ export default function AdminRequestsPage() {
                 return (
                 <tr key={r.id} className={`table-row-hover ${r.status === 'Exception' ? 'bg-red-50/40' : ''}`}>
                   <td className="px-3 py-3"><input type="checkbox" checked={!!selected[r.id]} onChange={() => setSelected(s => ({ ...s, [r.id]: !s[r.id] }))} className="accent-accent" /></td>
-                  <td className="px-3 py-3"><div className="flex items-center gap-2">{r.source === 'photo_scan' && <Camera className="w-3.5 h-3.5 text-accent" aria-label="Photo-scan submission" />}<Link href={`/admin/requests/${r.id}`} className="font-tabular font-600 text-primary hover:text-accent">{r.requestId}</Link></div></td>
+                  <td className="px-3 py-3"><div className="flex items-center gap-2">{r.source === 'photo_scan' && <Camera className="w-3.5 h-3.5 text-[#4A3B52]" aria-label="Photo-scan submission" />}<Link href={`/admin/requests/${r.id}`} className="font-tabular font-600 text-primary hover:text-[#4A3B52]">{r.requestId}</Link></div></td>
                   <td className="px-3 py-3"><p className="text-sm">{r.client}</p><p className="text-[11px] text-muted-foreground">{client?.email}</p></td>
                   <td className="px-3 py-3">
                     <p className="text-sm">{r.items} items</p>
@@ -96,7 +103,7 @@ export default function AdminRequestsPage() {
                     <div className="flex items-center justify-end gap-1">
                       <Link href={`/admin/requests/${r.id}`} className="p-1.5 rounded-md hover:bg-muted" title="View"><Eye className="w-3.5 h-3.5" /></Link>
                       {perms.quotationScope === 'full' && (
-                        <button onClick={() => sendQuote(r.id)} className="p-1.5 rounded-md hover:bg-muted text-accent" title="Send Quotation"><Send className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => sendQuote(r.id)} className="p-1.5 rounded-md hover:bg-muted text-[#4A3B52]" title="Send Quotation"><Send className="w-3.5 h-3.5" /></button>
                       )}
                       {perms.isFullAdmin && (
                         <button onClick={() => markException(r.id)} className="p-1.5 rounded-md hover:bg-muted text-red-500" title="Mark Exception"><AlertTriangle className="w-3.5 h-3.5" /></button>

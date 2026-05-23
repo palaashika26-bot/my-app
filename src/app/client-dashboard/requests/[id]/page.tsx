@@ -1,14 +1,15 @@
-'use client';
+﻿'use client';
 import React, { useState, use, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import ClientShell from '@/components/ClientShell';
+import ClientLayout from '@/components/ClientLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { mockRequests } from '@/lib/mockData';
 import type { RequestLineItem, PerProductQuoteStatus } from '@/lib/mockData';
 import { defaultLineItemsFromRequest, loadRfqLineItems, persistRfqLineItems } from '@/lib/rfqLineItems';
 import { loadPaymentProof, loadPaymentConfirmed } from '@/lib/paymentStore';
-import { ArrowLeft, Check, MessageSquare, CheckCircle2, Circle, ImageIcon } from 'lucide-react';
+import { ArrowLeft, Check, MessageSquare, CheckCircle2, Circle } from 'lucide-react';
+import ProductImage from '@/components/ProductImage';
 import { notFound } from 'next/navigation';
 import { useToast } from '@/components/ui/Toast';
 
@@ -49,6 +50,15 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
   const [counterInputValues, setCounterInputValues] = useState<Record<string, string>>({});
   const [paymentSubmitted, setPaymentSubmitted] = useState(false);
   const [orderConfirmed, setOrderConfirmed] = useState(false);
+  const [logistics, setLogistics] = useState<null | { weight: string; mode: string; pricePerKg: string; note: string }>(null);
+
+  interface ReqChatMsg { id: string; sender: 'admin' | 'client'; text: string; time: string; }
+  const [reqChatInput, setReqChatInput] = useState('');
+  const lastReqSent = React.useRef(0);
+  const [reqChatMessages, setReqChatMessages] = useState<ReqChatMsg[]>([
+    { id: 'rc-seed-1', sender: 'admin', text: "We've sourced this from 3 suppliers in Yiwu. Best price attached above. Lead time: 12–15 days.", time: '2 hours ago' },
+    { id: 'rc-seed-2', sender: 'client', text: 'Can we get a sample first before placing the bulk order?', time: '1 hour ago' },
+  ]);
 
   useEffect(() => {
     const row = mockRequests.find(r => r.id === id);
@@ -56,7 +66,28 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
     setLineItems(loadRfqLineItems(row));
     setPaymentSubmitted(!!loadPaymentProof(id));
     setOrderConfirmed(loadPaymentConfirmed(id));
+    const savedLogistics = localStorage.getItem(`logistics-estimate-${id}`);
+    if (savedLogistics) {
+      try { setLogistics(JSON.parse(savedLogistics)); } catch {}
+    }
+    const savedChat = localStorage.getItem(`req-chat-${id}`);
+    if (savedChat) {
+      try { setReqChatMessages(JSON.parse(savedChat)); } catch {}
+    }
   }, [id]);
+
+  function sendReqMessage() {
+    const now = Date.now();
+    if (now - lastReqSent.current < 2000) { alert('Please wait before sending again.'); return; }
+    const sanitized = reqChatInput.replace(/[<>"']/g, '').trim().slice(0, 2000);
+    if (!sanitized) return;
+    lastReqSent.current = now;
+    const newMsg: ReqChatMsg = { id: `rc-${Date.now()}`, sender: 'client', text: sanitized, time: 'Just now' };
+    const updated = [...reqChatMessages, newMsg];
+    setReqChatMessages(updated);
+    try { localStorage.setItem(`req-chat-${id}`, JSON.stringify(updated)); } catch {}
+    setReqChatInput('');
+  }
 
   // Poll for admin confirmation so timeline updates in the same session
   useEffect(() => {
@@ -138,11 +169,12 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
   }
 
   return (
-    <ClientShell>
+    <ClientLayout>
+      <div className="px-0 sm:px-0">
       <Link href="/client-dashboard/requests" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4">
         <ArrowLeft className="w-4 h-4" /> Back to Requests
       </Link>
-      <div className="bg-card rounded-xl border border-border shadow-card p-5 mb-5">
+      <div className="bg-card rounded-xl border border-border shadow-card p-4 sm:p-5 mb-5">
         <div className="flex flex-wrap items-center gap-3">
           <span className="font-tabular font-700">{req.requestId}</span>
           <StatusBadge status={req.status as never} />
@@ -152,8 +184,8 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
         </p>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2 space-y-5">
+      <div className="grid lg:grid-cols-3 gap-4 sm:gap-5">
+        <div className="lg:col-span-2 space-y-4 sm:space-y-5 min-w-0">
           {req.imageAttached && (
             <div className="bg-card rounded-xl border border-border shadow-card p-5">
               <h3 className="text-sm font-700 mb-3">Photo-Scan Submission</h3>
@@ -169,7 +201,7 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
             </div>
           )}
 
-          <div className="bg-card rounded-xl border border-border shadow-card p-5">
+          <div className="bg-card rounded-xl border border-border shadow-card p-4 sm:p-5">
             <h3 className="text-sm font-700 mb-3">Items requested</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[640px]">
@@ -177,8 +209,8 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
                   <tr className="border-b border-border text-[11px] uppercase text-muted-foreground">
                     <th className="py-2 text-left font-600 w-12">Image</th>
                     <th className="py-2 text-left font-600 pl-3">Item</th>
-                    <th className="text-right font-600">Qty</th>
-                    <th className="text-left font-600 pl-3">Specs / Notes</th>
+                    <th className="text-right font-600 w-10">Qty</th>
+                    <th className="text-left font-600 pl-3 hidden sm:table-cell">Specs / Notes</th>
                     {showQuote && <th className="text-right font-600">Price (INR / CNY)</th>}
                     {showQuote && <th className="text-right font-600 pl-3">Actions</th>}
                   </tr>
@@ -189,14 +221,8 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
                     const isCountering = activeCounterInput === line.id;
                     return (
                       <tr key={line.id}>
-                        <td className="py-3 align-middle">
-                          {line.imageUrl ? (
-                            <img src={line.imageUrl} alt={line.name} className="w-10 h-10 rounded-lg object-cover border border-border" />
-                          ) : (
-                            <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center border border-border">
-                              <ImageIcon className="w-5 h-5 text-muted-foreground" />
-                            </div>
-                          )}
+                        <td className="py-3 pr-3 align-middle">
+                          <ProductImage productName={line.name} canUpload={false} />
                         </td>
                         <td className="py-3 font-500 pl-3">
                           <div>{line.name}</div>
@@ -215,7 +241,9 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
                           )}
                         </td>
                         <td className="text-right font-tabular align-top py-3">{line.quantity}</td>
-                        <td className="pl-3 text-xs text-muted-foreground align-top py-3">{line.specs}</td>
+                        <td className="pl-3 text-xs text-muted-foreground align-top py-3 hidden sm:table-cell max-w-[120px]">
+                          <span className="line-clamp-2">{line.specs}</span>
+                        </td>
                         {showQuote && (
                           <td className="text-right align-top py-3">
                             {line.unitPriceInr != null ? (
@@ -249,14 +277,14 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
                                     <button type="button" onClick={() => setActiveCounterInput(null)} className="btn-secondary px-2 py-1 text-xs">✕</button>
                                   </div>
                                 ) : (
-                                  <div className="flex gap-1 justify-end">
-                                    <button type="button" onClick={() => acceptLine(line.id)} className="btn-primary px-2 py-1 text-xs inline-flex items-center gap-1">
+                                  <div className="flex flex-col gap-1 items-stretch sm:flex-row sm:items-center sm:justify-end">
+                                    <button type="button" onClick={() => acceptLine(line.id)} className="btn-primary px-2 py-1 text-xs inline-flex items-center justify-center gap-1 min-h-[36px]">
                                       <Check className="w-3 h-3" /> Accept
                                     </button>
-                                    <button type="button" onClick={() => rejectLine(line.id)} className="btn-secondary px-2 py-1 text-xs">
+                                    <button type="button" onClick={() => rejectLine(line.id)} className="btn-secondary px-2 py-1 text-xs min-h-[36px]">
                                       Reject
                                     </button>
-                                    <button type="button" onClick={() => setActiveCounterInput(line.id)} className="btn-secondary px-2 py-1 text-xs">
+                                    <button type="button" onClick={() => setActiveCounterInput(line.id)} className="btn-secondary px-2 py-1 text-xs min-h-[36px] whitespace-nowrap">
                                       Counter Offer
                                     </button>
                                   </div>
@@ -273,33 +301,62 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
                 </tbody>
               </table>
             </div>
+            {showQuote && logistics && (
+              <div className="mt-5 pt-5 border-t border-border">
+                <h4 className="text-sm font-700 mb-3">Logistics Total on Quotation</h4>
+                <div className="space-y-1.5 text-sm">
+                  {logistics.weight && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Approx Weight</span>
+                      <span className="font-500">{logistics.weight}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Mode</span>
+                    <span className="font-500">{logistics.mode}</span>
+                  </div>
+                  {logistics.pricePerKg && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Price per KG</span>
+                      <span className="font-tabular font-500">¥{logistics.pricePerKg}</span>
+                    </div>
+                  )}
+                  {logistics.note && (
+                    <p className="text-xs text-muted-foreground italic mt-2 pt-2 border-t border-border">{logistics.note}</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="bg-card rounded-xl border border-border shadow-card p-5">
+          <div className="bg-card rounded-xl border border-border shadow-card p-4 sm:p-5">
             <h3 className="text-sm font-700 mb-3">Conversation</h3>
             <div className="space-y-3">
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center text-xs font-700">AS</div>
-                <div className="flex-1 bg-muted/50 rounded-lg p-3">
-                  <p className="text-xs font-600">Arjun (Admin)</p>
-                  <p className="text-sm mt-1">
-                    We&apos;ve sourced this from 3 suppliers in Yiwu. Best price attached above. Lead time: 12–15 days.
-                  </p>
-                  <p className="text-[10px] text-muted-foreground mt-1">2 hours ago</p>
+              {reqChatMessages.map(msg => (
+                <div key={msg.id} className="flex gap-3">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-700 flex-shrink-0 ${msg.sender === 'admin' ? 'bg-[#5c5470] text-white' : 'bg-[#c17b5c] text-white'}`}>
+                    {msg.sender === 'admin' ? 'AS' : 'RK'}
+                  </div>
+                  <div className={`max-w-[85%] rounded-lg p-3 break-words ${msg.sender === 'admin' ? 'bg-muted/50' : 'bg-[#f0eef8]'}`}>
+                    <p className="text-xs font-600">{msg.sender === 'admin' ? 'Arjun (Admin)' : 'You'}</p>
+                    <p className="text-sm mt-1">{msg.text}</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">{msg.time}</p>
+                  </div>
                 </div>
-              </div>
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-accent text-white flex items-center justify-center text-xs font-700">RK</div>
-                <div className="flex-1 bg-orange-50/40 rounded-lg p-3">
-                  <p className="text-xs font-600">You</p>
-                  <p className="text-sm mt-1">Can we get a sample first before placing the bulk order?</p>
-                  <p className="text-[10px] text-muted-foreground mt-1">1 hour ago</p>
-                </div>
-              </div>
+              ))}
             </div>
             <div className="flex gap-2 mt-4">
-              <input className="input-field flex-1" placeholder="Type a message..." />
-              <button className="btn-primary px-4 inline-flex items-center gap-1.5">
+              <input
+                className="input-field flex-1 min-w-0"
+                placeholder="Type a message..."
+                value={reqChatInput}
+                onChange={e => setReqChatInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') sendReqMessage(); }}
+              />
+              <button
+                onClick={sendReqMessage}
+                className="btn-primary px-3 sm:px-4 inline-flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap"
+              >
                 <MessageSquare className="w-4 h-4" /> Send
               </button>
             </div>
@@ -316,14 +373,14 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
                 <li key={s} className="flex items-start gap-3">
                   <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
                     done    ? 'bg-emerald-500 text-white' :
-                    current ? 'bg-accent text-white animate-pulse' :
+                    current ? 'bg-[#4A3B52] text-white animate-pulse' :
                               'bg-muted text-muted-foreground'
                   }`}>
                     {done ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Circle className="w-3 h-3" />}
                   </div>
                   <p className={`text-sm pt-0.5 ${
                     done    ? 'font-500 text-foreground' :
-                    current ? 'font-700 text-accent' :
+                    current ? 'font-700 text-[#4A3B52]' :
                               'font-500 text-muted-foreground'
                   }`}>{s}</p>
                 </li>
@@ -332,6 +389,7 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
           </ol>
         </div>
       </div>
-    </ClientShell>
+      </div>{/* end outer wrapper */}
+    </ClientLayout>
   );
 }

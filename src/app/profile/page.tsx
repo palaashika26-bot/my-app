@@ -1,6 +1,6 @@
-'use client';
+﻿'use client';
 import React, { useState } from 'react';
-import ClientShell from '@/components/ClientShell';
+import ClientLayout from '@/components/ClientLayout';
 import { useToast } from '@/components/ui/Toast';
 import { Edit2, Save } from 'lucide-react';
 
@@ -10,9 +10,9 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState({ firstName: 'Rajesh', lastName: 'Kumar', email: 'rajesh@techimports.in', phone: '+91 98765 43210', company: 'TechImports India', gstin: '27AABCT3518Q1Z9', businessType: 'Retailer', address: 'Andheri East, Mumbai 400069' });
 
   return (
-    <ClientShell>
+    <ClientLayout>
       <div className="bg-card rounded-xl border border-border shadow-card p-6 mb-5 flex flex-col sm:flex-row sm:items-center gap-4">
-        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-accent to-orange-600 flex items-center justify-center text-white font-700 text-2xl">RK</div>
+        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-accent to-[#1A1423] flex items-center justify-center text-white font-700 text-2xl">RK</div>
         <div className="flex-1"><h1 className="text-xl font-700">{profile.firstName} {profile.lastName}</h1><p className="text-sm text-muted-foreground">{profile.email}</p><p className="text-xs text-muted-foreground mt-1">{profile.company}</p></div>
         <button onClick={() => setEditing(!editing)} className="btn-secondary px-4 py-2 text-sm inline-flex items-center gap-2">{editing ? <><Save className="w-4 h-4" /> Save</> : <><Edit2 className="w-4 h-4" /> Edit Profile</>}</button>
       </div>
@@ -55,6 +55,6 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
-    </ClientShell>
+    </ClientLayout>
   );
 }

@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React from 'react';
 import { useRouter } from 'next/navigation';
@@ -42,7 +42,7 @@ export default function NotFound() {
 
                     <button
                         onClick={handleGoHome}
-                        className="inline-flex items-center justify-center gap-2 border border-border bg-background text-foreground px-6 py-3 rounded-lg font-medium hover:bg-accent hover:text-accent-foreground transition-colors duration-200"
+                        className="inline-flex items-center justify-center gap-2 border border-border bg-background text-foreground px-6 py-3 rounded-lg font-medium hover:bg-[#4A3B52] hover:text-[#4A3B52]-foreground transition-colors duration-200"
                     >
                         <Icon name="HomeIcon" size={16} />
                         Back to Home

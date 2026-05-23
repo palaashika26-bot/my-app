@@ -1,9 +1,9 @@
-'use client';
+﻿'use client';
 
 import React, { use, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import ClientShell from '@/components/ClientShell';
+import ClientLayout from '@/components/ClientLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/context/AuthContext';
@@ -42,15 +42,15 @@ export default function ClientOrderQcPage({ params }: { params: Promise<{ orderI
 
   if (o.client && user?.name && o.client !== user.name) {
     return (
-      <ClientShell>
+      <ClientLayout>
         <div className="bg-card border border-border rounded-xl p-6 max-w-lg">
           <p className="text-sm font-600">Access denied</p>
           <p className="text-xs text-muted-foreground mt-2">This order belongs to another account.</p>
-          <Link href="/client-dashboard/orders" className="inline-block mt-4 text-sm text-accent font-500">
+          <Link href="/client-dashboard/orders" className="inline-block mt-4 text-sm text-[#4A3B52] font-500">
             Back to orders
           </Link>
         </div>
-      </ClientShell>
+      </ClientLayout>
     );
   }
 
@@ -91,7 +91,7 @@ export default function ClientOrderQcPage({ params }: { params: Promise<{ orderI
   }
 
   return (
-    <ClientShell>
+    <ClientLayout>
       <Link
         href={`/client-dashboard/orders/${o.id}`}
         className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4"
@@ -100,7 +100,7 @@ export default function ClientOrderQcPage({ params }: { params: Promise<{ orderI
       </Link>
 
       <div className="bg-card rounded-xl border border-border shadow-card p-5 mb-6">
-        <p className="text-xs text-muted-foreground font-500 uppercase tracking-wide">Client QC review</p>
+        <p className="text-xs text-muted-foreground font-500 uppercase tracking-wide">Client Repacking Warehouse review</p>
         <h1 className="text-xl font-800 font-tabular mt-1">{o.orderId}</h1>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <StatusBadge status={effectiveStatus as any} size="md" />
@@ -109,13 +109,13 @@ export default function ClientOrderQcPage({ params }: { params: Promise<{ orderI
 
       {!bundle?.submittedForClient && (
         <div className="bg-muted/50 border border-border rounded-xl p-4 mb-6 text-sm text-muted-foreground">
-          Warehouse has not submitted QC photos for your approval yet. Please check back later.
+          Warehouse has not submitted Repacking Warehouse photos for your approval yet. Please check back later.
         </div>
       )}
 
       {bundle?.submittedForClient && anyRejected && (
         <div className="bg-rose-50 border border-rose-200 text-rose-900 rounded-xl p-4 mb-6 text-sm">
-          <p className="font-600">This order was rejected on QC</p>
+          <p className="font-600">This order was rejected on Repacking Warehouse</p>
           <p className="text-xs mt-1 opacity-90">Status: Return from China. Our admin team has been notified.</p>
         </div>
       )}
@@ -176,7 +176,7 @@ export default function ClientOrderQcPage({ params }: { params: Promise<{ orderI
                         onChange={(e) => setRejectText((prev) => ({ ...prev, [line.id]: e.target.value }))}
                         rows={2}
                         placeholder="Explain issues, wrong item, damage, etc."
-                        className="w-full text-sm rounded-lg border border-border bg-background px-3 py-2 outline-none focus:border-accent"
+                        className="w-full text-sm rounded-lg border border-border bg-background px-3 py-2 outline-none focus:border-[#4A3B52]"
                       />
                       <div className="flex flex-wrap gap-2">
                         <button
@@ -202,7 +202,7 @@ export default function ClientOrderQcPage({ params }: { params: Promise<{ orderI
           );
         })}
       </div>
-    </ClientShell>
+    </ClientLayout>
   );
 }
 

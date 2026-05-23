@@ -1,81 +1,96 @@
 'use client';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Package, MapPin, Clock, CheckCircle2, Warehouse } from 'lucide-react';
+import { getOrders } from '@/lib/ordersStore';
+import type { OrderRow } from '@/lib/ordersStore';
 
-const pipelineStats = [
+const PIPELINE_STAGES = [
   {
-    id: 'stat-china-warehouse',
+    id: 'china-wh',
+    label: 'China Warehouse',
+    statuses: ['At China Warehouse'],
     icon: Package,
-    label: 'At China Warehouse',
-    count: 2,
     color: 'text-cyan-600',
     bg: 'bg-cyan-50',
-    dot: 'bg-cyan-500',
   },
   {
-    id: 'stat-china-consolidation',
+    id: 'consolidation',
+    label: 'Consolidation',
+    statuses: ['China Consolidation Warehouse', 'Repacking Warehouse'],
     icon: Warehouse,
-    label: 'China Consolidation Warehouse',
-    count: 1,
     color: 'text-indigo-600',
     bg: 'bg-indigo-50',
-    dot: 'bg-indigo-500',
   },
   {
-    id: 'stat-in-transit',
+    id: 'in-transit',
+    label: 'In Transit',
+    statuses: ['Shipped from China', 'In Transit'],
     icon: MapPin,
-    label: 'In Transit (Shipped)',
-    count: 1,
-    color: 'text-orange-600',
-    bg: 'bg-orange-50',
-    dot: 'bg-orange-500',
+    color: 'text-[#5c5470]',
+    bg: 'bg-[#f0eef8]',
   },
   {
-    id: 'stat-india-warehouse',
-    icon: CheckCircle2,
+    id: 'india-wh',
     label: 'India Warehouse',
-    count: 1,
+    statuses: ['Arrived India Warehouse'],
+    icon: CheckCircle2,
     color: 'text-green-600',
     bg: 'bg-green-50',
-    dot: 'bg-green-500',
   },
   {
-    id: 'stat-out-delivery',
-    icon: Clock,
+    id: 'delivery',
     label: 'Out for Delivery',
-    count: 1,
+    statuses: ['Out for Delivery'],
+    icon: Clock,
     color: 'text-emerald-600',
     bg: 'bg-emerald-50',
-    dot: 'bg-emerald-500',
   },
 ];
 
 export default function QuickStats() {
+  const router = useRouter();
+  const [orders, setOrders] = useState<OrderRow[]>([]);
+
+  useEffect(() => {
+    setOrders(getOrders());
+  }, []);
+
+  const totalInPipeline = orders.filter(o =>
+    PIPELINE_STAGES.some(s => s.statuses.includes(o.status))
+  ).length;
+
   return (
     <div className="bg-card rounded-xl border border-border shadow-card px-5 py-4">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-sm font-600 text-foreground">Pipeline Overview</h2>
         <span className="text-xs text-muted-foreground">Live status</span>
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        {pipelineStats?.map((stat) => (
-          <div
-            key={stat?.id}
-            className="flex flex-col items-center justify-center p-3 rounded-xl bg-muted/40 hover:bg-muted transition-colors cursor-default"
-          >
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-2 ${stat?.bg}`}>
-              <stat.icon className={`w-4.5 h-4.5 ${stat?.color}`} aria-hidden="true" />
+
+      {/* Horizontal stage cards */}
+      <div className="grid grid-cols-5 gap-2">
+        {PIPELINE_STAGES.map((stage) => {
+          const count = orders.filter(o => stage.statuses.includes(o.status)).length;
+          return (
+            <div
+              key={stage.id}
+              onClick={() => router.push('/client-dashboard/orders?view=pipeline')}
+              className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border bg-muted/20 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200"
+            >
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${stage.bg}`}>
+                <stage.icon className={`w-4 h-4 ${stage.color}`} aria-hidden="true" />
+              </div>
+              <span className={`text-xl font-700 font-tabular leading-none ${count > 0 ? stage.color : 'text-muted-foreground'}`}>
+                {count}
+              </span>
+              <span className="text-[10px] text-muted-foreground text-center leading-tight">{stage.label}</span>
             </div>
-            <span className={`text-xl font-700 font-tabular ${stat?.color} leading-none`}>
-              {stat?.count}
-            </span>
-            <span className="text-[11px] text-muted-foreground font-500 text-center mt-1 leading-tight">
-              {stat?.label}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
-      {/* China → India visual */}
+
+      {/* China → India pipeline progress bar */}
       <div className="mt-4 flex items-center gap-2 p-3 rounded-lg bg-muted/30">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <span className="text-base">🇨🇳</span>
@@ -84,13 +99,13 @@ export default function QuickStats() {
         <div className="flex-1 flex items-center gap-1">
           {[
             { w: '25%', color: 'bg-cyan-400' },
-            { w: '15%', color: 'bg-orange-400' },
+            { w: '15%', color: 'bg-[#5c5470]' },
             { w: '60%', color: 'bg-muted' },
-          ]?.map((seg, i) => (
+          ].map((seg, i) => (
             <div
               key={`pipeline-seg-${i}`}
-              className={`h-1.5 rounded-full ${seg?.color}`}
-              style={{ width: seg?.w }}
+              className={`h-1.5 rounded-full ${seg.color}`}
+              style={{ width: seg.w }}
               aria-hidden="true"
             />
           ))}
@@ -100,9 +115,20 @@ export default function QuickStats() {
           <span className="text-base">🇮🇳</span>
         </div>
       </div>
-      <p className="text-[11px] text-muted-foreground text-center mt-1.5">
-        6 shipments currently in the China → India pipeline
-      </p>
+      <div className="flex items-center justify-between mt-1.5">
+        <p className="text-[11px] text-muted-foreground">
+          {totalInPipeline > 0
+            ? `${totalInPipeline} shipment${totalInPipeline !== 1 ? 's' : ''} in pipeline`
+            : 'No active shipments in pipeline'}
+        </p>
+        <Link
+          href="/client-dashboard/orders?view=pipeline"
+          className="text-[11px] font-500 hover:underline"
+          style={{ color: '#c17b5c' }}
+        >
+          View Pipeline Details →
+        </Link>
+      </div>
     </div>
   );
 }

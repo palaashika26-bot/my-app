@@ -1,0 +1,262 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  STAFF
+  CLIENT
+}
+
+enum OrderStatus {
+  CONFIRMED
+  SOURCING
+  QC_PENDING
+  QC_PASSED
+  QC_FAILED
+  REPACKING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum InquiryStatus {
+  PENDING
+  REVIEWING
+  QUOTED
+  ACCEPTED
+  REJECTED
+}
+
+enum QCStatus {
+  PENDING
+  PASSED
+  FAILED
+}
+
+enum ShipmentStatus {
+  PREPARING
+  DISPATCHED
+  IN_TRANSIT
+  CUSTOMS
+  DELIVERED
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  phone        String?
+  role         Role      @default(CLIENT)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  client        Client?
+  refreshTokens RefreshToken[]
+  qcChecks      QualityCheck[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Client {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  companyName  String
+  gstin        String?  @unique
+  addressLine1 String?
+  city         String?
+  state        String?
+  pincode      String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id])
+  inquiries Inquiry[]
+  orders    Order[]
+
+  @@map("clients")
+}
+
+model Supplier {
+  id           String   @id @default(uuid())
+  companyName  String
+  country      String   @default("China")
+  city         String?
+  contactName  String?
+  contactEmail String?
+  contactPhone String?
+  notes        String?
+  isVerified   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  products   Product[]
+  orderItems OrderItem[]
+
+  @@map("suppliers")
+}
+
+model ProductCategory {
+  id          String  @id @default(uuid())
+  name        String
+  slug        String  @unique
+  description String?
+  parentId    String?
+
+  parent   ProductCategory?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children ProductCategory[] @relation("CategoryTree")
+  products Product[]
+
+  @@index([slug])
+  @@map("product_categories")
+}
+
+model Product {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?
+  unit        String    @default("PCS")
+  moq         Int       @default(1)
+  basePrice   Decimal   @db.Decimal(12, 2)
+  currency    String    @default("CNY")
+  supplierId  String
+  categoryId  String
+  images      String[]
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  supplier   Supplier        @relation(fields: [supplierId], references: [id])
+  category   ProductCategory @relation(fields: [categoryId], references: [id])
+  inquiries  Inquiry[]
+  orderItems OrderItem[]
+
+  @@index([slug])
+  @@index([supplierId])
+  @@map("products")
+}
+
+model Inquiry {
+  id                 String        @id @default(uuid())
+  clientId           String
+  productId          String?
+  customDescription  String?
+  quantity           Int
+  targetPricePerUnit Decimal?      @db.Decimal(12, 2)
+  status             InquiryStatus @default(PENDING)
+  staffNotes         String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  client  Client   @relation(fields: [clientId], references: [id])
+  product Product? @relation(fields: [productId], references: [id])
+
+  @@index([clientId])
+  @@map("inquiries")
+}
+
+model Order {
+  id              String      @id @default(uuid())
+  orderNumber     String      @unique
+  clientId        String
+  status          OrderStatus @default(CONFIRMED)
+  subtotalINR     Decimal     @db.Decimal(12, 2)
+  shippingCostINR Decimal     @db.Decimal(12, 2) @default(0)
+  taxINR          Decimal     @db.Decimal(12, 2) @default(0)
+  totalINR        Decimal     @db.Decimal(12, 2)
+  notes           String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  deletedAt       DateTime?
+
+  client   Client      @relation(fields: [clientId], references: [id])
+  items    OrderItem[]
+  shipment Shipment?
+
+  @@index([clientId])
+  @@index([orderNumber])
+  @@map("orders")
+}
+
+model OrderItem {
+  id           String  @id @default(uuid())
+  orderId      String
+  productId    String
+  supplierId   String
+  quantity     Int
+  unitPriceCNY Decimal @db.Decimal(12, 2)
+  unitPriceINR Decimal @db.Decimal(12, 2)
+  totalINR     Decimal @db.Decimal(12, 2)
+  notes        String?
+
+  order    Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product  Product      @relation(fields: [productId], references: [id])
+  supplier Supplier     @relation(fields: [supplierId], references: [id])
+  qcCheck  QualityCheck?
+
+  @@map("order_items")
+}
+
+model Shipment {
+  id                String         @id @default(uuid())
+  orderId           String         @unique
+  trackingNumber    String?
+  carrier           String?
+  status            ShipmentStatus @default(PREPARING)
+  dispatchedAt      DateTime?
+  estimatedDelivery DateTime?
+  deliveredAt       DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@map("shipments")
+}
+
+model QualityCheck {
+  id              String    @id @default(uuid())
+  orderItemId     String    @unique
+  checkedByUserId String
+  status          QCStatus  @default(PENDING)
+  notes           String?
+  images          String[]
+  checkedAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  orderItem     OrderItem @relation(fields: [orderItemId], references: [id])
+  checkedByUser User      @relation(fields: [checkedByUserId], references: [id])
+
+  @@map("quality_checks")
+}

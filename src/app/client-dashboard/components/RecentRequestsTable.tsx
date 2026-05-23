@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import React, { useState } from 'react';
 import { Eye, ChevronUp, ChevronDown, ChevronsUpDown, Plus, AlertTriangle } from 'lucide-react';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -38,8 +38,8 @@ export default function RecentRequestsTable() {
     if (sortKey !== col)
       return <ChevronsUpDown className="w-3.5 h-3.5 text-muted-foreground/50 ml-1 inline" aria-hidden="true" />;
     if (sortDir === 'asc')
-      return <ChevronUp className="w-3.5 h-3.5 text-accent ml-1 inline" aria-hidden="true" />;
-    return <ChevronDown className="w-3.5 h-3.5 text-accent ml-1 inline" aria-hidden="true" />;
+      return <ChevronUp className="w-3.5 h-3.5 text-[#4A3B52] ml-1 inline" aria-hidden="true" />;
+    return <ChevronDown className="w-3.5 h-3.5 text-[#4A3B52] ml-1 inline" aria-hidden="true" />;
   }
 
   return (
@@ -90,20 +90,20 @@ export default function RecentRequestsTable() {
               </th>
               <th
                 scope="col"
-                className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider cursor-pointer select-none hover:text-foreground transition-colors"
+                className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider cursor-pointer select-none hover:text-foreground transition-colors hidden sm:table-cell"
                 onClick={() => handleSort('date')}
               >
                 Date <SortIcon col="date" />
               </th>
               <th
                 scope="col"
-                className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider"
+                className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider hidden sm:table-cell"
               >
                 Items
               </th>
               <th
                 scope="col"
-                className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider"
+                className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider hidden sm:table-cell"
               >
                 Budget Est.
               </th>
@@ -155,10 +155,10 @@ export default function RecentRequestsTable() {
                       </span>
                     </div>
                   </td>
-                  <td className="px-4 py-3.5">
+                  <td className="px-4 py-3.5 hidden sm:table-cell">
                     <span className="text-sm text-muted-foreground font-tabular">{row.date}</span>
                   </td>
-                  <td className="px-4 py-3.5">
+                  <td className="px-4 py-3.5 hidden sm:table-cell">
                     <div>
                       <span className="text-sm font-500 text-foreground">{row.items} items</span>
                       <p className="text-xs text-muted-foreground mt-0.5 max-w-[180px] truncate" title={row.itemNames}>
@@ -166,33 +166,21 @@ export default function RecentRequestsTable() {
                       </p>
                     </div>
                   </td>
-                  <td className="px-4 py-3.5">
+                  <td className="px-4 py-3.5 hidden sm:table-cell">
                     <span className="text-sm font-500 text-foreground font-tabular">{row.totalBudget}</span>
                   </td>
                   <td className="px-4 py-3.5">
                     <StatusBadge status={row.status as OrderStatus} />
                   </td>
                   <td className="px-4 py-3.5 text-right">
-                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Link
-                        href={`/client-dashboard/requests/${row.id}`}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-500 text-accent border border-accent/30 rounded-lg hover:bg-accent/10 transition-colors"
-                        aria-label={`View request ${row.requestId}`}
-                      >
-                        <Eye className="w-3.5 h-3.5" aria-hidden="true" />
-                        View
-                      </Link>
-                    </div>
-                    <div className="opacity-100 group-hover:opacity-0 transition-opacity absolute -mt-7">
-                      <Link
-                        href={`/client-dashboard/requests/${row.id}`}
-                        className="text-xs text-accent font-500"
-                        aria-label={`View request ${row.requestId}`}
-                        tabIndex={-1}
-                      >
-                        View
-                      </Link>
-                    </div>
+                    <Link
+                      href={`/client-dashboard/requests/${row.id}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-500 text-[#4A3B52] border border-[#4A3B52]/30 rounded-lg hover:bg-[#4A3B52]/10 transition-colors"
+                      aria-label={`View request ${row.requestId}`}
+                    >
+                      <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+                      View
+                    </Link>
                   </td>
                 </tr>
               ))
@@ -216,7 +204,7 @@ export default function RecentRequestsTable() {
               key={`req-page-${p}`}
               className={`w-7 h-7 flex items-center justify-center text-xs font-500 rounded-lg transition-colors ${
                 p === 1
-                  ? 'bg-accent text-accent-foreground'
+                  ? 'bg-[#4A3B52] text-[#4A3B52]-foreground'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
               aria-current={p === 1 ? 'page' : undefined}

@@ -1,15 +1,15 @@
-'use client';
+﻿'use client';
 import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import ClientShell from '@/components/ClientShell';
+import ClientLayout from '@/components/ClientLayout';
 import { useToast } from '@/components/ui/Toast';
-import { ArrowLeft, Camera, Upload, Copy, X, Sparkles, Check } from 'lucide-react';
+import { ArrowLeft, Camera, Upload, X, Sparkles, Check } from 'lucide-react';
 
 const mockScanResults = [
-  { productName: 'LED Strip Light (RGB, 5m)', category: 'Lighting & Electrical', detectedSpecs: ['RGB Color Changing', '5 Meter Roll', 'IP65 Waterproof', '12V DC', 'SMD 5050 LEDs'], estimatedUnitPrice: '¥35–55 (₹420–660)', suggestedQuantity: 100, confidence: 94, similarProducts: ['LED Strip Light 10m', 'LED Neon Flex', 'LED Fairy Lights'], keywords1688: 'LED灯带 RGB 5米' },
-  { productName: 'Silicone Phone Case (Universal)', category: 'Mobile Accessories', detectedSpecs: ['Silicone Material', 'Drop Protection', 'Multiple Colors', 'Compatible: iPhone/Samsung'], estimatedUnitPrice: '¥8–15 (₹96–180)', suggestedQuantity: 500, confidence: 89, similarProducts: ['TPU Phone Case', 'Clear Phone Case', 'Leather Flip Case'], keywords1688: '硅胶手机壳' },
-  { productName: 'Stainless Steel Water Bottle (500ml)', category: 'Kitchenware', detectedSpecs: ['500ml Capacity', '304 Stainless Steel', 'Double-Wall Insulated', 'BPA Free', 'Leak-Proof Lid'], estimatedUnitPrice: '¥18–28 (₹216–336)', suggestedQuantity: 200, confidence: 91, similarProducts: ['Insulated Tumbler', 'Plastic Water Bottle', 'Glass Bottle'], keywords1688: '不锈钢保温杯' },
+  { productName: 'LED Strip Light (RGB, 5m)', category: 'Lighting & Electrical', detectedSpecs: ['RGB Color Changing', '5 Meter Roll', 'IP65 Waterproof', '12V DC', 'SMD 5050 LEDs'], estimatedUnitPrice: '¥35–55 (₹420–660)', suggestedQuantity: 100, confidence: 94, similarProducts: ['LED Strip Light 10m', 'LED Neon Flex', 'LED Fairy Lights'] },
+  { productName: 'Silicone Phone Case (Universal)', category: 'Mobile Accessories', detectedSpecs: ['Silicone Material', 'Drop Protection', 'Multiple Colors', 'Compatible: iPhone/Samsung'], estimatedUnitPrice: '¥8–15 (₹96–180)', suggestedQuantity: 500, confidence: 89, similarProducts: ['TPU Phone Case', 'Clear Phone Case', 'Leather Flip Case'] },
+  { productName: 'Stainless Steel Water Bottle (500ml)', category: 'Kitchenware', detectedSpecs: ['500ml Capacity', '304 Stainless Steel', 'Double-Wall Insulated', 'BPA Free', 'Leak-Proof Lid'], estimatedUnitPrice: '¥18–28 (₹216–336)', suggestedQuantity: 200, confidence: 91, similarProducts: ['Insulated Tumbler', 'Plastic Water Bottle', 'Glass Bottle'] },
 ];
 
 const analysisSteps = ['Identifying product...', 'Extracting specifications...', 'Finding sourcing details...'];
@@ -31,7 +31,6 @@ export default function PhotoRequestPage() {
   const [notes, setNotes] = useState('');
   const [shipping, setShipping] = useState('Sea Freight');
   const [specs, setSpecs] = useState<string[]>([]);
-  const [keyCopied, setKeyCopied] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   function handleFile(f: File) {
@@ -59,7 +58,6 @@ export default function PhotoRequestPage() {
 
   function reset() { setStage('upload'); setImgUrl(null); setImgInfo(null); setResult(null); }
   function removeSpec(s: string) { setSpecs(specs.filter(x => x !== s)); }
-  function copyKeys() { if (result) { navigator.clipboard?.writeText(result.keywords1688); setKeyCopied(true); setTimeout(() => setKeyCopied(false), 1500); } }
 
   async function submit() {
     setSubmitting(true);
@@ -70,17 +68,17 @@ export default function PhotoRequestPage() {
   }
 
   return (
-    <ClientShell>
+    <ClientLayout>
       <Link href="/client-dashboard/requests" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4"><ArrowLeft className="w-4 h-4" /> Back</Link>
       <div className="flex items-center gap-3 mb-6">
-        <div className="w-12 h-12 rounded-xl bg-accent text-white flex items-center justify-center"><Camera className="w-6 h-6" /></div>
+        <div className="w-12 h-12 rounded-xl bg-[#4A3B52] text-white flex items-center justify-center"><Camera className="w-6 h-6" /></div>
         <div><h1 className="text-2xl font-700">Request by Photo</h1><p className="text-sm text-muted-foreground">Upload a product image — our AI will identify it for you.</p></div>
       </div>
 
       {stage === 'upload' && (
         <div className="bg-card rounded-2xl border border-border shadow-card p-6">
           {!imgUrl ? (
-            <div onClick={() => fileRef.current?.click()} className="rounded-2xl border-2 border-dashed border-border bg-muted/40 hover:bg-orange-50/40 transition-colors cursor-pointer p-10 text-center">
+            <div onClick={() => fileRef.current?.click()} className="rounded-2xl border-2 border-dashed border-border bg-muted/40 hover:bg-muted/60 transition-colors cursor-pointer p-10 text-center">
               <div className="text-5xl mb-3">📷</div>
               <p className="font-600 text-foreground">Drag & drop your product image here</p>
               <p className="text-sm text-muted-foreground mt-1">or tap to browse / use camera</p>
@@ -108,13 +106,13 @@ export default function PhotoRequestPage() {
             <img src={imgUrl} alt="scanning" className="w-full max-h-96 object-contain" />
             <div className="absolute inset-x-0 h-1 bg-gradient-to-b from-accent/0 via-accent to-accent/0" style={{ animation: 'scanLine 2.5s linear infinite', top: '0%' }} />
             <style>{`@keyframes scanLine { 0% { top: 0%; } 100% { top: 100%; } }`}</style>
-            <div className="absolute inset-0 bg-accent/5" />
+            <div className="absolute inset-0 bg-[#4A3B52]/10" />
           </div>
           <div className="mt-5 text-center">
             <p className="font-700 text-foreground">🔍 Analysing product...</p>
             <div className="mt-3 space-y-1">
               {analysisSteps.map((s, i) => (
-                <p key={s} className={`text-sm transition-opacity ${i < scanStep ? 'text-emerald-600 font-500' : i === scanStep ? 'text-accent font-600' : 'text-muted-foreground opacity-50'}`}>{i < scanStep ? '✅' : i === scanStep ? '⏳' : '⚫'} {s}</p>
+                <p key={s} className={`text-sm transition-opacity ${i < scanStep ? 'text-emerald-600 font-500' : i === scanStep ? 'text-[#4A3B52] font-600' : 'text-muted-foreground opacity-50'}`}>{i < scanStep ? '✅' : i === scanStep ? '⏳' : '⚫'} {s}</p>
               ))}
             </div>
           </div>
@@ -141,19 +139,18 @@ export default function PhotoRequestPage() {
               <div><label className="text-xs font-600 text-muted-foreground">Est. Unit Price</label><div className="input-field bg-muted mt-1">{result.estimatedUnitPrice}</div></div>
               <div><label className="text-xs font-600 text-muted-foreground">Quantity</label><input value={qty} onChange={e => setQty(+e.target.value)} type="number" className="input-field mt-1" /></div>
             </div>
-            <div><label className="text-xs font-600 text-muted-foreground">1688 Keywords</label><div className="flex gap-2 mt-1"><div className="input-field bg-muted flex-1 font-tabular">{result.keywords1688}</div><button onClick={copyKeys} className="btn-secondary px-3">{keyCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}</button></div></div>
             <div><label className="text-xs font-600 text-muted-foreground">Budget per unit (INR)</label><input value={budget} onChange={e => setBudget(e.target.value)} className="input-field mt-1" /></div>
             <div><label className="text-xs font-600 text-muted-foreground">Additional notes</label><textarea value={notes} onChange={e => setNotes(e.target.value)} className="input-field mt-1" rows={2} placeholder="Special requirements..." /></div>
             <div><label className="text-xs font-600 text-muted-foreground">Shipping</label>
-              <div className="grid grid-cols-3 gap-2 mt-1">{['Sea Freight','Air Freight','Express'].map(m => <button key={m} onClick={() => setShipping(m)} className={`px-2 py-1.5 rounded-lg text-xs font-500 border ${shipping === m ? 'border-accent bg-accent/10 text-accent' : 'border-border text-muted-foreground'}`}>{m}</button>)}</div>
+              <div className="grid grid-cols-3 gap-2 mt-1">{['Sea Freight','Air Freight','Express'].map(m => <button key={m} onClick={() => setShipping(m)} className={`px-2 py-1.5 rounded-lg text-xs font-500 border ${shipping === m ? 'border-[#4A3B52] bg-[#4A3B52]/10 text-[#4A3B52]' : 'border-border text-muted-foreground'}`}>{m}</button>)}</div>
             </div>
             <div><p className="text-xs font-600 text-muted-foreground mb-2">You might also want:</p>
-              <div className="flex gap-2 overflow-x-auto scrollbar-hide">{result.similarProducts.map(p => <button key={p} onClick={() => setProduct(p)} className="flex-shrink-0 badge bg-muted text-foreground border border-border hover:bg-accent/10 hover:border-accent">{p}</button>)}</div>
+              <div className="flex gap-2 overflow-x-auto scrollbar-hide">{result.similarProducts.map(p => <button key={p} onClick={() => setProduct(p)} className="flex-shrink-0 badge bg-muted text-foreground border border-border hover:bg-[#4A3B52]/10 hover:border-[#4A3B52]">{p}</button>)}</div>
             </div>
             <button onClick={submit} disabled={submitting} className="btn-primary w-full py-3">{submitting ? 'Submitting...' : 'Submit Sourcing Request'}</button>
           </div>
         </div>
       )}
-    </ClientShell>
+    </ClientLayout>
   );
 }

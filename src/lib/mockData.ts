@@ -1,4 +1,4 @@
-import type { OrderStatus } from '@/components/ui/StatusBadge';
+﻿import type { OrderStatus } from '@/components/ui/StatusBadge';
 
 export type PerProductQuoteStatus = 'Pending' | 'Quoted' | 'Accepted' | 'Rejected';
 
@@ -7,9 +7,13 @@ export interface RequestLineItem {
   name: string;
   quantity: number;
   specs?: string;
+  /** Product image URL — shown in items table */
+  imageUrl?: string;
   /** Supplier RMB cost per unit — internal only */
   rmbCostPerUnit: number;
-  /** Quoted selling price per unit in INR */
+  /** Quoted selling price per unit in CNY (entered by admin) */
+  unitPriceCny?: number;
+  /** Quoted selling price per unit in INR (auto-calculated: unitPriceCny x CNY_TO_INR) */
   unitPriceInr?: number;
   status: PerProductQuoteStatus;
   /** Set when client uses counter-offer; cleared when staff saves a new unit price */
@@ -109,7 +113,7 @@ export const mockOrders: OrderRow[] = [
     amount: '₹67,600',
     amountCny: '¥5,633',
     itemCount: 4,
-    status: 'Repacking/QC',
+    status: 'Repacking Warehouse',
     estimatedDelivery: '18 May 2026',
     client: 'Sunita Verma',
     itemNames: 'Packaging Boxes, Wrap',
@@ -137,7 +141,7 @@ export const mockOrders: OrderRow[] = [
     amount: '₹54,200',
     amountCny: '¥4,517',
     itemCount: 2,
-    status: 'Repacking/QC',
+    status: 'Repacking Warehouse',
     estimatedDelivery: '22 May 2026',
     client: 'Rajesh Kumar',
     itemNames: 'USB Hubs, Cable organisers',
@@ -194,7 +198,7 @@ export const adminKpis = {
   ordersByStatus: [
     { name: 'Sourcing', value: 4, color: '#6366F1' },
     { name: 'In China WH', value: 3, color: '#06B6D4' },
-    { name: 'In Transit', value: 5, color: '#F97316' },
+    { name: 'In Transit', value: 5, color: '#4A3B52' },
     { name: 'In India', value: 4, color: '#10B981' },
     { name: 'Delivered', value: 12, color: '#059669' },
     { name: 'Exception', value: 2, color: '#EF4444' },
@@ -222,7 +226,7 @@ export const pendingActions = [
 // Shipment carriers + locations
 export const statusToLocation: Record<string, { label: string; query: string; progress: number }> = {
   'At China Warehouse':      { label: 'Shenzhen, China',    query: 'Shenzhen China',                 progress: 20 },
-  'Repacking/QC':            { label: 'Shenzhen, China',    query: 'Shenzhen China',                 progress: 25 },
+  'Repacking Warehouse':     { label: 'Shenzhen, China',    query: 'Shenzhen China',                 progress: 25 },
   'Ready for Shipping':      { label: 'Shenzhen Port',      query: 'Shenzhen Port China',            progress: 35 },
   'Ready for Logistics':     { label: 'Shenzhen Port',      query: 'Shenzhen logistics China',       progress: 36 },
   'Return from China':       { label: 'Return — China',     query: 'Shenzhen China',                 progress: 22 },

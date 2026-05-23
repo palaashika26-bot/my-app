@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import React, { useState, useEffect } from 'react';
 import { Plus, ArrowRight, TrendingUp, BookOpen } from 'lucide-react';
 import Link from 'next/link';
@@ -24,12 +24,12 @@ export default function DashboardWelcomeBanner() {
   }, []);
 
   return (
-    <div className="bg-primary rounded-xl px-6 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 relative overflow-hidden">
+    <div className="bg-[#2c2a3a] rounded-xl px-6 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 relative overflow-hidden">
       {/* Background decoration */}
       <div
         className="absolute inset-0 opacity-[0.04]"
         style={{
-          backgroundImage: `radial-gradient(circle at 80% 50%, rgba(249,115,22,1) 0%, transparent 60%)`,
+          backgroundImage: `radial-gradient(circle at 80% 50%, rgba(74,59,82,0.6) 0%, transparent 60%)`,
         }}
         aria-hidden="true"
       />
@@ -43,7 +43,7 @@ export default function DashboardWelcomeBanner() {
         </h1>
         <p className="text-sm text-slate-300 mt-0.5">
           You have{' '}
-          <span className="text-accent font-600">3 quotations</span> awaiting your approval and{' '}
+          <span className="text-[#c17b5c] font-600">3 quotations</span> awaiting your approval and{' '}
           <span className="text-yellow-400 font-600">2 pending payments</span>.
         </p>
       </div>
@@ -59,7 +59,7 @@ export default function DashboardWelcomeBanner() {
         </Link>
         <Link
           href="/client-dashboard/requests/new"
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-accent hover:bg-orange-600 text-white text-xs font-600 transition-colors shadow-orange-glow"
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#c17b5c] hover:bg-[#a8664a] text-white text-xs font-600 transition-colors"
           aria-label="Submit new sourcing request"
         >
           <Plus className="w-3.5 h-3.5" aria-hidden="true" />

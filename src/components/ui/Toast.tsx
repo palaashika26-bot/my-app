@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 import Icon from '@/components/ui/AppIcon';
@@ -38,14 +38,14 @@ const toastStyles: Record<ToastType, string> = {
   success: 'border-l-4 border-emerald-500 bg-card',
   error: 'border-l-4 border-red-500 bg-card',
   warning: 'border-l-4 border-yellow-500 bg-card',
-  info: 'border-l-4 border-blue-500 bg-card',
+  info: 'border-l-4 border-[#7a9e9f] bg-card',
 };
 
 const iconStyles: Record<ToastType, string> = {
   success: 'text-emerald-500',
   error: 'text-red-500',
   warning: 'text-yellow-500',
-  info: 'text-blue-500',
+  info: 'text-[#7a9e9f]',
 };
 
 function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) => void }) {

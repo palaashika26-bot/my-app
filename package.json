@@ -39,11 +39,11 @@
     "warning": "🚨 CRITICAL: DO NOT REMOVE OR MODIFY ABOVE DEPENDENCIES - Required for Next.js 15 TypeScript app functionality"
   },
   "scripts": {
-    "dev": "next dev -p 3000 -H 0.0.0.0",
-    "build": "next build",
-    "start": "next dev -p 3000 -H 0.0.0.0",
-    "lint": "next lint",
-    "lint:fix": "next lint --fix",
+    "dev": "node node_modules/next/dist/bin/next dev -p 3000 -H 0.0.0.0",
+    "build": "node node_modules/next/dist/bin/next build",
+    "start": "node node_modules/next/dist/bin/next dev -p 3000 -H 0.0.0.0",
+    "lint": "node node_modules/next/dist/bin/next lint",
+    "lint:fix": "node node_modules/next/dist/bin/next lint --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,md,json}\"",
     "serve": "next start",
     "type-check": "tsc --noEmit"
@@ -53,6 +53,8 @@
     "@heroicons/react": "^2.2.0",
     "@tailwindcss/forms": "^0.5.10",
     "@tailwindcss/typography": "^0.5.16",
+    "axios": "^1.16.1",
+    "docx": "^9.6.1",
     "lucide-react": "^1.7.0",
     "next": "^16.2.6",
     "react": "19.0.3",

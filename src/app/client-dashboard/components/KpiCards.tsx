@@ -1,4 +1,6 @@
+﻿'use client';
 import React from 'react';
+import { useRouter } from 'next/navigation';
 import { ShoppingBag, CreditCard, Clock, CheckCircle } from 'lucide-react';
 import { kpiData } from '@/lib/mockData';
 import Icon from '@/components/ui/AppIcon';
@@ -13,6 +15,7 @@ interface KpiCardProps {
   iconBg: string;
   iconColor: string;
   subtextColor?: string;
+  href?: string;
 }
 
 function KpiCard({
@@ -24,10 +27,13 @@ function KpiCard({
   iconBg,
   iconColor,
   subtextColor = 'text-muted-foreground',
+  href,
 }: KpiCardProps) {
+  const router = useRouter();
   return (
     <div
-      className={`bg-card rounded-xl p-5 shadow-card border border-border card-hover ${accentClass}`}
+      onClick={href ? () => router.push(href) : undefined}
+      className={`bg-card rounded-xl p-5 shadow-card border border-border card-hover ${accentClass}${href ? ' cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200' : ''}`}
       role="region"
       aria-label={label}
     >
@@ -58,8 +64,9 @@ export default function KpiCards() {
         value={kpiData.activeOrders.value}
         subtext={kpiData.activeOrders.change}
         accentClass="kpi-card-accent-orange"
-        iconBg="bg-orange-50"
-        iconColor="text-accent"
+        iconBg="bg-[#fdf2ed]"
+        iconColor="text-[#c17b5c]"
+        href="/client-dashboard/orders"
       />
       <KpiCard
         icon={CreditCard}
@@ -70,6 +77,7 @@ export default function KpiCards() {
         iconBg="bg-yellow-50"
         iconColor="text-yellow-600"
         subtextColor="text-yellow-600"
+        href="/client-dashboard/orders?filter=pending-payment"
       />
       <KpiCard
         icon={Clock}
@@ -77,9 +85,10 @@ export default function KpiCards() {
         value={kpiData.awaitingApproval.value}
         subtext={kpiData.awaitingApproval.change}
         accentClass="kpi-card-accent-blue"
-        iconBg="bg-blue-50"
-        iconColor="text-blue-600"
-        subtextColor="text-blue-600"
+        iconBg="bg-[#e4f4f4]"
+        iconColor="text-[#4a9e9f]"
+        subtextColor="text-[#4a9e9f]"
+        href="/client-dashboard/requests?filter=awaiting-approval"
       />
       <KpiCard
         icon={CheckCircle}
@@ -90,6 +99,7 @@ export default function KpiCards() {
         iconBg="bg-emerald-50"
         iconColor="text-emerald-600"
         subtextColor="text-emerald-600"
+        href="/client-dashboard/orders?filter=completed"
       />
     </div>
   );

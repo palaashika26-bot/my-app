@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import React, { useState, use } from 'react';
 import Link from 'next/link';
 import AdminLayout from '@/components/AdminLayout';
@@ -8,7 +8,7 @@ import { useToast } from '@/components/ui/Toast';
 import { ArrowLeft, MapPin, Copy, Check, RefreshCw } from 'lucide-react';
 import { notFound } from 'next/navigation';
 
-const statusOptions: OrderStatus[] = ['Sourcing','At China Warehouse','Repacking/QC','Shipped from China','Arrived India Warehouse','Out for Delivery','Completed','Exception'];
+const statusOptions: OrderStatus[] = ['Sourcing','At China Warehouse','Repacking Warehouse','Shipped from China','Arrived India Warehouse','Out for Delivery','Completed','Exception'];
 
 export default function AdminShipmentTrackingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -39,7 +39,7 @@ export default function AdminShipmentTrackingPage({ params }: { params: Promise<
     <AdminLayout>
       <Link href="/admin/logistics" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4"><ArrowLeft className="w-4 h-4" /> Back to Logistics</Link>
       <div className="bg-card rounded-xl border border-border shadow-card p-5 mb-5 flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
-        <div><div className="flex flex-wrap items-center gap-3"><MapPin className="w-5 h-5 text-accent" /><h1 className="text-xl font-700">Live Tracking — {order.orderId}</h1><StatusBadge status={status as any} /></div><p className="text-xs text-muted-foreground mt-1">{order.client} • {client?.email}</p></div>
+        <div><div className="flex flex-wrap items-center gap-3"><MapPin className="w-5 h-5 text-[#4A3B52]" /><h1 className="text-xl font-700">Live Tracking — {order.orderId}</h1><StatusBadge status={status as any} /></div><p className="text-xs text-muted-foreground mt-1">{order.client} • {client?.email}</p></div>
         <div className="flex gap-2"><select value={status} onChange={e => updateStatus(e.target.value)} className="input-field text-sm py-2 min-w-[200px]">{statusOptions.map(s => <option key={s}>{s}</option>)}</select><button onClick={() => addToast({ type: 'success', title: 'Location refreshed' })} className="btn-secondary px-3 py-2 text-xs inline-flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5" /> Refresh</button></div>
       </div>
 
@@ -60,7 +60,7 @@ export default function AdminShipmentTrackingPage({ params }: { params: Promise<
               <div className="flex justify-between items-center"><span className="text-muted-foreground">Tracking</span><div className="flex items-center gap-2"><span className="font-tabular font-500">{carrier.trackingNo}</span><button onClick={copyTracking}>{copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-muted-foreground" />}</button></div></div>
               <div className="flex justify-between"><span className="text-muted-foreground">ETA</span><span className="font-tabular font-500">{order.estimatedDelivery}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Current</span><span className="font-500">{loc.label}</span></div>
-              <div className="pt-2 border-t border-border"><p className="text-[10px] uppercase text-muted-foreground mb-1">Progress</p><div className="h-2 bg-muted rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-accent to-orange-500" style={{ width: `${loc.progress}%` }} /></div><p className="text-[11px] text-muted-foreground mt-1 font-tabular">{loc.progress}% complete</p></div>
+              <div className="pt-2 border-t border-border"><p className="text-[10px] uppercase text-muted-foreground mb-1">Progress</p><div className="h-2 bg-muted rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-accent to-[#1A1423]" style={{ width: `${loc.progress}%` }} /></div><p className="text-[11px] text-muted-foreground mt-1 font-tabular">{loc.progress}% complete</p></div>
             </div>
           </div>
           <button onClick={() => addToast({ type: 'success', title: 'Client notified', description: `Status sent to ${client?.email}` })} className="btn-primary w-full py-2.5 text-sm">Notify Client of Update</button>

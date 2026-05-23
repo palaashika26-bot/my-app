@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#0f172a"/>
+      <stop offset="50%"  stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0c1a2e"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#f97316" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#ea580c" stop-opacity="0.05"/>
+    </linearGradient>
+    <radialGradient id="glow1" cx="30%" cy="40%" r="50%">
+      <stop offset="0%"   stop-color="#f97316" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#f97316" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="80%" cy="70%" r="45%">
+      <stop offset="0%"   stop-color="#3b82f6" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Base gradient -->
+  <rect width="1200" height="900" fill="url(#bg)"/>
+
+  <!-- Glow blobs -->
+  <rect width="1200" height="900" fill="url(#glow1)"/>
+  <rect width="1200" height="900" fill="url(#glow2)"/>
+
+  <!-- Subtle grid lines -->
+  <g stroke="#ffffff" stroke-opacity="0.04" stroke-width="1">
+    <line x1="0"    y1="150" x2="1200" y2="150"/>
+    <line x1="0"    y1="300" x2="1200" y2="300"/>
+    <line x1="0"    y1="450" x2="1200" y2="450"/>
+    <line x1="0"    y1="600" x2="1200" y2="600"/>
+    <line x1="0"    y1="750" x2="1200" y2="750"/>
+    <line x1="150"  y1="0"   x2="150"  y2="900"/>
+    <line x1="300"  y1="0"   x2="300"  y2="900"/>
+    <line x1="450"  y1="0"   x2="450"  y2="900"/>
+    <line x1="600"  y1="0"   x2="600"  y2="900"/>
+    <line x1="750"  y1="0"   x2="750"  y2="900"/>
+    <line x1="900"  y1="0"   x2="900"  y2="900"/>
+    <line x1="1050" y1="0"   x2="1050" y2="900"/>
+  </g>
+
+  <!-- Decorative circles -->
+  <circle cx="200" cy="200" r="180" fill="none" stroke="#f97316" stroke-opacity="0.08" stroke-width="1.5"/>
+  <circle cx="200" cy="200" r="120" fill="none" stroke="#f97316" stroke-opacity="0.06" stroke-width="1"/>
+  <circle cx="1000" cy="700" r="220" fill="none" stroke="#3b82f6" stroke-opacity="0.07" stroke-width="1.5"/>
+  <circle cx="1000" cy="700" r="140" fill="none" stroke="#3b82f6" stroke-opacity="0.05" stroke-width="1"/>
+
+  <!-- Small accent dots -->
+  <circle cx="100"  cy="80"  r="3" fill="#f97316" opacity="0.4"/>
+  <circle cx="320"  cy="140" r="2" fill="#f97316" opacity="0.3"/>
+  <circle cx="80"   cy="400" r="2" fill="#ffffff"  opacity="0.15"/>
+  <circle cx="450"  cy="60"  r="1.5" fill="#f97316" opacity="0.25"/>
+  <circle cx="1100" cy="200" r="3" fill="#3b82f6" opacity="0.35"/>
+  <circle cx="950"  cy="100" r="2" fill="#ffffff"  opacity="0.12"/>
+  <circle cx="1150" cy="500" r="2.5" fill="#f97316" opacity="0.2"/>
+  <circle cx="50"   cy="750" r="3" fill="#3b82f6" opacity="0.25"/>
+  <circle cx="600"  cy="820" r="2" fill="#f97316" opacity="0.2"/>
+
+  <!-- Diagonal accent line -->
+  <line x1="0" y1="900" x2="700" y2="0" stroke="#f97316" stroke-opacity="0.06" stroke-width="2"/>
+  <line x1="500" y1="900" x2="1200" y2="100" stroke="#3b82f6" stroke-opacity="0.05" stroke-width="1.5"/>
+</svg>

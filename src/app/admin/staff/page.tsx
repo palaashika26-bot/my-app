@@ -12,7 +12,7 @@ const emptyForm = {
   name: '',
   email: '',
   phone: '',
-  role: 'sourcing_staff' as StaffRoleId,
+  role: 'sourcing-logistics' as StaffRoleId,
   password: '',
 };
 
@@ -200,8 +200,8 @@ export default function AdminStaffPage() {
       </div>
 
       {modal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true">
-          <div className="bg-card rounded-xl border border-border shadow-card-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto pt-4 md:pt-8 bg-black/50" role="dialog" aria-modal="true">
+          <div className="bg-card rounded-xl border border-border shadow-card-lg w-full max-w-md mb-4 mx-4">
             <div className="px-5 py-4 border-b border-border flex items-center justify-between">
               <h2 className="font-700">{modal === 'add' ? 'Add staff member' : 'Edit staff member'}</h2>
               <button type="button" onClick={closeModal} className="text-sm text-muted-foreground hover:text-foreground">

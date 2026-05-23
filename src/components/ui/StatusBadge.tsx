@@ -1,7 +1,7 @@
-import React from 'react';
+﻿import React from 'react';
 
 export type OrderStatus =
-  | 'Request Submitted' |'Quotation in Progress' |'Awaiting Approval' |'Payment Pending' |'Payment Confirmed' |'Sourcing' |'At China Warehouse' |'Repacking/QC' |'Ready for Shipping' |'Ready for Logistics' |'Return from China' |'Shipped from China' |'In Transit' |'Arrived India Warehouse' |'Out for Delivery' |'Completed' |'Exception' |'Cancelled';
+  | 'Request Submitted' |'Quotation in Progress' |'Awaiting Approval' |'Payment Pending' |'Payment Confirmed' |'Sourcing' |'At China Warehouse' |'Repacking Warehouse' |'Ready for Shipping' |'Ready for Logistics' |'Return from China' |'Shipped from China' |'In Transit' |'Arrived India Warehouse' |'Out for Delivery' |'Completed' |'Exception' |'Cancelled';
 
 interface StatusBadgeProps {
   status: OrderStatus;
@@ -15,7 +15,7 @@ const statusConfig: Record<OrderStatus, { className: string; dot: string }> = {
   },
   'Quotation in Progress': {
     className: 'status-progress',
-    dot: 'bg-blue-400',
+    dot: 'bg-[#7a9e9f]',
   },
   'Awaiting Approval': {
     className: 'status-approval',
@@ -23,11 +23,11 @@ const statusConfig: Record<OrderStatus, { className: string; dot: string }> = {
   },
   'Payment Pending': {
     className: 'status-payment',
-    dot: 'bg-blue-500',
+    dot: 'bg-[#7a9e9f]',
   },
   'Payment Confirmed': {
     className: 'status-payment',
-    dot: 'bg-blue-600',
+    dot: 'bg-[#6b8f90]',
   },
   Sourcing: {
     className: 'status-sourcing',
@@ -37,13 +37,13 @@ const statusConfig: Record<OrderStatus, { className: string; dot: string }> = {
     className: 'status-warehouse',
     dot: 'bg-cyan-600',
   },
-  'Repacking/QC': {
+  'Repacking Warehouse': {
     className: 'status-warehouse',
     dot: 'bg-cyan-700',
   },
   'Ready for Shipping': {
     className: 'status-shipping',
-    dot: 'bg-orange-500',
+    dot: 'bg-[#4A3B52]',
   },
   'Ready for Logistics': {
     className: 'status-shipping',
@@ -59,7 +59,7 @@ const statusConfig: Record<OrderStatus, { className: string; dot: string }> = {
   },
   'Shipped from China': {
     className: 'status-transit',
-    dot: 'bg-orange-600',
+    dot: 'bg-[#1A1423]',
   },
   'In Transit': {
     className: 'status-transit',

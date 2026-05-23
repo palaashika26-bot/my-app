@@ -71,7 +71,7 @@ const extraOrders: OrderRow[] = [
     amount: '₹84,000',
     amountCny: '¥7,000',
     itemCount: 4,
-    status: 'Repacking/QC' as any,
+    status: 'Repacking Warehouse' as any,
     estimatedDelivery: '21 May 2026',
     client: 'Sunita Verma',
     itemNames: 'Kitchen Storage Sets',

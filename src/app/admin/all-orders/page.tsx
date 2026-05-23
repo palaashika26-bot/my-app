@@ -1,6 +1,7 @@
-'use client';
-import React, { useState, useMemo } from 'react';
+﻿'use client';
+import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import AdminLayout from '@/components/AdminLayout';
 import StatusBadge, { OrderStatus } from '@/components/ui/StatusBadge';
 import { mockAdminOrders, mockClients } from '@/lib/adminMockData';
@@ -9,15 +10,22 @@ import { Search, Download, Eye, ChevronDown, ChevronUp, Mail } from 'lucide-reac
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import { isWarehouseShippingOrderStatus } from '@/lib/staffRoles';
 
-const statusOptions: OrderStatus[] = ['Payment Pending','Payment Confirmed','Sourcing','At China Warehouse','Repacking/QC','Ready for Shipping','Shipped from China','Arrived India Warehouse','Out for Delivery','Completed','Exception'];
+const statusOptions: OrderStatus[] = ['Payment Pending','Payment Confirmed','Sourcing','At China Warehouse','Repacking Warehouse','Ready for Shipping','Shipped from China','Arrived India Warehouse','Out for Delivery','Completed','Exception'];
 const pageSizes = [10, 25, 50];
 
 export default function AdminAllOrdersPage() {
   const { addToast } = useToast();
   const perms = useAdminPermissions();
+  const searchParams = useSearchParams();
   const [orders, setOrders] = useState(mockAdminOrders);
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+
+  useEffect(() => {
+    const filter = searchParams.get('filter');
+    if (filter === 'completed') setStatusFilter('Completed');
+    else if (filter === 'exception') setStatusFilter('Exception');
+  }, [searchParams]);
   const [clientFilter, setClientFilter] = useState('All');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -109,7 +117,7 @@ export default function AdminAllOrdersPage() {
       </div>
 
       <div className="bg-card rounded-xl border border-border shadow-card p-4 mb-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-        <div className="relative lg:col-span-2"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search Order ID, client, items..." className="input-field pl-9" /></div>
+        <div className="relative lg:col-span-2"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none z-10" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search Order ID, client, items..." className="input-field !pl-10" /></div>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="input-field">
           <option>All</option>{statusOptions.map(s => <option key={s}>{s}</option>)}
         </select>
@@ -123,8 +131,8 @@ export default function AdminAllOrdersPage() {
       </div>
 
       {Object.values(selected).some(Boolean) && (
-        <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 mb-4 flex flex-wrap items-center gap-2">
-          <p className="text-sm font-600 text-orange-800">{Object.values(selected).filter(Boolean).length} selected</p>
+        <div className="bg-[#f5f4f7] border border-[#e8e4f0] rounded-xl p-3 mb-4 flex flex-wrap items-center gap-2">
+          <p className="text-sm font-600 text-[#5c5470]">{Object.values(selected).filter(Boolean).length} selected</p>
           <select onChange={e => { if (e.target.value) bulkUpdate(e.target.value); e.currentTarget.value=''; }} className="input-field text-xs ml-auto sm:w-56">
             <option value="">Bulk status update...</option>
             {statusOptions.map(s => <option key={s}>{s}</option>)}
@@ -166,7 +174,7 @@ export default function AdminAllOrdersPage() {
                   return (
                   <tr key={o.id} className="table-row-hover">
                     <td className="px-3 py-3"><input type="checkbox" checked={!!selected[o.id]} onChange={() => toggleSelect(o.id)} className="accent-accent" /></td>
-                    <td className="px-3 py-3"><Link href={`/admin/orders/${o.id}`} className="font-tabular font-600 text-primary hover:text-accent">{o.orderId}</Link></td>
+                    <td className="px-3 py-3"><Link href={`/admin/orders/${o.id}`} className="font-tabular font-600 text-primary hover:text-[#4A3B52]">{o.orderId}</Link></td>
                     <td className="px-3 py-3"><p className="text-sm font-500">{o.client}</p><p className="text-[11px] text-muted-foreground">{client?.email}</p></td>
                     <td className="px-3 py-3 text-[11px] font-tabular text-muted-foreground">{client?.gstin || '—'}</td>
                     <td className="px-3 py-3">

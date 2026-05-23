@@ -64,7 +64,7 @@ export default function WarehouseQcPage({ params }: { params: Promise<{ orderId:
   const productIds = useMemo(() => lineItems.map((l) => l.id), [lineItems]);
 
   const allowed =
-    role === 'admin' || (role === 'staff' && user?.staffRoleId === 'warehouse_staff');
+    role === 'admin' || (role === 'staff' && user?.staffRoleId === 'warehouse-qc');
 
   useEffect(() => {
     if (!isReady) return;
@@ -124,7 +124,7 @@ export default function WarehouseQcPage({ params }: { params: Promise<{ orderId:
 
   function handleSave() {
     setOrderQcDrafts(o.id, localDrafts);
-    addToast({ type: 'success', title: 'Photos saved', description: 'Draft QC photos are stored for this order.' });
+    addToast({ type: 'success', title: 'Photos saved', description: 'Draft Repacking Warehouse photos are stored for this order.' });
     force();
   }
 
@@ -133,7 +133,7 @@ export default function WarehouseQcPage({ params }: { params: Promise<{ orderId:
     if (!qcSubmitPrerequisitesMet({ ...b, drafts: localDrafts }, productIds)) {
       addToast({
         type: 'error',
-        title: 'Incomplete QC pack',
+        title: 'Incomplete Repacking Warehouse pack',
         description: 'Save first, and ensure every product has at least one product photo and one packaging photo.',
       });
       return;
@@ -143,7 +143,7 @@ export default function WarehouseQcPage({ params }: { params: Promise<{ orderId:
     addToast({
       type: 'success',
       title: 'Sent to client',
-      description: 'The client can now review and approve QC photos.',
+      description: 'The client can now review and approve Repacking Warehouse photos.',
     });
     force();
   }
@@ -159,7 +159,7 @@ export default function WarehouseQcPage({ params }: { params: Promise<{ orderId:
 
       <div className="bg-card rounded-xl border border-border shadow-card p-5 mb-6 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <p className="text-xs text-muted-foreground font-500 uppercase tracking-wide">Warehouse QC</p>
+          <p className="text-xs text-muted-foreground font-500 uppercase tracking-wide">Repacking Warehouse</p>
           <h1 className="text-xl font-800 text-foreground mt-1 font-tabular">{o.orderId}</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Client: <span className="font-600 text-foreground">{o.client ?? '—'}</span>
@@ -169,7 +169,7 @@ export default function WarehouseQcPage({ params }: { params: Promise<{ orderId:
           <StatusBadge status={effectiveStatus as any} size="md" />
           {storeBundle?.submittedForClient && (
             <span className="text-xs font-500 text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1">
-              Awaiting client approval on QC
+              Awaiting client approval on Repacking Warehouse
             </span>
           )}
         </div>

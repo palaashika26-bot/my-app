@@ -1,4 +1,4 @@
-/** @type {import('tailwindcss').Config} */
+﻿/** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
     './src/**/*.{js,ts,jsx,tsx,mdx}',
@@ -11,6 +11,9 @@ module.exports = {
     },
     extend: {
       colors: {
+        cream: '#faf9f7',
+        lavender: '#f0eef8',
+        charcoal: '#2d2d2d',
         background: 'var(--background)',
         foreground: 'var(--foreground)',
         primary: {
@@ -49,12 +52,12 @@ module.exports = {
         sans: ['var(--font-sans)', 'sans-serif'],
       },
       boxShadow: {
-        card: '0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04)',
-        'card-md': '0 4px 12px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.04)',
-        'card-lg': '0 8px 24px rgba(15, 23, 42, 0.10), 0 4px 8px rgba(15, 23, 42, 0.06)',
-        'navbar': '0 1px 0 rgba(15, 23, 42, 0.06)',
-        'bottom-nav': '0 -1px 0 rgba(15, 23, 42, 0.06)',
-        'orange-glow': '0 4px 14px rgba(249, 115, 22, 0.35)',
+        card: '0 1px 3px rgba(0, 0, 0, 0.08)',
+        'card-md': '0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04)',
+        'card-lg': '0 8px 24px rgba(0, 0, 0, 0.10), 0 4px 8px rgba(0, 0, 0, 0.06)',
+        'navbar': '0 1px 0 rgba(0, 0, 0, 0.06)',
+        'bottom-nav': '0 -1px 0 rgba(0, 0, 0, 0.06)',
+        'orange-glow': '0 4px 14px rgba(74, 59, 82, 0.40)',
       },
       animation: {
         'shimmer': 'shimmer 1.5s infinite',

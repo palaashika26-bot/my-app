@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import React from 'react';
 import Link from 'next/link';
 import AdminLayout from '@/components/AdminLayout';
@@ -8,10 +8,14 @@ import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianG
 import { ShoppingBag, Users, Truck, Clock, IndianRupee, AlertTriangle, ArrowRight, Sun, Plus, Download, MapPin, Eye, Camera } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
+import { useRouter } from 'next/navigation';
 
-function Kpi({ icon: Icon, label, value, sub, accent, color }: any) {
+function Kpi({ icon: Icon, label, value, sub, accent, color, onClick }: any) {
   return (
-    <div className={`bg-card rounded-xl p-4 sm:p-5 shadow-card border border-border card-hover border-l-4 ${accent}`}>
+    <div
+      onClick={onClick}
+      className={`bg-card rounded-xl p-4 sm:p-5 shadow-card border border-border card-hover border-l-4 ${accent}${onClick ? ' cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200' : ''}`}
+    >
       <div className="flex items-start justify-between mb-3">
         <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{label}</p>
         <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${color}`}><Icon className="w-4 h-4" /></div>
@@ -25,15 +29,44 @@ function Kpi({ icon: Icon, label, value, sub, accent, color }: any) {
 export default function AdminDashboardPage() {
   const { user } = useAuth();
   const perms = useAdminPermissions();
+  const router = useRouter();
   const recentOrders = mockAdminOrders.slice(0, 5);
   const recentRequestsList = mockRequests.slice(0, 5);
   const [today, setToday] = React.useState('');
   React.useEffect(() => { setToday(new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })); }, []);
 
+  function handleExportReports() {
+    let ordersData: any[] = [];
+    try {
+      const stored = localStorage.getItem('bk-orders');
+      ordersData = stored ? JSON.parse(stored) : mockAdminOrders;
+    } catch { ordersData = mockAdminOrders; }
+
+    const headers = ['Order ID', 'Client', 'Items', 'Amount', 'Status', 'Date'];
+    const rows = ordersData.map((o: any) => [
+      o.orderId || o.id || '',
+      o.client || o.clientName || '',
+      o.itemNames || o.items || '',
+      o.amount || '',
+      o.status || '',
+      o.date || '',
+    ]);
+    const csv = [headers, ...rows]
+      .map(row => row.map((cell: any) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `elios-admin-report-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const pipelineNodes = [
     { label: 'China Warehouse',          count: 12, color: 'bg-cyan-500',     ring: 'ring-cyan-100' },
     { label: 'Consolidation Warehouse',  count: 5,  color: 'bg-indigo-500',   ring: 'ring-indigo-100' },
-    { label: 'In Transit',               count: 23, color: 'bg-orange-500',   ring: 'ring-orange-100' },
+    { label: 'In Transit',               count: 23, color: 'bg-[#5c5470]',   ring: 'ring-[#e8e4f0]' },
     { label: 'India Warehouse',          count: 4,  color: 'bg-emerald-500',  ring: 'ring-emerald-100' },
     { label: 'Out for Delivery',         count: 2,  color: 'bg-green-500',    ring: 'ring-green-100' },
   ];
@@ -54,22 +87,22 @@ export default function AdminDashboardPage() {
             <Link href="/admin/suppliers" className="btn-secondary px-3 py-2 text-xs inline-flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Add Supplier</Link>
           )}
           {perms.isFullAdmin && (
-            <button className="btn-primary px-3 py-2 text-xs inline-flex items-center gap-1.5"><Download className="w-3.5 h-3.5" /> Export Reports</button>
+            <button onClick={handleExportReports} className="btn-primary px-3 py-2 text-xs inline-flex items-center gap-1.5"><Download className="w-3.5 h-3.5" /> Export Reports</button>
           )}
         </div>
       </div>
 
       <div className={`grid grid-cols-2 gap-3 mb-6 ${perms.canSeeGrandTotalsAndMargins ? 'lg:grid-cols-3 xl:grid-cols-6' : 'lg:grid-cols-3 xl:grid-cols-5'}`}>
-        <Kpi icon={ShoppingBag} label="Total Orders"      value="247"        sub="+12 this month"  accent="border-orange-500" color="bg-orange-50 text-orange-600" />
+        <Kpi icon={ShoppingBag} label="Total Orders"      value="247"        sub="+12 this month"  accent="border-[#c17b5c]" color="bg-[#fdf2ed] text-[#c17b5c]" onClick={() => router.push('/admin/all-orders')} />
         {perms.isFullAdmin && (
-          <Kpi icon={Users}       label="Total Clients"     value="156"        sub="+8 this month"   accent="border-blue-500"   color="bg-blue-50 text-blue-600" />
+          <Kpi icon={Users}       label="Total Clients"     value="156"        sub="+8 this month"   accent="border-[#5c5470]"   color="bg-[#f0eef8] text-[#5c5470]" onClick={() => router.push('/admin/users')} />
         )}
-        <Kpi icon={Truck}       label="Active Shipments"  value="23"         sub="in pipeline"     accent="border-cyan-500"   color="bg-cyan-50 text-cyan-600" />
-        <Kpi icon={Clock}       label="Pending Approvals" value="8"          sub="need attention"  accent="border-yellow-500" color="bg-yellow-50 text-yellow-600" />
+        <Kpi icon={Truck}       label="Active Shipments"  value="23"         sub="in pipeline"     accent="border-cyan-500"   color="bg-cyan-50 text-cyan-600" onClick={() => router.push('/admin/logistics')} />
+        <Kpi icon={Clock}       label="Pending Approvals" value="8"          sub="need attention"  accent="border-yellow-500" color="bg-yellow-50 text-yellow-600" onClick={() => router.push('/admin/requests?filter=awaiting-approval')} />
         {perms.canSeeGrandTotalsAndMargins && (
-          <Kpi icon={IndianRupee} label="Revenue (MTD)"     value="₹45.2L"    sub="+18% vs last"    accent="border-emerald-500" color="bg-emerald-50 text-emerald-600" />
+          <Kpi icon={IndianRupee} label="Revenue (MTD)"     value="₹45.2L"    sub="+18% vs last"    accent="border-emerald-500" color="bg-emerald-50 text-emerald-600" onClick={() => router.push('/admin/all-orders?filter=completed')} />
         )}
-        <Kpi icon={AlertTriangle} label="Exceptions"       value="3"          sub="to resolve"      accent="border-red-500"    color="bg-red-50 text-red-600" />
+        <Kpi icon={AlertTriangle} label="Exceptions"       value="3"          sub="to resolve"      accent="border-red-500"    color="bg-red-50 text-red-600" onClick={() => router.push('/admin/all-orders?filter=exception')} />
       </div>
 
       <div className={`grid lg:grid-cols-3 gap-5 mb-6 ${perms.canSeeGrandTotalsAndMargins ? '' : 'lg:grid-cols-1'}`}>
@@ -82,7 +115,7 @@ export default function AdminDashboardPage() {
               <XAxis dataKey="month" tickLine={false} axisLine={false} style={{ fontSize: 11 }} />
               <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `₹${(v/100000).toFixed(0)}L`} style={{ fontSize: 11 }} />
               <Tooltip formatter={(v: any) => `₹${(v/100000).toFixed(2)}L`} contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0' }} />
-              <Line type="monotone" dataKey="revenue" stroke="#F97316" strokeWidth={3} dot={{ fill: '#F97316', r: 4 }} />
+              <Line type="monotone" dataKey="revenue" stroke="#4A3B52" strokeWidth={3} dot={{ fill: '#4A3B52', r: 4 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -103,7 +136,7 @@ export default function AdminDashboardPage() {
       </div>
 
       <div className="bg-card rounded-xl border border-border shadow-card p-5 mb-6">
-        <div className="flex items-center justify-between mb-4"><h3 className="font-700">China → India Pipeline</h3><Link href="/admin/logistics" className="text-xs text-accent font-600 hover:underline inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> Open logistics</Link></div>
+        <div className="flex items-center justify-between mb-4"><h3 className="font-700">China → India Pipeline</h3><Link href="/admin/logistics" className="text-xs text-[#4A3B52] font-600 hover:underline inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> Open logistics</Link></div>
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide pb-2">
           <span className="text-2xl flex-shrink-0">🇨🇳</span>
           {pipelineNodes.map((n, i) => (
@@ -121,12 +154,12 @@ export default function AdminDashboardPage() {
 
       <div className="grid lg:grid-cols-2 gap-5 mb-6">
         <div className="bg-card rounded-xl border border-border shadow-card p-5">
-          <div className="flex items-center justify-between mb-3"><h3 className="font-700">Pending Actions</h3><span className="badge bg-orange-100 text-orange-700">{pendingActions.length} items</span></div>
+          <div className="flex items-center justify-between mb-3"><h3 className="font-700">Pending Actions</h3><span className="badge bg-[#f0eef8] text-[#5c5470]">{pendingActions.length} items</span></div>
           <div className="space-y-2">
             {pendingActions.map(a => (
               <Link key={a.id} href={a.href} className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/40 transition-colors">
                 <div><p className="text-sm font-600 text-foreground">{a.title}</p><p className="text-xs text-muted-foreground">{a.desc}</p></div>
-                <span className="text-xs text-accent font-600 inline-flex items-center gap-1">{a.action} <ArrowRight className="w-3 h-3" /></span>
+                <span className="text-xs text-[#4A3B52] font-600 inline-flex items-center gap-1">{a.action} <ArrowRight className="w-3 h-3" /></span>
               </Link>
             ))}
           </div>
@@ -146,7 +179,7 @@ export default function AdminDashboardPage() {
 
       <div className="grid lg:grid-cols-2 gap-5">
         <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
-          <div className="flex items-center justify-between p-4 border-b border-border"><h3 className="font-700">Recent Orders</h3><Link href="/admin/all-orders" className="text-xs text-accent font-600">View all →</Link></div>
+          <div className="flex items-center justify-between p-4 border-b border-border"><h3 className="font-700">Recent Orders</h3><Link href="/admin/all-orders" className="text-xs text-[#4A3B52] font-600">View all →</Link></div>
           <div className="divide-y divide-border">
             {recentOrders.map(o => (
               <Link key={o.id} href={`/admin/orders/${o.id}`} className="flex items-center gap-3 p-3 hover:bg-muted/40 transition-colors">
@@ -160,11 +193,11 @@ export default function AdminDashboardPage() {
           </div>
         </div>
         <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
-          <div className="flex items-center justify-between p-4 border-b border-border"><h3 className="font-700">Recent Requests</h3><Link href="/admin/requests" className="text-xs text-accent font-600">View all →</Link></div>
+          <div className="flex items-center justify-between p-4 border-b border-border"><h3 className="font-700">Recent Requests</h3><Link href="/admin/requests" className="text-xs text-[#4A3B52] font-600">View all →</Link></div>
           <div className="divide-y divide-border">
             {recentRequestsList.map(r => (
               <Link key={r.id} href={`/admin/requests/${r.id}`} className={`flex items-center gap-3 p-3 hover:bg-muted/40 transition-colors ${r.status === 'Exception' ? 'bg-red-50/40' : ''}`}>
-                <div className="flex-1 min-w-0"><div className="flex items-center gap-1.5">{r.source === 'photo_scan' && <Camera className="w-3 h-3 text-accent" />}<p className="font-tabular font-600 text-sm">{r.requestId}</p></div><p className="text-xs text-muted-foreground truncate">{r.client} • {r.itemNames}</p></div>
+                <div className="flex-1 min-w-0"><div className="flex items-center gap-1.5">{r.source === 'photo_scan' && <Camera className="w-3 h-3 text-[#4A3B52]" />}<p className="font-tabular font-600 text-sm">{r.requestId}</p></div><p className="text-xs text-muted-foreground truncate">{r.client} • {r.itemNames}</p></div>
                 {perms.canSeeRequestBudget && (
                   <span className="font-tabular font-600 text-sm flex-shrink-0">{r.totalBudget}</span>
                 )}

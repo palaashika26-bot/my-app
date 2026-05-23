@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import React, { useEffect, useState } from 'react';
 import { X, MapPin, Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { statusToLocation, carrierForOrder } from '@/lib/mockData';
@@ -50,11 +50,11 @@ export default function ShipmentMapModal({ isOpen, onClose, order }: ShipmentMap
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 fade-in" onClick={onClose} role="dialog" aria-modal="true" aria-label="Shipment tracking">
-      <div className="bg-card rounded-2xl shadow-card-lg w-full max-w-2xl max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm overflow-y-auto pt-4 md:pt-8 fade-in" onClick={onClose} role="dialog" aria-modal="true" aria-label="Shipment tracking">
+      <div className="bg-card rounded-2xl shadow-card-lg w-full max-w-2xl mb-4 mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-border sticky top-0 bg-card z-10">
           <div className="flex items-center gap-2">
-            <MapPin className="w-5 h-5 text-accent" />
+            <MapPin className="w-5 h-5 text-[#4A3B52]" />
             <h3 className="font-700 text-foreground">Live Tracking — {order.orderId}</h3>
           </div>
           <button onClick={onClose} aria-label="Close" className="w-9 h-9 rounded-lg hover:bg-muted flex items-center justify-center">
@@ -71,8 +71,8 @@ export default function ShipmentMapModal({ isOpen, onClose, order }: ShipmentMap
               <span className="font-tabular">{loc.progress}%</span>
             </div>
             <div className="relative h-3 bg-muted rounded-full overflow-hidden">
-              <div className="absolute inset-y-0 left-0 bg-gradient-to-r from-accent to-orange-500 rounded-full transition-all duration-700" style={{ width: `${loc.progress}%` }} />
-              <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-accent border-2 border-white shadow-orange-glow animate-pulse" style={{ left: `${loc.progress}%` }} />
+              <div className="absolute inset-y-0 left-0 bg-gradient-to-r from-accent to-[#1A1423] rounded-full transition-all duration-700" style={{ width: `${loc.progress}%` }} />
+              <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-[#4A3B52] border-2 border-white shadow-orange-glow animate-pulse" style={{ left: `${loc.progress}%` }} />
             </div>
             <div className="flex items-center justify-between mt-2 text-xs font-500">
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500"></span>{origin}</span>
@@ -96,7 +96,7 @@ export default function ShipmentMapModal({ isOpen, onClose, order }: ShipmentMap
               <p className="text-[10px] uppercase text-muted-foreground font-600 tracking-wider">Tracking Number</p>
               <p className="text-sm font-tabular font-600 text-foreground mt-1">{carrier.trackingNo}</p>
             </div>
-            <button onClick={copyTracking} className="flex items-center gap-1.5 text-xs font-600 text-accent px-3 py-2 rounded-lg hover:bg-accent/10">
+            <button onClick={copyTracking} className="flex items-center gap-1.5 text-xs font-600 text-[#4A3B52] px-3 py-2 rounded-lg hover:bg-[#4A3B52]/10">
               {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
               {copied ? 'Copied' : 'Copy'}
             </button>

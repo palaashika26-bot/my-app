@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useForm } from 'react-hook-form';
@@ -8,19 +8,21 @@ import { useAuth } from '@/context/AuthContext';
 import { eliosWholesale } from '@/lib/brandAssets';
 import { authenticateStaff, getStaffRegistry, touchStaffLastLogin, type StaffMember } from '@/lib/staffStore';
 import { STAFF_ROLE_LABELS } from '@/lib/staffRoles';
+import { authApi } from '@/lib/api/auth.api';
+import { TOKEN_KEY } from '@/lib/api/axiosClient';
 
-// Mock credentials for demo — backend integration point
+// Real backend credentials (client1 / admin from seed data)
 const DEMO_CREDENTIALS = [
   {
     role: 'Client',
-    email: 'rajesh@techimports.in',
-    password: 'client@2024',
+    email: 'client1@elios.in',
+    password: 'Demo@1234',
     description: 'Access client dashboard, orders, and requests',
   },
   {
     role: 'Admin',
-    email: 'admin@elioswholesale.in',
-    password: 'admin@2024',
+    email: 'admin@elios.in',
+    password: 'Demo@1234',
     description: 'Access admin panel, manage all orders and users',
   },
 ];
@@ -66,27 +68,33 @@ function LoginForm() {
     await new Promise((r) => setTimeout(r, 800));
 
     if (data.role === 'client') {
-      const validCredential = DEMO_CREDENTIALS.find(
-        (c) => c.role === 'Client' && c.email === data.email && c.password === data.password
-      );
-      if (!validCredential) {
-        setIsLoading(false);
+      // ── Real backend authentication ───────────────────────────────────────
+      try {
+        const res = await authApi.login({ email: data.email, password: data.password });
+        const { user: apiUser, accessToken } = res.data.data;
+        // Persist JWT for subsequent API calls
+        localStorage.setItem(TOKEN_KEY, accessToken);
         addToast({
-          type: 'error',
-          title: 'Login failed',
-          description: 'Invalid client credentials — use the Client demo row below.',
+          type: 'success',
+          title: `Welcome back, ${apiUser.firstName}!`,
+          description: 'Redirecting to your client dashboard...',
         });
+        // Keep existing mock auth state in sync so ClientLayout / navigation works
+        login('client', {
+          name: `${apiUser.firstName} ${apiUser.lastName}`,
+          email: apiUser.email,
+          company: apiUser.client?.companyName,
+        });
+        window.location.href = '/client-dashboard';
+        return;
+      } catch (err: unknown) {
+        setIsLoading(false);
+        const msg =
+          (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+          'Invalid credentials — use the Client demo row below.';
+        addToast({ type: 'error', title: 'Login failed', description: msg });
         return;
       }
-      addToast({
-        type: 'success',
-        title: 'Welcome back!',
-        description: 'Redirecting to your client dashboard...',
-      });
-      await new Promise((r) => setTimeout(r, 600));
-      login('client', { name: 'Rajesh Kumar', email: validCredential.email, company: 'TechImports India' });
-      window.location.href = '/client-dashboard';
-      return;
     }
 
     if (data.role === 'admin') {
@@ -137,7 +145,11 @@ function LoginForm() {
       staffId: staff.id,
       staffRoleId: staff.role,
     });
-    window.location.href = '/admin';
+    if (staff.role === 'warehouse-qc') {
+      window.location.href = '/staff/warehouse';
+    } else {
+      window.location.href = '/admin';
+    }
   }
 
   function handleGoogleSignIn() {
@@ -161,11 +173,11 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex bg-background">
+    <div className="min-h-screen flex bg-background w-full overflow-x-hidden">
       {/* Left panel — brand */}
       <div className="hidden md:flex md:w-5/12 lg:w-5/12 xl:w-1/2 flex-col relative overflow-hidden"
   style={{
-    backgroundImage: `url('/bg.jpg')`,
+    backgroundImage: `url('/background.svg')`,
     backgroundSize: 'cover',
     backgroundPosition: 'center',
   }}
@@ -192,13 +204,13 @@ function LoginForm() {
           {/* Main content */}
           <div className="flex-1 flex flex-col justify-center max-w-sm">
             <div className="mb-8">
-              <div className="inline-flex items-center gap-2 bg-accent/20 text-accent px-3 py-1.5 rounded-full text-xs font-600 mb-6">
+              <div className="inline-flex items-center gap-2 bg-[#4A3B52]/20 text-[#4A3B52] px-3 py-1.5 rounded-full text-xs font-600 mb-6">
                 <Globe className="w-3.5 h-3.5" aria-hidden="true" />
                 China → India Sourcing Platform
               </div>
               <h1 className="text-4xl font-700 text-white leading-tight mb-4">
                 Source from China.<br />
-                <span className="text-accent">Deliver to India.</span>
+                <span className="text-[#4A3B52]">Deliver to India.</span>
               </h1>
               <p className="text-slate-300 text-base leading-relaxed">
                 Your trusted bridge for end-to-end product sourcing, quality inspection, and logistics management.
@@ -234,7 +246,7 @@ function LoginForm() {
       </div>
 
       {/* Right panel — form */}
-      <div className="flex-1 flex flex-col justify-center items-center px-6 sm:px-10 lg:px-16 xl:px-20 py-10 overflow-y-auto">
+      <div className="flex-1 min-w-0 w-full flex flex-col justify-center items-center px-6 sm:px-10 lg:px-16 xl:px-20 py-10 overflow-x-hidden">
         {/* Mobile logo */}
         <div className="md:hidden self-start mb-8">
           <div className="rounded-xl bg-muted p-2 ring-1 ring-border inline-block">
@@ -249,7 +261,7 @@ function LoginForm() {
           </div>
         </div>
 
-        <div className="w-full max-w-md">
+        <div className="w-full max-w-md mx-auto">
           <div className="mb-8">
             <h2 className="text-2xl font-700 text-foreground mb-1.5">Welcome back</h2>
             <p className="text-sm text-muted-foreground">Sign in to your EliosWholesale account</p>
@@ -260,13 +272,13 @@ function LoginForm() {
             <label className="block text-xs font-600 text-muted-foreground uppercase tracking-wider mb-2">
               Sign in as
             </label>
-            <div className="grid grid-cols-3 gap-2 p-1 bg-muted rounded-xl">
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-muted rounded-xl">
               {(['client', 'admin', 'staff'] as const).map((role) => (
                 <button
                   key={`role-${role}`}
                   type="button"
                   onClick={() => setValue('role', role)}
-                  className={`py-2.5 rounded-lg text-sm font-600 transition-all duration-200 ${
+                  className={`py-2.5 rounded-lg text-xs sm:text-sm font-600 transition-all duration-200 truncate ${
                     selectedRole === role
                       ? 'bg-card shadow-card text-foreground'
                       : 'text-muted-foreground hover:text-foreground'
@@ -274,7 +286,7 @@ function LoginForm() {
                   aria-pressed={selectedRole === role}
                   suppressHydrationWarning
                 >
-                  {role === 'client' ? '👤 Client' : role === 'admin' ? '🛡️ Admin' : '👥 Staff'}
+                  {role === 'client' ? 'Client' : role === 'admin' ? 'Admin' : 'Staff'}
                 </button>
               ))}
             </div>
@@ -337,7 +349,7 @@ function LoginForm() {
                 </label>
                 <button
                   type="button"
-                  className="text-xs text-accent hover:text-orange-600 font-500 transition-colors"
+                  className="text-xs text-[#4A3B52] hover:text-[#4A3B52] font-500 transition-colors"
                   aria-label="Forgot password"
                 >
                   Forgot password?
@@ -413,7 +425,7 @@ function LoginForm() {
             Don&apos;t have an account?{' '}
             <a
               href="mailto:sales@elioswholesale.in"
-              className="text-accent hover:text-orange-600 font-500 transition-colors"
+              className="text-[#4A3B52] hover:text-[#4A3B52] font-500 transition-colors"
             >
               Contact us to get started
             </a>
@@ -430,16 +442,16 @@ function LoginForm() {
             <div className="divide-y divide-border">
               {DEMO_CREDENTIALS.map((cred) => (
                 <div key={`cred-${cred.role}`} className="px-4 py-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2 min-w-0 overflow-hidden">
                       <span
-                        className={`badge text-[10px] px-2 py-0.5 ${
-                          cred.role === 'Admin' ? 'bg-primary text-primary-foreground' : 'bg-accent/15 text-accent'
+                        className={`badge text-[10px] px-2 py-0.5 flex-shrink-0 ${
+                          cred.role === 'Admin' ? 'bg-primary text-primary-foreground' : 'bg-[#4A3B52]/15 text-[#4A3B52]'
                         }`}
                       >
                         {cred.role}
                       </span>
-                      <span className="text-xs text-muted-foreground">{cred.description}</span>
+                      <span className="text-xs text-muted-foreground truncate">{cred.description}</span>
                     </div>
                     <button
                       type="button"
@@ -450,7 +462,7 @@ function LoginForm() {
                           cred.role === 'Admin' ? 'admin' : 'client'
                         )
                       }
-                      className="text-xs text-accent hover:text-orange-600 font-600 transition-colors px-2 py-1 rounded hover:bg-accent/10"
+                      className="text-xs text-[#4A3B52] hover:text-[#4A3B52] font-600 transition-colors px-2 py-1 rounded hover:bg-[#4A3B52]/10 flex-shrink-0"
                     >
                       Use
                     </button>
@@ -491,9 +503,9 @@ function LoginForm() {
               ))}
               {staffRows.map((s) => (
                 <div key={`staff-${s.id}`} className="px-4 py-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="badge text-[10px] px-2 py-0.5 bg-slate-700 text-white">Staff</span>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2 min-w-0 overflow-hidden">
+                      <span className="badge text-[10px] px-2 py-0.5 bg-slate-700 text-white flex-shrink-0">Staff</span>
                       <span className="text-xs text-muted-foreground truncate">
                         {STAFF_ROLE_LABELS[s.role]} — workspace access only
                       </span>
@@ -501,7 +513,7 @@ function LoginForm() {
                     <button
                       type="button"
                       onClick={() => fillCredentials(s.email, s.password, 'staff')}
-                      className="text-xs text-accent hover:text-orange-600 font-600 transition-colors px-2 py-1 rounded hover:bg-accent/10 flex-shrink-0"
+                      className="text-xs text-[#4A3B52] hover:text-[#4A3B52] font-600 transition-colors px-2 py-1 rounded hover:bg-[#4A3B52]/10 flex-shrink-0"
                     >
                       Use
                     </button>

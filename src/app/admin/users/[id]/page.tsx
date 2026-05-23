@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import React, { useState, use } from 'react';
 import Link from 'next/link';
 import AdminLayout from '@/components/AdminLayout';
@@ -32,7 +32,7 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
     <AdminLayout>
       <Link href="/admin/users" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4"><ArrowLeft className="w-4 h-4" /> Back</Link>
       <div className="bg-card rounded-xl border border-border shadow-card p-5 mb-5 flex flex-col sm:flex-row sm:items-center gap-4">
-        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-accent to-orange-600 text-white font-700 text-2xl flex items-center justify-center">{c.name.split(' ').map(n=>n[0]).join('').slice(0,2)}</div>
+        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-accent to-[#1A1423] text-white font-700 text-2xl flex items-center justify-center">{c.name.split(' ').map(n=>n[0]).join('').slice(0,2)}</div>
         <div className="flex-1"><h1 className="text-xl font-700">{c.name}</h1><p className="text-sm text-muted-foreground">{c.email}</p><p className="text-xs text-muted-foreground mt-1">{c.company} • Member since {c.joinedDate}</p></div>
         <button onClick={() => { setEditing(!editing); if (editing) addToast({ type: 'success', title: 'Profile saved' }); }} className="btn-secondary px-3 py-2 text-sm inline-flex items-center gap-1.5"><Save className="w-4 h-4" /> {editing ? 'Save' : 'Edit'}</button>
       </div>
@@ -81,7 +81,7 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
         </div>
       </div>
       {confirmDel && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setConfirmDel(false)}><div onClick={e => e.stopPropagation()} className="bg-card rounded-2xl max-w-sm p-5"><h4 className="font-700 mb-2">Delete this client?</h4><p className="text-sm text-muted-foreground mb-4">This cannot be undone. All orders and requests will be archived.</p><div className="flex gap-2"><button onClick={() => setConfirmDel(false)} className="btn-secondary flex-1 py-2 text-sm">Cancel</button><button onClick={() => { setConfirmDel(false); addToast({ type: 'success', title: 'Demo only — account archived' }); }} className="flex-1 py-2 rounded-lg bg-red-500 text-white text-sm font-600">Delete</button></div></div></div>
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center overflow-y-auto pt-4 md:pt-8" onClick={() => setConfirmDel(false)}><div onClick={e => e.stopPropagation()} className="bg-card rounded-2xl w-full max-w-sm p-5 mb-4 mx-4"><h4 className="font-700 mb-2">Delete this client?</h4><p className="text-sm text-muted-foreground mb-4">This cannot be undone. All orders and requests will be archived.</p><div className="flex gap-2"><button onClick={() => setConfirmDel(false)} className="btn-secondary flex-1 py-2 text-sm">Cancel</button><button onClick={() => { setConfirmDel(false); addToast({ type: 'success', title: 'Demo only — account archived' }); }} className="flex-1 py-2 rounded-lg bg-red-500 text-white text-sm font-600">Delete</button></div></div></div>
       )}
     </AdminLayout>
   );

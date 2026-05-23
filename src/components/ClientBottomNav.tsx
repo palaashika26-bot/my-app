@@ -1,51 +1,43 @@
-'use client';
-import React from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Home, ShoppingBag, Truck, User } from 'lucide-react';
+﻿'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { Home, ShoppingBag, FileText, BookOpen, Truck } from 'lucide-react'
 
 const navItems = [
-  { icon: Home, label: 'Home', href: '/client-dashboard' },
-  { icon: ShoppingBag, label: 'Orders', href: '/client-dashboard/orders' },
-  { icon: Truck, label: 'Logistics', href: '/client-dashboard/logistics' },
-  { icon: User, label: 'Profile', href: '/profile' },
-];
+  { href: '/client-dashboard', icon: Home, label: 'Home' },
+  { href: '/client-dashboard/orders', icon: ShoppingBag, label: 'Orders' },
+  { href: '/client-dashboard/requests', icon: FileText, label: 'Requests' },
+  { href: '/catalog', icon: BookOpen, label: 'Catalog' },
+  { href: '/client-dashboard/logistics', icon: Truck, label: 'Logistics' },
+]
 
 export default function ClientBottomNav() {
-  const pathname = usePathname();
+  const pathname = usePathname()
 
   return (
-    <nav
-      className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-border shadow-bottom-nav md:hidden"
-      role="navigation"
-      aria-label="Mobile navigation"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-    >
-      <div className="flex items-center justify-around px-2 py-1.5 safe-area-pb">
-        {navItems?.map((item) => {
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#F8F9F9] border-t border-[#C8BEE0] safe-area-inset-bottom">
+      <div className="flex items-center justify-around" style={{ minHeight: '56px', height: '4rem' }}>
+        {navItems.map(({ href, icon: Icon, label }) => {
           const isActive =
-            item?.href === '/client-dashboard'
+            href === '/client-dashboard'
               ? pathname === '/client-dashboard'
-              : pathname?.startsWith(item?.href);
+              : pathname?.startsWith(href)
           return (
             <Link
-              key={`bottom-nav-${item?.label}`}
-              href={item?.href}
-              className={`bottom-nav-item flex-1 ${isActive ? 'active' : ''}`}
-              aria-current={isActive ? 'page' : undefined}
-              aria-label={item?.label}
+              key={href}
+              href={href}
+              className={`flex flex-col items-center justify-center flex-1 h-full gap-0.5 min-w-0 px-1 ${
+                isActive ? 'text-[#4A3B52]' : 'text-gray-500'
+              }`}
+              style={{ minHeight: '44px' }}
             >
-              <item.icon
-                className={`w-5 h-5 transition-colors ${isActive ? 'text-accent' : 'text-muted-foreground'}`}
-                aria-hidden="true"
-              />
-              <span className={`${isActive ? 'text-accent' : 'text-muted-foreground'}`}>
-                {item?.label}
-              </span>
+              <Icon size={20} className="flex-shrink-0" />
+              <span className="text-[10px] leading-tight truncate w-full text-center">{label}</span>
             </Link>
-          );
+          )
         })}
       </div>
     </nav>
-  );
+  )
 }

@@ -1,8 +1,10 @@
-'use client';
+﻿'use client';
 import React, { useState, useRef, useEffect } from 'react';
 import AppLogo from '@/components/ui/AppLogo';
-import { Bell, Search, ChevronDown, User, Settings, LogOut, Package, HelpCircle, RefreshCw, BookOpen } from 'lucide-react';
+import { Bell, Search, ChevronDown, User, Settings, LogOut, Package, HelpCircle, RefreshCw, BookOpen, Menu } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 
 interface Notification {
   id: string;
@@ -63,21 +65,54 @@ const mockNotifications: Notification[] = [
 ];
 
 const typeColors: Record<Notification['type'], string> = {
-  order: 'bg-blue-100 text-blue-600',
+  order: 'bg-[#e4eeee] text-[#7a9e9f]',
   payment: 'bg-green-100 text-green-600',
-  request: 'bg-orange-100 text-orange-600',
+  request: 'bg-[#f0eef8] text-[#5c5470]',
   alert: 'bg-red-100 text-red-600',
 };
 
-export default function ClientTopbar() {
+interface ClientTopbarProps {
+  onMenuOpen?: () => void;
+}
+
+function initialsFromName(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  return parts.slice(0, 2).map((p) => p[0]).join('').toUpperCase();
+}
+
+export default function ClientTopbar({ onMenuOpen }: ClientTopbarProps) {
+  const router = useRouter();
+  const { user, logout } = useAuth();
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
   const notifRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
 
+  const displayName = user?.name ?? 'Client';
+  const displayEmail = user?.email ?? '';
+  const displayInitials = initialsFromName(displayName);
+
   const unreadCount = notifications.filter((n) => !n.read).length;
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    if (searchQuery.trim()) router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+  }
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('notifications-client');
+      if (stored) {
+        setNotifications(JSON.parse(stored));
+      } else {
+        localStorage.setItem('notifications-client', JSON.stringify(mockNotifications));
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -93,7 +128,15 @@ export default function ClientTopbar() {
   }, []);
 
   function markAllRead() {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    const updated = notifications.map((n) => ({ ...n, read: true }));
+    setNotifications(updated);
+    try { localStorage.setItem('notifications-client', JSON.stringify(updated)); } catch {}
+  }
+
+  function markNotifRead(id: string) {
+    const updated = notifications.map((n) => n.id === id ? { ...n, read: true } : n);
+    setNotifications(updated);
+    try { localStorage.setItem('notifications-client', JSON.stringify(updated)); } catch {}
   }
 
   return (
@@ -102,21 +145,34 @@ export default function ClientTopbar() {
       role="banner"
     >
       <div className="w-full max-w-screen-2xl mx-auto px-4 lg:px-8 flex items-center gap-4">
+        {/* Mobile hamburger */}
+        {onMenuOpen && (
+          <button
+            onClick={onMenuOpen}
+            className="md:hidden w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors flex-shrink-0"
+            aria-label="Open menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
+
         {/* Logo */}
         <Link href="/" className="flex items-center flex-shrink-0" aria-label="EliosWholesale Home">
           <AppLogo size={36} />
         </Link>
 
         {/* Search */}
-        <div className="flex-1 max-w-md ml-4 hidden md:block">
+        <form onSubmit={handleSearch} className="flex-1 max-w-md ml-4 hidden md:block">
           <div
             className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all duration-150 ${
-              searchFocused ? 'border-accent shadow-[0_0_0_3px_rgba(249,115,22,0.15)]' : 'border-border bg-muted'
+              searchFocused ? 'border-[#4A3B52] shadow-[0_0_0_3px_rgba(74,59,82,0.15)]' : 'border-border bg-muted'
             }`}
           >
             <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" aria-hidden="true" />
             <input
               type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search orders, requests..."
               className="flex-1 bg-transparent text-sm outline-none text-foreground placeholder:text-muted-foreground"
               onFocus={() => setSearchFocused(true)}
@@ -124,7 +180,7 @@ export default function ClientTopbar() {
               aria-label="Search orders and requests"
             />
           </div>
-        </div>
+        </form>
 
         <div className="flex-1 md:hidden" />
 
@@ -132,18 +188,25 @@ export default function ClientTopbar() {
         <div className="flex items-center gap-2">
           {/* Mobile search */}
           <button
+            onClick={() => router.push('/search')}
             className="md:hidden w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             aria-label="Search"
           >
-            <Search className="w-4.5 h-4.5" />
+            <Search className="w-5 h-5" />
           </button>
 
           {/* Notifications */}
           <div className="relative" ref={notifRef}>
             <button
               onClick={() => {
-                setNotifOpen((v) => !v);
+                const opening = !notifOpen;
+                setNotifOpen(opening);
                 setProfileOpen(false);
+                if (opening) {
+                  const updated = notifications.map(n => ({ ...n, read: true }));
+                  setNotifications(updated);
+                  try { localStorage.setItem('notifications-client', JSON.stringify(updated)); } catch {}
+                }
               }}
               className="relative w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
               aria-label={`Notifications — ${unreadCount} unread`}
@@ -166,18 +229,19 @@ export default function ClientTopbar() {
                   {unreadCount > 0 && (
                     <button
                       onClick={markAllRead}
-                      className="text-xs text-accent hover:text-orange-600 font-500 transition-colors"
+                      className="text-xs text-[#4A3B52] hover:text-[#4A3B52] font-500 transition-colors"
                     >
                       Mark all read
                     </button>
                   )}
                 </div>
-                <div className="max-h-96 overflow-y-auto divide-y divide-border">
+                <div className="max-h-96 overflow-y-auto divide-y divide-border notification-scroll">
                   {notifications.map((notif) => (
                     <div
                       key={notif.id}
+                      onClick={() => { markNotifRead(notif.id); setNotifOpen(false); router.push(notif.href); }}
                       className={`px-4 py-3 flex gap-3 hover:bg-muted transition-colors cursor-pointer ${
-                        !notif.read ? 'bg-orange-50' : ''
+                        !notif.read ? 'bg-[#faf9f7]' : ''
                       }`}
                     >
                       <div
@@ -191,7 +255,7 @@ export default function ClientTopbar() {
                             {notif.title}
                           </p>
                           {!notif.read && (
-                            <span className="w-2 h-2 rounded-full bg-accent flex-shrink-0 mt-1" aria-hidden="true" />
+                            <span className="w-2 h-2 rounded-full bg-[#5c5470] flex-shrink-0 mt-1" aria-hidden="true" />
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed truncate">
@@ -203,7 +267,10 @@ export default function ClientTopbar() {
                   ))}
                 </div>
                 <div className="px-4 py-2.5 border-t border-border">
-                  <button className="text-xs text-accent hover:text-orange-600 font-500 w-full text-center transition-colors">
+                  <button
+                    onClick={() => { setNotifOpen(false); router.push('/notifications'); }}
+                    className="text-xs text-[#4A3B52] hover:text-[#4A3B52] font-500 w-full text-center transition-colors"
+                  >
                     View all notifications
                   </button>
                 </div>
@@ -224,10 +291,10 @@ export default function ClientTopbar() {
               aria-label="Profile menu"
             >
               <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xs font-700 flex-shrink-0">
-                RK
+                {displayInitials}
               </div>
               <div className="hidden sm:block text-left">
-                <p className="text-xs font-600 text-foreground leading-none">Rajesh Kumar</p>
+                <p className="text-xs font-600 text-foreground leading-none">{displayName}</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">Client Account</p>
               </div>
               <ChevronDown
@@ -241,8 +308,8 @@ export default function ClientTopbar() {
             {profileOpen && (
               <div className="absolute right-0 top-full mt-2 w-56 bg-card rounded-xl shadow-card-lg border border-border z-50 fade-in overflow-hidden">
                 <div className="px-4 py-3 border-b border-border">
-                  <p className="text-sm font-600 text-foreground">Rajesh Kumar</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">rajesh@techimports.in</p>
+                  <p className="text-sm font-600 text-foreground">{displayName}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{displayEmail}</p>
                 </div>
                 <div className="py-1">
                   {[
@@ -265,14 +332,13 @@ export default function ClientTopbar() {
                   ))}
                 </div>
                 <div className="border-t border-border py-1">
-                  <Link
-                    href="/login"
-                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                    onClick={() => setProfileOpen(false)}
+                  <button
+                    onClick={() => { setProfileOpen(false); logout(); }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
                   >
                     <LogOut className="w-4 h-4" aria-hidden="true" />
                     Sign Out
-                  </Link>
+                  </button>
                 </div>
               </div>
             )}
