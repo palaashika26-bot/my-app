@@ -65,6 +65,7 @@ export default function QuotePage({ params }: { params: Promise<{ id: string }> 
       const payload = {
         notes: notes?.trim() || undefined,
         totalBudgetINR: budgetVal,
+        requestType: 'QUOTATION' as const,
         items: [
           {
             type: (isBackendProduct ? 'CATALOG' : 'CUSTOM') as 'CATALOG' | 'CUSTOM',

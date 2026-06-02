@@ -16,6 +16,7 @@ export interface CreateRequestPayload {
   notes?: string;
   referenceNote?: string;
   totalBudgetINR?: number;
+  requestType?: 'SOURCING' | 'QUOTATION' | 'SAMPLE';
   items: RequestItemPayload[];
 }
 

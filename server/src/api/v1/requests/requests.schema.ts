@@ -24,9 +24,12 @@ const requestItemWithImagesBase = requestItemBaseObject.extend({
   referenceImageUrls: z.array(z.string()).max(5).optional(),
 });
 
+const requestTypeSchema = z.enum(["SOURCING", "QUOTATION", "SAMPLE"]).optional();
+
 export const createRequestSchema = z.object({
   notes: z.string().max(1000).optional(),
   totalBudgetINR: z.number().positive().optional(),
+  requestType: requestTypeSchema,
   items: z
     .array(requestItemSchema)
     .min(1, "Add at least one product")

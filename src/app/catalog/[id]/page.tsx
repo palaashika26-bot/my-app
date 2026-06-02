@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect, use } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import ClientLayout from '@/components/ClientLayout';
+import ImageLightbox from '@/components/ImageLightbox';
 import { Star, ChevronLeft, Heart, Minus, Plus, CheckCircle2, Truck, ShieldCheck, Tag } from 'lucide-react';
 
 // ─── Product Interface (backend-ready) ───────────────────────────────────────
@@ -167,6 +168,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const [related, setRelated] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeImg, setActiveImg] = useState(0);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [qty, setQty] = useState(1);
   const [inWishlist, setInWishlist] = useState(false);
   const [activeSection, setActiveSection] = useState<'description' | 'specs' | 'features'>('description');
@@ -309,7 +311,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   <img
                     src={images[activeImg]}
                     alt={product.name}
-                    className="w-full h-full object-contain"
+                    className="w-full h-full object-contain cursor-pointer"
+                    onClick={() => setLightboxUrl(images[activeImg])}
                   />
                 ) : (
                   <span className="text-8xl select-none">{product.emoji ?? '📦'}</span>
@@ -568,6 +571,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
         <div className="h-8" />
       </div>
 
+      <ImageLightbox src={lightboxUrl} onClose={() => setLightboxUrl(null)} />
     </ClientLayout>
   );
 }

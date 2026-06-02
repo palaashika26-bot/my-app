@@ -46,9 +46,11 @@ export const requestsService = {
     );
 
     const referenceNote = (data as CreateRequestInputV2).referenceNote;
+    const requestType = data.requestType ?? "SOURCING";
     const request = await requestsRepository.createWithReferenceData(client.id, {
       notes: data.notes,
       referenceNote,
+      requestType,
       totalBudgetINR: data.totalBudgetINR,
       items: resolvedItems.map((item) => ({
         type: item.type,

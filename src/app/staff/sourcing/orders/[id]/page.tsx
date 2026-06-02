@@ -17,6 +17,7 @@ import type { GSTData } from '@/components/GSTInvoicePopover';
 import { paymentsApi } from '@/lib/api/payments.api';
 import ProductImage from '@/components/ProductImage';
 import ExceptionChat from '@/components/ExceptionChat';
+import ImageLightbox from '@/components/ImageLightbox';
 import { useAuth } from '@/context/AuthContext';
 import { notFound } from 'next/navigation';
 
@@ -1152,23 +1153,13 @@ export default function SourcingOrderDetailPage({ params }: { params: Promise<{ 
                       <div key={i} className="relative group">
                         <img
                           src={url}
-                          className={`w-full h-28 object-cover rounded-lg cursor-pointer border-2 transition-all ${lightboxUrl === url ? 'border-[#4A3B52]' : 'border-transparent'}`}
-                          onClick={() => setLightboxUrl(lightboxUrl === url ? null : url)}
+                          className="w-full h-28 object-cover rounded-lg cursor-pointer border-2 border-transparent hover:border-[#4A3B52] transition-all"
+                          onClick={() => setLightboxUrl(url)}
                         />
-                        <a href={url} download target="_blank" rel="noreferrer"
-                          className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                          ⬇ Download
-                        </a>
                       </div>
                     ))}
                   </div>
-                  {lightboxUrl && (
-                    <div className="mt-3 relative rounded-lg overflow-hidden border border-border">
-                      <button onClick={() => setLightboxUrl(null)} className="absolute top-2 right-2 z-10 bg-black/60 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold">✕</button>
-                      <img src={lightboxUrl} className="w-full max-h-80 object-contain bg-black/5" />
-                      <a href={lightboxUrl} download target="_blank" rel="noreferrer" className="block py-1.5 text-center text-xs text-[#4A3B52] underline border-t border-border">Download Full Image</a>
-                    </div>
-                  )}
+                  <ImageLightbox src={lightboxUrl} onClose={() => setLightboxUrl(null)} />
                 </div>
               )}
 

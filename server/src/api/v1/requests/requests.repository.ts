@@ -391,6 +391,7 @@ export const requestsRepository = {
     data: {
       notes?: string;
       referenceNote?: string;
+      requestType?: string;
       totalBudgetINR?: number;
       items: {
         type: string;
@@ -410,6 +411,7 @@ export const requestsRepository = {
       data: {
         requestNumber,
         clientId,
+        requestType: (data.requestType ?? "SOURCING") as any,
         notes: data.notes,
         referenceNote: data.referenceNote ?? null,
         totalBudgetINR: data.totalBudgetINR ?? null,

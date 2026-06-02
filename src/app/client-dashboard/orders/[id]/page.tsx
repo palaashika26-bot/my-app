@@ -2,6 +2,7 @@
 import React, { useState, use, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import ClientLayout from '@/components/ClientLayout';
+import ImageLightbox from '@/components/ImageLightbox';
 import { ordersApi } from '@/lib/api/orders.api';
 import { TOKEN_KEY } from '@/lib/api/axiosClient';
 import type { ApiOrder } from '@/lib/types/api.types';
@@ -653,17 +654,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                         <img
                           key={i}
                           src={url}
-                          className={`w-full h-40 object-cover rounded-lg cursor-pointer border-2 transition-all ${clientLightboxUrl === url ? 'border-[#4A3B52]' : 'border-orange-200'}`}
-                          onClick={() => setClientLightboxUrl(clientLightboxUrl === url ? null : url)}
+                          className="w-full h-40 object-cover rounded-lg cursor-pointer border-2 border-orange-200 hover:border-[#4A3B52] transition-all"
+                          onClick={() => setClientLightboxUrl(url)}
                         />
                       ))}
                     </div>
-                    {clientLightboxUrl && (
-                      <div className="mb-4 relative rounded-lg overflow-hidden border border-orange-200">
-                        <button onClick={() => setClientLightboxUrl(null)} className="absolute top-2 right-2 z-10 bg-black/60 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold">✕</button>
-                        <img src={clientLightboxUrl} className="w-full max-h-72 object-contain bg-black/5" />
-                      </div>
-                    )}
+                    <ImageLightbox src={clientLightboxUrl} onClose={() => setClientLightboxUrl(null)} />
                   </>
                 ) : (
                   <button

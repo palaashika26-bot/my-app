@@ -5,6 +5,7 @@ import ClientLayout from '@/components/ClientLayout';
 import { useToast } from '@/components/ui/Toast';
 import { Search, X, Plus, SlidersHorizontal, ArrowUpDown, Check, Star, ChevronLeft, ChevronRight } from 'lucide-react';
 import ProductImage from '@/components/ProductImage';
+import ImageLightbox from '@/components/ImageLightbox';
 import { productsApi } from '@/lib/api/products.api';
 import { TOKEN_KEY } from '@/lib/api/axiosClient';
 import { requestsApi } from '@/lib/api/requests.api';
@@ -244,6 +245,7 @@ export default function CatalogPage() {
   // Product detail modal
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [detailImgIdx, setDetailImgIdx] = useState(0);
+  const [detailLightboxUrl, setDetailLightboxUrl] = useState<string | null>(null);
 
   // Quotation modal
   const [quoteProduct, setQuoteProduct] = useState<Product | null>(null);
@@ -471,6 +473,7 @@ export default function CatalogPage() {
       const payload = {
         notes: quoteNotes?.trim() || undefined,
         totalBudgetINR: budget,
+        requestType: 'QUOTATION' as const,
         items: [
           {
             type: (isBackendProduct ? 'CATALOG' : 'CUSTOM') as 'CATALOG' | 'CUSTOM',
@@ -796,7 +799,7 @@ export default function CatalogPage() {
                       {isVideo(detailMedia[detailImgIdx]) ? (
                         <video src={detailMedia[detailImgIdx]} controls className="w-full h-full object-contain" />
                       ) : (
-                        <img src={detailMedia[detailImgIdx]} alt={detailProduct.name} className="w-full h-full object-contain" />
+                        <img src={detailMedia[detailImgIdx]} alt={detailProduct.name} className="w-full h-full object-contain cursor-pointer" onClick={() => setDetailLightboxUrl(detailMedia[detailImgIdx])} />
                       )}
                       {/* nav arrows */}
                       {detailMedia.length > 1 && (
@@ -926,6 +929,8 @@ export default function CatalogPage() {
           </div>
         </div>
       )}
+
+      <ImageLightbox src={detailLightboxUrl} onClose={() => setDetailLightboxUrl(null)} />
 
       {/* ── Quotation Modal (updated spec) ── */}
       {quoteProduct && (

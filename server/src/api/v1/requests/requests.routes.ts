@@ -29,7 +29,7 @@ const router = Router();
 router.post(
   "/",
   authenticate,
-  authorize(["CLIENT"]),
+  authorize(["CLIENT", "ADMIN"]),
   validate(createRequestSchemaV2),
   asyncHandler(createRequest)
 );
