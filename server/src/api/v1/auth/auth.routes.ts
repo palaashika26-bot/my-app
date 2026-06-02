@@ -1,6 +1,14 @@
 import { Router } from "express";
-import { login, register, logout, me, refresh } from "./auth.controller";
-import { loginSchema, registerSchema } from "./auth.schema";
+import {
+  login,
+  register,
+  registerClient,
+  verifyEmail,
+  logout,
+  me,
+  refresh,
+} from "./auth.controller";
+import { loginSchema, registerSchema, registerClientSchema } from "./auth.schema";
 import { validate } from "../../../middleware/validate";
 import { authenticate } from "../../../middleware/authenticate";
 import { authLimiter } from "../../../middleware/rateLimiter";
@@ -14,8 +22,18 @@ router.use(authLimiter);
 // POST /api/v1/auth/login
 router.post("/login", validate(loginSchema), asyncHandler(login));
 
-// POST /api/v1/auth/register
+// POST /api/v1/auth/register  (legacy / admin-created accounts)
 router.post("/register", validate(registerSchema), asyncHandler(register));
+
+// POST /api/v1/auth/register/client  (self-registration with email verification)
+router.post(
+  "/register/client",
+  validate(registerClientSchema),
+  asyncHandler(registerClient)
+);
+
+// GET /api/v1/auth/verify-email?token=...
+router.get("/verify-email", asyncHandler(verifyEmail));
 
 // POST /api/v1/auth/logout
 router.post("/logout", asyncHandler(logout));

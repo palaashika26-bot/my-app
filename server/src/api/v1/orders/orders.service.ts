@@ -25,6 +25,38 @@ export const ordersService = {
     return ordersRepository.findById(id, clientId);
   },
 
+  async getGSTInvoice(orderId: string) {
+    return ordersRepository.getGSTInvoice(orderId);
+  },
+
+  async saveGSTInvoice(orderId: string, gstData: Record<string, unknown>) {
+    return ordersRepository.saveGSTInvoice(orderId, gstData);
+  },
+
+  async updateCompletedStages(id: string, completedStages: string[]) {
+    return ordersRepository.updateCompletedStages(id, completedStages);
+  },
+
+  async updateStatus(id: string, status: string) {
+    return ordersRepository.updateStatus(id, status);
+  },
+
+  async updateDeliveryPreference(id: string, deliveryPreference: string, deliveryAddress?: string) {
+    return ordersRepository.updateDeliveryPreference(id, deliveryPreference, deliveryAddress);
+  },
+
+  async getWarehouseReport(orderId: string, clientId?: string) {
+    return ordersRepository.getWarehouseReport(orderId, clientId);
+  },
+
+  async upsertWarehouseReport(orderId: string, data: Record<string, unknown>) {
+    return ordersRepository.upsertWarehouseReport(orderId, data);
+  },
+
+  async appendAdminReply(orderId: string, reply: Record<string, unknown>) {
+    return ordersRepository.appendAdminReply(orderId, reply);
+  },
+
   /** Resolve the Client.id for a given User.id (used by CLIENT role controllers) */
   async getClientIdByUserId(userId: string): Promise<string | null> {
     const client = await prisma.client.findUnique({

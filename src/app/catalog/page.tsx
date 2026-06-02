@@ -7,6 +7,8 @@ import { Search, X, Plus, SlidersHorizontal, ArrowUpDown, Check, Star, ChevronLe
 import ProductImage from '@/components/ProductImage';
 import { productsApi } from '@/lib/api/products.api';
 import { TOKEN_KEY } from '@/lib/api/axiosClient';
+import { requestsApi } from '@/lib/api/requests.api';
+import { requestsCache } from '@/lib/api/requestsCache';
 import type { ApiProduct } from '@/lib/types/api.types';
 
 interface Spec { key: string; value: string; }
@@ -458,23 +460,74 @@ export default function CatalogPage() {
   function closeCustomModal() { setCustomOpen(false); }
 
   async function submitRequest() {
+    if (!quoteProduct) return;
     setSubmitting(true);
-    await new Promise(r => setTimeout(r, 800));
-    const id = `BK-REQ-2026-${String(Math.floor(1000 + Math.random() * 9000))}`;
-    addToast({ type: 'success', title: 'Quotation request submitted', description: `${id} created for ${quoteProduct?.name}. Our team will contact you within 24 hours.` });
-    setSubmitting(false);
-    closeQuote();
-    closeDetail();
+    try {
+      const isBackendProduct = typeof quoteProduct.id === 'string' && quoteProduct.id.startsWith('api-');
+      const productId = isBackendProduct ? quoteProduct.id.replace(/^api-/, '') : undefined;
+      const quantity = Math.max(1, parseInt(quoteQty) || quoteProduct.moq);
+      const budget = quoteBudget ? parseFloat(String(quoteBudget).replace(/[^0-9.]/g, '')) : undefined;
+
+      const payload = {
+        notes: quoteNotes?.trim() || undefined,
+        totalBudgetINR: budget,
+        items: [
+          {
+            type: (isBackendProduct ? 'CATALOG' : 'CUSTOM') as 'CATALOG' | 'CUSTOM',
+            productId,
+            productName: quoteProduct.name,
+            productDescription: quoteProduct.shortDescription || undefined,
+            quantity,
+            unit: 'PCS' as const,
+            targetPriceINR: budget,
+          },
+        ],
+      };
+
+      const resp = await requestsApi.createRequest(payload);
+      const request = resp?.data?.data;
+      if (request) requestsCache.set(request.id, request);
+      addToast({ type: 'success', title: 'Quotation request submitted', description: `${request?.requestNumber || request?.id} created for ${quoteProduct.name}. Our team will contact you within 24 hours.` });
+      closeQuote();
+      closeDetail();
+      if (request?.id) router.push(`/client-dashboard/requests/${request.id}`);
+    } catch (error: any) {
+      addToast({ type: 'error', title: 'Failed to submit request', description: error?.response?.data?.message || 'Please try again.' });
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function submitCustomRequest() {
     if (!customName.trim()) return;
     setCustomSubmitting(true);
-    await new Promise(r => setTimeout(r, 800));
-    const id = `BK-REQ-2026-${String(Math.floor(1000 + Math.random() * 9000))}`;
-    addToast({ type: 'success', title: 'Product request submitted', description: `${id} created for "${customName}". Our team will contact you within 24 hours.` });
-    setCustomSubmitting(false);
-    closeCustomModal();
+    try {
+      const quantity = Math.max(1, parseInt(customQty) || 1);
+      const payload = {
+        notes: customNotes?.trim() || undefined,
+        items: [
+          {
+            type: 'CUSTOM' as 'CATALOG' | 'CUSTOM',
+            productName: customName.trim(),
+            productDescription: customNotes?.trim() || undefined,
+            quantity,
+            unit: 'PCS' as const,
+            referenceImageUrls: undefined,
+          },
+        ],
+      };
+
+      const resp = await requestsApi.createRequest(payload);
+      const request = resp?.data?.data;
+      if (request) requestsCache.set(request.id, request);
+      addToast({ type: 'success', title: 'Product request submitted', description: `${request?.requestNumber || request?.id} created for "${customName}". Our team will contact you within 24 hours.` });
+      closeCustomModal();
+      if (request?.id) router.push(`/client-dashboard/requests/${request.id}`);
+    } catch (error: any) {
+      addToast({ type: 'error', title: 'Failed to submit request', description: error?.response?.data?.message || 'Please try again.' });
+    } finally {
+      setCustomSubmitting(false);
+    }
   }
 
   const selectedSortLabel = SORT_OPTIONS.find(o => o.value === sortBy)?.label || 'Sort';
@@ -859,7 +912,7 @@ export default function CatalogPage() {
             {/* F) STICKY BOTTOM BUTTONS */}
             <div className="flex-shrink-0 border-t border-border bg-card px-4 py-3 flex gap-2 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
               <button
-                onClick={() => { closeDetail(); }}
+                onClick={() => { closeDetail(); openQuote(detailProduct); }}
                 className="flex-1 py-3 text-sm font-600 rounded-xl border-2 border-[#5c5470] text-[#5c5470] hover:bg-[#f5f4f7] transition-colors">
                 Add to Request
               </button>

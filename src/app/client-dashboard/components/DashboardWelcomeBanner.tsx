@@ -2,8 +2,12 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, ArrowRight, TrendingUp, BookOpen } from 'lucide-react';
 import Link from 'next/link';
+import { useAuth } from '@/context/AuthContext';
 
 export default function DashboardWelcomeBanner() {
+  const { user } = useAuth();
+  const firstName = user?.name ? user.name.split(' ')[0] : 'there';
+
   const [greeting, setGreeting] = useState('Good morning');
   const [currentTime, setCurrentTime] = useState('');
 
@@ -39,12 +43,12 @@ export default function DashboardWelcomeBanner() {
           <span className="text-xs font-500 text-slate-400 font-tabular">{currentTime}</span>
         </div>
         <h1 className="text-lg font-700 text-white">
-          {greeting}, Rajesh 👋
+          {greeting}, {firstName} 👋
         </h1>
         <p className="text-sm text-slate-300 mt-0.5">
           You have{' '}
-          <span className="text-[#c17b5c] font-600">3 quotations</span> awaiting your approval and{' '}
-          <span className="text-yellow-400 font-600">2 pending payments</span>.
+          <span className="text-[#c17b5c] font-600">0 quotations</span> awaiting your approval and{' '}
+          <span className="text-yellow-400 font-600">0 pending payments</span>.
         </p>
       </div>
 

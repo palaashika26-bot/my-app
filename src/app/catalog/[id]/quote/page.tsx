@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import ClientLayout from '@/components/ClientLayout';
 import { useToast } from '@/components/ui/Toast';
+import { requestsApi } from '@/lib/api/requests.api';
+import { requestsCache } from '@/lib/api/requestsCache';
 import { ChevronLeft, CheckCircle2 } from 'lucide-react';
 
 interface AdminProduct {
@@ -54,16 +56,40 @@ export default function QuotePage({ params }: { params: Promise<{ id: string }> 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
-    await new Promise(r => setTimeout(r, 900));
-    const rid = `BK-REQ-2026-${String(Math.floor(1000 + Math.random() * 9000))}`;
-    setRequestId(rid);
-    addToast({
-      type: 'success',
-      title: 'Quotation request submitted',
-      description: `${rid} created. Our team will contact you within 24 hours.`,
-    });
-    setSubmitting(false);
-    setSubmitted(true);
+    try {
+      const isBackendProduct = typeof product?.id === 'string' && String(product.id).startsWith('api-');
+      const productId = isBackendProduct ? String(product.id).replace(/^api-/, '') : undefined;
+      const qtyInt = Math.max(1, parseInt(qty) || product?.moq || 1);
+      const budgetVal = budget ? parseFloat(String(budget).replace(/[^0-9.]/g, '')) : undefined;
+
+      const payload = {
+        notes: notes?.trim() || undefined,
+        totalBudgetINR: budgetVal,
+        items: [
+          {
+            type: (isBackendProduct ? 'CATALOG' : 'CUSTOM') as 'CATALOG' | 'CUSTOM',
+            productId,
+            productName: product?.name || '',
+            quantity: qtyInt,
+            unit: 'PCS' as const,
+            targetPriceINR: budgetVal,
+          },
+        ],
+      };
+
+      const resp = await requestsApi.createRequest(payload);
+      const request = resp?.data?.data;
+      if (request) requestsCache.set(request.id, request);
+      setRequestId(request?.requestNumber || request?.id || '');
+      addToast({ type: 'success', title: 'Quotation request submitted', description: `${request?.requestNumber || request?.id} created. Our team will contact you within 24 hours.` });
+      setSubmitted(true);
+      // navigate to requests view if available
+      if (request?.id) router.push(`/client-dashboard/requests/${request.id}`);
+    } catch (error: any) {
+      addToast({ type: 'error', title: 'Failed to submit request', description: error?.response?.data?.message || 'Please try again.' });
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   // ── Loading ─────────────────────────────────────────────────────────────────

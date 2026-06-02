@@ -1,28 +1,21 @@
-﻿'use client';
-import React, { useState, use, useEffect } from 'react';
+'use client';
+import React, { useState, use, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import ClientLayout from '@/components/ClientLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { mockRequests } from '@/lib/mockData';
 import type { RequestLineItem, PerProductQuoteStatus } from '@/lib/mockData';
-import { defaultLineItemsFromRequest, loadRfqLineItems, persistRfqLineItems } from '@/lib/rfqLineItems';
-import { loadPaymentProof, loadPaymentConfirmed } from '@/lib/paymentStore';
-import { ArrowLeft, Check, MessageSquare, CheckCircle2, Circle } from 'lucide-react';
-import ProductImage from '@/components/ProductImage';
-import { notFound } from 'next/navigation';
+import { requestsApi } from '@/lib/api/requests.api';
+import { requestsCache } from '@/lib/api/requestsCache';
+import { paymentsApi } from '@/lib/api/payments.api';
+import { ArrowLeft, Check, MessageSquare, CheckCircle2, Circle, X, ImageIcon } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 
 const CNY_TO_INR = 11.5;
 
 const stages = ['Request Submitted', 'Quotation in Progress', 'Awaiting Approval', 'Payment Pending', 'Order Confirmed'];
 
-function clientStatusLabel(s: PerProductQuoteStatus, revisionRequested?: boolean) {
-  if (s === 'Pending' && revisionRequested) return 'Pending';
-  return s;
-}
-
-function ClientStatusPill({ status, revisionRequested }: { status: PerProductQuoteStatus; revisionRequested?: boolean }) {
+function ClientStatusPill({ status }: { status: PerProductQuoteStatus }) {
   const base = 'text-[10px] font-600 px-2 py-0.5 rounded';
   const map: Record<PerProductQuoteStatus, string> = {
     Pending: 'bg-amber-100 text-amber-800',
@@ -30,176 +23,349 @@ function ClientStatusPill({ status, revisionRequested }: { status: PerProductQuo
     Accepted: 'bg-emerald-100 text-emerald-800',
     Rejected: 'bg-red-100 text-red-800',
   };
+  return <span className={`${base} ${map[status]}`}>{status}</span>;
+}
+
+function ResponseBadge({ response }: { response: string }) {
+  const map: Record<string, string> = {
+    ACCEPTED: 'bg-emerald-100 text-emerald-800',
+    REJECTED: 'bg-red-100 text-red-800',
+    COUNTERED: 'bg-amber-100 text-amber-800',
+  };
+  const label: Record<string, string> = { ACCEPTED: '✅ Accepted', REJECTED: '❌ Rejected', COUNTERED: '💬 Counter Sent' };
   return (
-    <span className={`${base} ${map[status]}`}>
-      {clientStatusLabel(status, revisionRequested)}
-      {revisionRequested && <span className="sr-only"> revision requested</span>}
+    <span className={`text-[10px] font-600 px-2 py-0.5 rounded ${map[response] ?? 'bg-muted text-muted-foreground'}`}>
+      {label[response] ?? response}
     </span>
   );
 }
 
+function statusToCompletedUpTo(status: string): number {
+  if (['CONVERTED', 'Completed'].includes(status)) return 4;
+  if (['ACCEPTED', 'PARTIALLY_ACCEPTED'].includes(status)) return 2;
+  if (['QUOTED', 'REVIEWING', 'Awaiting Approval'].includes(status)) return 1;
+  return 0;
+}
+
+function mapItemStatus(apiStatus: string): PerProductQuoteStatus {
+  if (apiStatus === 'QUOTED') return 'Quoted';
+  if (apiStatus === 'ACCEPTED') return 'Accepted';
+  if (apiStatus === 'REJECTED') return 'Rejected';
+  return 'Pending';
+}
+
 export default function RequestDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const req = mockRequests.find(r => r.id === id);
   const router = useRouter();
   const { addToast } = useToast();
-  const [lineItems, setLineItems] = useState<RequestLineItem[]>(() =>
-    req ? defaultLineItemsFromRequest(req) : []
-  );
-  const [activeCounterInput, setActiveCounterInput] = useState<string | null>(null);
-  const [counterInputValues, setCounterInputValues] = useState<Record<string, string>>({});
-  const [paymentSubmitted, setPaymentSubmitted] = useState(false);
-  const [orderConfirmed, setOrderConfirmed] = useState(false);
-  const [logistics, setLogistics] = useState<null | { weight: string; mode: string; pricePerKg: string; note: string }>(null);
 
-  interface ReqChatMsg { id: string; sender: 'admin' | 'client'; text: string; time: string; }
+  const [apiRequest, setApiRequest] = useState<any>(null);
+  const [apiLoading, setApiLoading] = useState(true);
+
+  const [lineItems, setLineItems] = useState<RequestLineItem[]>([]);
+
+  // Response state per item
+  const [itemResponses, setItemResponses] = useState<Record<string, 'ACCEPTED' | 'REJECTED' | 'COUNTERED' | null>>({});
+  const [counterInputs, setCounterInputs] = useState<Record<string, string>>({});
+  const [counterNotes, setCounterNotes] = useState<Record<string, string>>({});
+  const [activeCounterForm, setActiveCounterForm] = useState<string | null>(null);
+  const [submittingResponse, setSubmittingResponse] = useState(false);
+  const [responsesSubmitted, setResponsesSubmitted] = useState(false);
+  const [autoCreatedOrder] = useState<{ id: string; orderNumber: string } | null>(null);
+
+  const [requestPayments, setRequestPayments] = useState<any[]>([]);
+  const [logistics, setLogistics] = useState<null | { weight: string; mode: string; pricePerKg: string; note: string }>(null);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
   const [reqChatInput, setReqChatInput] = useState('');
   const lastReqSent = React.useRef(0);
-  const [reqChatMessages, setReqChatMessages] = useState<ReqChatMsg[]>([
-    { id: 'rc-seed-1', sender: 'admin', text: "We've sourced this from 3 suppliers in Yiwu. Best price attached above. Lead time: 12–15 days.", time: '2 hours ago' },
-    { id: 'rc-seed-2', sender: 'client', text: 'Can we get a sample first before placing the bulk order?', time: '1 hour ago' },
-  ]);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const [chatMessages, setChatMessages] = useState<{ id: string; senderRole: string; text: string; createdAt: string }[]>([]);
+  const [lastMsgSeen, setLastMsgSeen] = useState(() => Date.now().toString());
 
+  function applyApiRequest(req: any) {
+    setApiRequest(req);
+    const apiLineItems: RequestLineItem[] = (req.items ?? []).map((item: any) => ({
+      id: item.id,
+      name: item.productName,
+      specs: item.productDescription ?? '',
+      quantity: item.quantity,
+      rmbCostPerUnit: item.quotedRMB ? parseFloat(item.quotedRMB) : 0,
+      unitPriceCny: item.quotedRMB ? parseFloat(item.quotedRMB) : undefined,
+      unitPriceInr: item.quotedINR ? parseFloat(item.quotedINR) : undefined,
+      status: mapItemStatus(item.status),
+      revisionRequested: false,
+      imageUrl: item.imageUrl ?? undefined,
+      referenceImageUrls: item.referenceImageUrls ?? [],
+      targetPriceINR: item.targetPriceINR ? parseFloat(item.targetPriceINR) : undefined,
+      clientResponse: item.clientResponse ?? undefined,
+      counterPriceINR: item.counterPriceINR ? parseFloat(item.counterPriceINR) : undefined,
+      counterNote: item.counterNote ?? undefined,
+    }));
+    setLineItems(apiLineItems);
+
+    const existingResponses: Record<string, any> = {};
+    for (const item of req.items ?? []) {
+      if (item.clientResponse) existingResponses[item.id] = item.clientResponse;
+    }
+    if (Object.keys(existingResponses).length > 0) {
+      setItemResponses(existingResponses);
+      setResponsesSubmitted(true);
+    }
+  }
+
+  function fetchRequestData(signal?: AbortSignal) {
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000));
+    return Promise.race([
+      requestsApi.getRequestById(id, signal),
+      timeout,
+    ])
+      .then((r: any) => {
+        if (signal?.aborted) return;
+        const req = r.data?.data;
+        if (req) {
+          requestsCache.set(id, req);
+          applyApiRequest(req);
+        }
+      })
+      .catch(() => {});
+  }
+
+  function fetchPayments(signal?: AbortSignal) {
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000));
+    Promise.race([
+      paymentsApi.getRequestPayments(id),
+      timeout,
+    ])
+      .then((r: any) => { if (signal?.aborted) return; setRequestPayments(r.data?.data ?? []); })
+      .catch(() => {});
+  }
+
+  // Cache-first: show cached data instantly, then poll every 30s + on focus
   useEffect(() => {
-    const row = mockRequests.find(r => r.id === id);
-    if (!row) return;
-    setLineItems(loadRfqLineItems(row));
-    setPaymentSubmitted(!!loadPaymentProof(id));
-    setOrderConfirmed(loadPaymentConfirmed(id));
+    const abortController = new AbortController();
+
+    // Try cache first for instant render
+    const cached = requestsCache.get<any>(id);
+    if (cached) {
+      applyApiRequest(cached);
+      setApiLoading(false);
+    } else {
+      setApiLoading(true);
+    }
+
+    // Initial background fetch
+    Promise.allSettled([
+      fetchRequestData(abortController.signal),
+      fetchPayments(abortController.signal),
+    ]).finally(() => {
+      if (!abortController.signal.aborted && !cached) setApiLoading(false);
+    });
+
+    // Poll every 30s for fresh data (catches status changes from admin)
+    const interval = setInterval(() => {
+      fetchRequestData(abortController.signal);
+      fetchPayments(abortController.signal);
+    }, 30000);
+
+    // Re-fetch on window focus (user switching back to this tab)
+    const onFocus = () => {
+      fetchRequestData(abortController.signal);
+      fetchPayments(abortController.signal);
+    };
+    window.addEventListener('focus', onFocus);
+
     const savedLogistics = localStorage.getItem(`logistics-estimate-${id}`);
     if (savedLogistics) {
       try { setLogistics(JSON.parse(savedLogistics)); } catch {}
     }
-    const savedChat = localStorage.getItem(`req-chat-${id}`);
-    if (savedChat) {
-      try { setReqChatMessages(JSON.parse(savedChat)); } catch {}
-    }
+
+    return () => {
+      abortController.abort();
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [id]);
 
-  function sendReqMessage() {
+  async function sendReqMessage() {
     const now = Date.now();
     if (now - lastReqSent.current < 2000) { alert('Please wait before sending again.'); return; }
     const sanitized = reqChatInput.replace(/[<>"']/g, '').trim().slice(0, 2000);
-    if (!sanitized) return;
+    if (!sanitized || !apiRequest) return;
     lastReqSent.current = now;
-    const newMsg: ReqChatMsg = { id: `rc-${Date.now()}`, sender: 'client', text: sanitized, time: 'Just now' };
-    const updated = [...reqChatMessages, newMsg];
-    setReqChatMessages(updated);
-    try { localStorage.setItem(`req-chat-${id}`, JSON.stringify(updated)); } catch {}
     setReqChatInput('');
+    try {
+      await requestsApi.sendMessage(id, sanitized);
+      await fetchMessages();
+    } catch { addToast({ type: 'error', title: 'Failed to send message' }); }
   }
 
-  // Poll for admin confirmation so timeline updates in the same session
+  async function fetchMessages() {
+    try {
+      const res = await requestsApi.getMessages(id, lastMsgSeen);
+      const newMsgs = res.data?.data ?? [];
+      if (newMsgs.length > 0) {
+        setChatMessages(prev => {
+          const existing = new Set(prev.map(m => m.id));
+          const unique = newMsgs.filter((m: any) => !existing.has(m.id));
+          if (unique.length > 0) {
+            const adminMsgs = unique.filter((m: any) => m.senderRole === 'ADMIN' || m.senderRole === 'STAFF');
+            if (adminMsgs.length > 0 && prev.length > 0) {
+              addToast({ type: 'info', title: `New message from team`, description: adminMsgs[adminMsgs.length - 1].text.slice(0, 100) });
+            }
+          }
+          return unique.length > 0 ? [...prev, ...unique] : prev;
+        });
+        const last = newMsgs[newMsgs.length - 1];
+        setLastMsgSeen(last.createdAt);
+      }
+    } catch { /* silent */ }
+  }
+
+  // Scroll to bottom on new messages
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
+
+  // Poll messages every 5 seconds
   useEffect(() => {
-    if (orderConfirmed) return;
-    const interval = setInterval(() => {
-      if (loadPaymentConfirmed(id)) setOrderConfirmed(true);
-    }, 2000);
+    if (!apiRequest) return;
+    fetchMessages();
+    const interval = setInterval(fetchMessages, 15000);
     return () => clearInterval(interval);
-  }, [id, orderConfirmed]);
+  }, [apiRequest, id]);
 
-  if (!req) return notFound();
+  const displayStatus = apiRequest?.status ?? 'SUBMITTED';
+  const displayRequestId = apiRequest?.requestNumber ?? id;
+  const displayDate = apiRequest
+    ? new Date(apiRequest.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '';
+  const displayBudget = apiRequest?.totalBudgetINR
+    ? `₹${Number(apiRequest.totalBudgetINR).toLocaleString('en-IN')}`
+    : '—';
 
-  // completedUpTo: highest stage index fully completed (green).
-  // Stage at completedUpTo+1 is the current active stage (orange).
+  // Payment / order status derived from API data (not sessionStorage)
+  const latestPaymentStatus: string | null = requestPayments[0]?.status ?? null;
+  const paymentSubmitted = latestPaymentStatus === 'SUBMITTED';
+  const orderConfirmed = latestPaymentStatus === 'VERIFIED' || displayStatus === 'CONVERTED';
+
   const completedUpTo = (() => {
-    if (orderConfirmed) return 4;      // all 5 stages done
-    if (paymentSubmitted) return 3;    // stages 0-3 done, stage 4 = Order Confirmed is active
-    const s = req.status as string;
-    if (['Request Submitted'].includes(s)) return 0;
-    if (['Quotation in Progress'].includes(s)) return 0;
-    if (['Awaiting Approval'].includes(s)) return 1;
-    if (['Payment Pending'].includes(s)) return 2;
-    return 3;
+    if (orderConfirmed) return 4;
+    if (paymentSubmitted) return 3;
+    return statusToCompletedUpTo(displayStatus);
   })();
 
   const showQuote = completedUpTo >= 1;
 
-  function persist(next: RequestLineItem[]) {
-    setLineItems(next);
-    persistRfqLineItems(id, next);
+  // Determine if client can respond (QUOTED or REVIEWING status)
+  const canRespond = ['QUOTED', 'REVIEWING'].includes(displayStatus) && !responsesSubmitted;
+  const alreadyResponded = responsesSubmitted || ['ACCEPTED', 'PARTIALLY_ACCEPTED', 'REVIEWING'].includes(displayStatus);
+
+  // Response counts
+  const quotedItems = lineItems.filter(l => l.unitPriceInr != null);
+  const respondedItems = Object.entries(itemResponses).filter(([, v]) => v != null);
+  const acceptedItems = respondedItems.filter(([, v]) => v === 'ACCEPTED');
+  const rejectedItems = respondedItems.filter(([, v]) => v === 'REJECTED');
+  const counteredItems = respondedItems.filter(([, v]) => v === 'COUNTERED');
+
+  const allQuotedResponded = quotedItems.length > 0 && respondedItems.length >= quotedItems.length;
+  const allAccepted = allQuotedResponded && acceptedItems.length === quotedItems.length;
+  const hasCounters = counteredItems.length > 0;
+  const hasMix = acceptedItems.length > 0 && rejectedItems.length > 0 && counteredItems.length === 0;
+
+  function setResponse(itemId: string, response: 'ACCEPTED' | 'REJECTED' | 'COUNTERED') {
+    setItemResponses(prev => ({ ...prev, [itemId]: response }));
+    if (response !== 'COUNTERED') {
+      setActiveCounterForm(null);
+    }
   }
 
-  function acceptLine(lineId: string) {
-    if (!window.confirm('Accept this quotation? You will be taken to the payment page.')) return;
-    persist(
-      lineItems.map(l =>
-        l.id === lineId ? { ...l, status: 'Accepted' as const, revisionRequested: false } : l
-      )
-    );
+  function handleProceedToPayment() {
+    if (displayStatus === 'CONVERTED') {
+      router.push('/client-dashboard/orders');
+      return;
+    }
+    // Navigate to payment page with request ID — order is created after payment verified
     router.push(`/payment/${id}`);
   }
 
-  function rejectLine(lineId: string) {
-    if (!window.confirm('Reject the quotation for this product?')) return;
-    persist(
-      lineItems.map(l =>
-        l.id === lineId ? { ...l, status: 'Rejected' as const, revisionRequested: false } : l
-      )
-    );
-    addToast({ type: 'warning', title: 'Line rejected', description: 'Your team has been notified for this product.' });
+  async function submitResponses() {
+    console.log('=== COUNTER SUBMIT ===');
+    console.log('itemResponses state:', itemResponses);
+    console.log('counterInputs state:', counterInputs);
+    console.log('counterNotes state:', counterNotes);
+    console.log('apiRequest present:', !!apiRequest);
+
+    const items = Object.entries(itemResponses)
+      .filter(([, v]) => v != null)
+      .map(([itemId, response]) => ({
+        id: itemId,
+        response: response!,
+        counterPriceINR: response === 'COUNTERED' ? (parseFloat(counterInputs[itemId] ?? '') || undefined) : undefined,
+        counterNote: response === 'COUNTERED' ? (counterNotes[itemId]?.trim() || undefined) : undefined,
+      }));
+
+    console.log('Payload:', JSON.stringify({ items }));
+
+    if (!items.length) {
+      addToast({ type: 'warning', title: 'No responses', description: 'Please respond to at least one item.' });
+      return;
+    }
+
+    if (!apiRequest) {
+      addToast({ type: 'error', title: 'Cannot submit', description: 'Request data not loaded yet. Please wait and try again.' });
+      return;
+    }
+
+    setSubmittingResponse(true);
+    try {
+      await Promise.race([
+        requestsApi.respondToQuotation(id, items),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 25000)),
+      ]);
+      setResponsesSubmitted(true);
+      fetchRequestData();
+      addToast({ type: 'success', title: 'Responses submitted', description: 'Please proceed to payment to confirm your order.' });
+    } catch (err: any) {
+      addToast({ type: 'error', title: 'Failed to submit', description: err?.message || err?.response?.data?.message || 'Please try again.' });
+    } finally {
+      setSubmittingResponse(false);
+    }
   }
 
-  function submitCounter(lineId: string) {
-    const raw = counterInputValues[lineId] ?? '';
-    let proposed: number | undefined;
-    if (raw.trim() !== '') {
-      const n = parseFloat(raw.replace(/,/g, ''));
-      if (Number.isFinite(n) && n > 0) proposed = Math.round(n);
-    }
-    persist(
-      lineItems.map(l =>
-        l.id === lineId
-          ? {
-              ...l,
-              status: 'Pending' as const,
-              revisionRequested: true,
-              clientProposedInr: proposed,
-            }
-          : l
-      )
-    );
-    setActiveCounterInput(null);
-    setCounterInputValues(prev => { const next = { ...prev }; delete next[lineId]; return next; });
-    addToast({
-      type: 'info',
-      title: 'Counter-offer sent',
-      description: 'Our team can revise the unit price and send an updated quotation for this product.',
-    });
+  // Check if a line item already has a server-side response
+  function getItemServerResponse(line: RequestLineItem): string | undefined {
+    return line.clientResponse;
   }
+
+  // Summary totals
+  const acceptedTotal = quotedItems
+    .filter(l => itemResponses[l.id] === 'ACCEPTED' || getItemServerResponse(l) === 'ACCEPTED')
+    .reduce((sum, l) => sum + (l.unitPriceInr ?? 0) * l.quantity, 0);
 
   return (
     <ClientLayout>
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setLightboxUrl(null)}>
+          <img src={lightboxUrl} alt="Reference" className="max-w-full max-h-full rounded-xl object-contain" onClick={e => e.stopPropagation()} />
+          <button onClick={() => setLightboxUrl(null)} className="absolute top-4 right-4 text-white bg-black/50 rounded-full p-2"><X className="w-5 h-5" /></button>
+        </div>
+      )}
       <div className="px-0 sm:px-0">
       <Link href="/client-dashboard/requests" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4">
         <ArrowLeft className="w-4 h-4" /> Back to Requests
       </Link>
       <div className="bg-card rounded-xl border border-border shadow-card p-4 sm:p-5 mb-5">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="font-tabular font-700">{req.requestId}</span>
-          <StatusBadge status={req.status as never} />
+          <span className="font-tabular font-700">{displayRequestId}</span>
+          <StatusBadge status={displayStatus as never} />
         </div>
         <p className="text-xs text-muted-foreground mt-1">
-          Submitted: {req.date} • Budget: {req.totalBudget}
+          Submitted: {displayDate} • Budget: {displayBudget}
         </p>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-4 sm:gap-5">
         <div className="lg:col-span-2 space-y-4 sm:space-y-5 min-w-0">
-          {req.imageAttached && (
-            <div className="bg-card rounded-xl border border-border shadow-card p-5">
-              <h3 className="text-sm font-700 mb-3">Photo-Scan Submission</h3>
-              <div className="flex gap-4">
-                <div className="w-32 h-32 rounded-xl bg-muted flex items-center justify-center text-4xl">📷</div>
-                <div className="flex-1">
-                  <p className="text-sm">
-                    AI Detected: <span className="font-600">{req.detectedProduct}</span>
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">{req.confidence}% confidence match</p>
-                </div>
-              </div>
-            </div>
-          )}
 
           <div className="bg-card rounded-xl border border-border shadow-card p-4 sm:p-5">
             <h3 className="text-sm font-700 mb-3">Items requested</h3>
@@ -212,30 +378,65 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
                     <th className="text-right font-600 w-10">Qty</th>
                     <th className="text-left font-600 pl-3 hidden sm:table-cell">Specs / Notes</th>
                     {showQuote && <th className="text-right font-600">Price (INR / CNY)</th>}
-                    {showQuote && <th className="text-right font-600 pl-3">Actions</th>}
+                    {showQuote && <th className="text-right font-600 pl-3">Response</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {lineItems.map(line => {
-                    const canRespond = showQuote && line.status === 'Quoted';
-                    const isCountering = activeCounterInput === line.id;
+                    const serverResponse = getItemServerResponse(line);
+                    const localResponse = itemResponses[line.id];
+                    const effectiveResponse = serverResponse ?? localResponse;
+                    const isQuoted = line.unitPriceInr != null;
+                    const isCountering = activeCounterForm === line.id;
+
                     return (
                       <tr key={line.id}>
-                        <td className="py-3 pr-3 align-middle">
-                          <ProductImage productName={line.name} canUpload={false} />
+                        <td className="py-3 pr-3 align-top">
+                          {line.referenceImageUrls && line.referenceImageUrls.length > 0 ? (
+                            <img
+                              src={line.referenceImageUrls[0]}
+                              alt={line.name}
+                              onClick={() => setLightboxUrl(line.referenceImageUrls![0])}
+                              className="w-14 h-14 rounded-lg object-cover border border-border cursor-pointer hover:opacity-80"
+                            />
+                          ) : (
+                            <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center border border-border">
+                              <ImageIcon className="w-6 h-6 text-muted-foreground" />
+                            </div>
+                          )}
                         </td>
-                        <td className="py-3 font-500 pl-3">
+                        <td className="py-3 font-500 pl-3 align-top">
                           <div>{line.name}</div>
-                          {showQuote && (
-                            <div className="mt-0.5 flex flex-col gap-0.5">
-                              <ClientStatusPill status={line.status} revisionRequested={line.revisionRequested} />
-                              {line.status === 'Pending' && line.revisionRequested && (
-                                <span className="text-[10px] text-muted-foreground">Awaiting revised quote</span>
+                          {showQuote && line.targetPriceINR != null && (
+                            <div className="mt-0.5">
+                              <span className="text-[10px] text-blue-700">Your target: ₹{line.targetPriceINR.toLocaleString('en-IN')}/unit</span>
+                            </div>
+                          )}
+                          {/* Additional reference images (index 1+, since index 0 is shown in Image column) */}
+                          {line.referenceImageUrls && line.referenceImageUrls.length > 1 && (
+                            <div className="mt-2">
+                              <p className="text-[10px] text-muted-foreground mb-1">Reference Images:</p>
+                              <div className="flex gap-1 flex-wrap">
+                                {line.referenceImageUrls.slice(1).map((url, idx) => (
+                                  <img key={idx} src={url} alt={`ref-${idx + 1}`}
+                                    onClick={() => setLightboxUrl(url)}
+                                    className="w-10 h-10 rounded object-cover border border-border cursor-pointer hover:opacity-80" />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {/* Existing server response for this item */}
+                          {serverResponse && (
+                            <div className="mt-1">
+                              <ResponseBadge response={serverResponse} />
+                              {serverResponse === 'COUNTERED' && line.counterPriceINR != null && (
+                                <p className="text-[10px] text-amber-700 mt-0.5">Counter: ₹{line.counterPriceINR.toLocaleString('en-IN')}/unit</p>
                               )}
-                              {line.clientProposedInr != null && line.revisionRequested && (
-                                <span className="text-[10px] text-muted-foreground">
-                                  Your offer: ₹{line.clientProposedInr.toLocaleString('en-IN')}/unit
-                                </span>
+                              {serverResponse === 'COUNTERED' && displayStatus === 'REVIEWING' && (
+                                <p className="text-[10px] text-muted-foreground mt-0.5">Waiting for staff reply...</p>
+                              )}
+                              {serverResponse === 'COUNTERED' && line.status === 'Quoted' && (
+                                <p className="text-[10px] text-emerald-700 mt-0.5">Staff updated price — please review above</p>
                               )}
                             </div>
                           )}
@@ -259,33 +460,69 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
                         )}
                         {showQuote && (
                           <td className="text-right align-top py-3 pl-3">
-                            {canRespond ? (
+                            {!isQuoted ? (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            ) : serverResponse ? (
+                              // Already responded via API — read-only
+                              <span className="text-xs text-muted-foreground">Submitted</span>
+                            ) : canRespond ? (
                               <div className="flex flex-col gap-1 items-end">
-                                {isCountering ? (
-                                  <div className="flex gap-1 items-center">
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      className="input-field text-xs py-1 px-2 w-24"
-                                      placeholder="₹ price"
-                                      value={counterInputValues[line.id] ?? ''}
-                                      onChange={e => setCounterInputValues(prev => ({ ...prev, [line.id]: e.target.value }))}
-                                      onKeyDown={e => { if (e.key === 'Enter') submitCounter(line.id); if (e.key === 'Escape') setActiveCounterInput(null); }}
-                                      autoFocus
-                                    />
-                                    <button type="button" onClick={() => submitCounter(line.id)} className="btn-primary px-2 py-1 text-xs">Send</button>
-                                    <button type="button" onClick={() => setActiveCounterInput(null)} className="btn-secondary px-2 py-1 text-xs">✕</button>
+                                {localResponse ? (
+                                  <div className="flex flex-col items-end gap-1">
+                                    <ResponseBadge response={localResponse} />
+                                    {localResponse === 'COUNTERED' && (
+                                      <div className="text-[10px] text-amber-700">
+                                        {counterInputs[line.id] ? `₹${parseFloat(counterInputs[line.id]).toLocaleString('en-IN')}/unit` : 'Price not set'}
+                                      </div>
+                                    )}
+                                    <button type="button" onClick={() => {
+                                      setItemResponses(prev => { const n = {...prev}; delete n[line.id]; return n; });
+                                      setActiveCounterForm(null);
+                                    }} className="text-[10px] text-muted-foreground hover:text-foreground underline">
+                                      Change
+                                    </button>
+                                  </div>
+                                ) : isCountering ? (
+                                  <div className="space-y-1.5 w-44">
+                                    <div>
+                                      <label className="text-[10px] text-muted-foreground">Your counter price (₹/unit)</label>
+                                      <input
+                                        type="number" min="1" autoFocus
+                                        className="input-field text-xs py-1 px-2 w-full mt-0.5"
+                                        placeholder="₹ price"
+                                        value={counterInputs[line.id] ?? ''}
+                                        onChange={e => setCounterInputs(prev => ({ ...prev, [line.id]: e.target.value }))}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10px] text-muted-foreground">Note (optional)</label>
+                                      <input
+                                        type="text"
+                                        className="input-field text-xs py-1 px-2 w-full mt-0.5"
+                                        placeholder="Reason for counter..."
+                                        value={counterNotes[line.id] ?? ''}
+                                        onChange={e => setCounterNotes(prev => ({ ...prev, [line.id]: e.target.value }))}
+                                      />
+                                    </div>
+                                    <div className="flex gap-1">
+                                      <button type="button" onClick={() => { setResponse(line.id, 'COUNTERED'); setActiveCounterForm(null); }}
+                                        className="btn-primary px-2 py-1 text-xs flex-1">Submit Counter</button>
+                                      <button type="button" onClick={() => setActiveCounterForm(null)} className="btn-secondary px-2 py-1 text-xs">✕</button>
+                                    </div>
                                   </div>
                                 ) : (
-                                  <div className="flex flex-col gap-1 items-stretch sm:flex-row sm:items-center sm:justify-end">
-                                    <button type="button" onClick={() => acceptLine(line.id)} className="btn-primary px-2 py-1 text-xs inline-flex items-center justify-center gap-1 min-h-[36px]">
+                                  <div className="flex flex-col gap-1 items-stretch">
+                                    <button type="button" onClick={() => setResponse(line.id, 'ACCEPTED')}
+                                      className="btn-primary px-2 py-1.5 text-xs inline-flex items-center justify-center gap-1 min-h-[36px]">
                                       <Check className="w-3 h-3" /> Accept
                                     </button>
-                                    <button type="button" onClick={() => rejectLine(line.id)} className="btn-secondary px-2 py-1 text-xs min-h-[36px]">
-                                      Reject
+                                    <button type="button" onClick={() => setResponse(line.id, 'REJECTED')}
+                                      className="btn-secondary px-2 py-1.5 text-xs min-h-[36px]">
+                                      <X className="w-3 h-3 inline mr-1" />Reject
                                     </button>
-                                    <button type="button" onClick={() => setActiveCounterInput(line.id)} className="btn-secondary px-2 py-1 text-xs min-h-[36px] whitespace-nowrap">
-                                      Counter Offer
+                                    <button type="button" onClick={() => setActiveCounterForm(line.id)}
+                                      className="btn-secondary px-2 py-1.5 text-xs min-h-[36px] whitespace-nowrap">
+                                      💬 Counter Offer
                                     </button>
                                   </div>
                                 )}
@@ -301,6 +538,172 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
                 </tbody>
               </table>
             </div>
+
+            {/* Response Summary + Submit */}
+            {showQuote && canRespond && respondedItems.length > 0 && (
+              <div className="mt-5 pt-4 border-t border-border space-y-3">
+                <h4 className="text-sm font-700">Response Summary:</h4>
+                <div className="space-y-1 text-sm">
+                  {acceptedItems.length > 0 && (
+                    <p className="text-emerald-700">✅ Accepted: {acceptedItems.length} item{acceptedItems.length > 1 ? 's' : ''}
+                      {acceptedTotal > 0 && ` (₹${acceptedTotal.toLocaleString('en-IN')} total)`}
+                    </p>
+                  )}
+                  {rejectedItems.length > 0 && (
+                    <p className="text-red-700">❌ Rejected: {rejectedItems.length} item{rejectedItems.length > 1 ? 's' : ''}</p>
+                  )}
+                  {counteredItems.length > 0 && (
+                    <p className="text-amber-700">💬 Countered: {counteredItems.length} item{counteredItems.length > 1 ? 's' : ''} (waiting for staff reply)</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={submitResponses}
+                  disabled={submittingResponse || responsesSubmitted}
+                  className={`w-full py-2.5 text-sm rounded-lg transition-colors disabled:opacity-60 ${
+                    responsesSubmitted
+                      ? 'bg-emerald-500 text-white font-600'
+                      : 'btn-primary'
+                  }`}
+                >
+                  {responsesSubmitted ? (
+                    <><Check className="w-4 h-4" /> Responses Submitted ✓</>
+                  ) : submittingResponse ? (
+                    <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block mr-1" /> Submitting...</>
+                  ) : (
+                    'Submit All Responses'
+                  )}
+                </button>
+              </div>
+            )}
+
+            {/* CONVERTED — order created, guide client to My Orders */}
+            {showQuote && displayStatus === 'CONVERTED' && !responsesSubmitted && (
+              <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                <p className="text-emerald-800 font-600 text-sm">✓ Your order has been confirmed!</p>
+                <p className="text-emerald-700 text-xs mt-1 mb-3">Payment verified — your order has been created. Check My Orders for status.</p>
+                <Link
+                  href="/client-dashboard/orders"
+                  className="w-full py-2.5 rounded-lg bg-emerald-500 text-white text-sm font-600 hover:bg-emerald-600 inline-flex items-center justify-center gap-2"
+                >
+                  View My Orders →
+                </Link>
+              </div>
+            )}
+
+            {/* Post-submission state banners */}
+            {showQuote && responsesSubmitted && (
+              <div className="mt-4 space-y-3">
+
+                {/* State 1 — All accepted → prompt payment or show payment status */}
+                {(displayStatus === 'ACCEPTED' || (allAccepted && !hasCounters)) && (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                    <p className="text-emerald-800 font-600 text-sm">All items accepted! ✓</p>
+                    {latestPaymentStatus === 'SUBMITTED' ? (
+                      <>
+                        <p className="text-amber-800 font-600 text-sm mt-3">Payment Submitted – Under Review</p>
+                        <p className="text-amber-700 text-xs mt-1">Our team will verify your payment within 24 hours.</p>
+                      </>
+                    ) : latestPaymentStatus === 'VERIFIED' || displayStatus === 'CONVERTED' ? (
+                      <>
+                        <p className="text-emerald-800 font-600 text-sm mt-3">Payment Verified – Order Created</p>
+                        <p className="text-emerald-700 text-xs mt-1">Your order has been created. <Link href="/client-dashboard/orders" className="underline font-600">View in My Orders.</Link></p>
+                      </>
+                    ) : latestPaymentStatus === 'REJECTED' ? (
+                      <>
+                        <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3">
+                          <p className="text-red-800 font-600 text-sm">Payment Rejected</p>
+                          <p className="text-red-700 text-xs mt-1">Please resubmit your payment proof.</p>
+                        </div>
+                        <button
+                          onClick={handleProceedToPayment}
+                          className="mt-3 w-full py-2.5 rounded-lg bg-emerald-500 text-white text-sm font-600 hover:bg-emerald-600 inline-flex items-center justify-center gap-2"
+                        >
+                          Proceed to Payment →
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-emerald-700 text-xs mt-1">Please make payment to confirm your order.</p>
+                        <button
+                          onClick={handleProceedToPayment}
+                          className="mt-3 w-full py-2.5 rounded-lg bg-emerald-500 text-white text-sm font-600 hover:bg-emerald-600 inline-flex items-center justify-center gap-2"
+                        >
+                          Proceed to Payment →
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* State 2 — Mix of accepted + rejected → prompt payment for accepted items */}
+                {hasMix && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                    <p className="text-amber-800 font-600 text-sm">{acceptedItems.length} item{acceptedItems.length > 1 ? 's' : ''} accepted, {rejectedItems.length} rejected</p>
+                    <p className="text-amber-700 text-xs mt-1">Would you like to proceed with accepted items only?</p>
+                    {latestPaymentStatus === 'SUBMITTED' ? (
+                      <div className="mt-3 bg-amber-100 border border-amber-300 rounded-lg p-3">
+                        <p className="text-amber-800 font-600 text-sm">Payment Submitted – Under Review</p>
+                        <p className="text-amber-700 text-xs mt-1">Our team will verify your payment within 24 hours.</p>
+                      </div>
+                    ) : latestPaymentStatus === 'VERIFIED' || displayStatus === 'CONVERTED' ? (
+                      <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                        <p className="text-emerald-800 font-600 text-sm">Payment Verified – Order Created</p>
+                        <p className="text-emerald-700 text-xs mt-1">Your order has been created. <Link href="/client-dashboard/orders" className="underline font-600">View in My Orders.</Link></p>
+                      </div>
+                    ) : latestPaymentStatus === 'REJECTED' ? (
+                      <>
+                        <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3">
+                          <p className="text-red-800 font-600 text-sm">Payment Rejected</p>
+                          <p className="text-red-700 text-xs mt-1">Please resubmit your payment proof.</p>
+                        </div>
+                        <div className="flex gap-2 mt-3">
+                          <button
+                            onClick={handleProceedToPayment}
+                            className="flex-1 py-2 rounded-lg bg-amber-500 text-white text-sm font-600 hover:bg-amber-600 inline-flex items-center justify-center gap-1.5">
+                            Proceed with Accepted Items →
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={handleProceedToPayment}
+                          className="flex-1 py-2 rounded-lg bg-amber-500 text-white text-sm font-600 hover:bg-amber-600 inline-flex items-center justify-center gap-1.5">
+                          Proceed with Accepted Items →
+                        </button>
+                        <button className="px-4 py-2 rounded-lg border border-border text-sm font-500 hover:bg-muted">
+                          Wait / Reconsider
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* State 3 — Counter offers pending */}
+                {hasCounters && displayStatus === 'REVIEWING' && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                    <p className="text-blue-800 font-600 text-sm">Counter offer sent for {counteredItems.length} item{counteredItems.length > 1 ? 's' : ''}</p>
+                    <p className="text-blue-700 text-xs mt-1">Waiting for Elios team to respond...</p>
+                    {acceptedItems.length > 0 && (
+                      <button onClick={() => router.push(`/payment/${id}`)}
+                        className="mt-3 w-full py-2 rounded-lg bg-blue-100 text-blue-800 text-sm font-600 border border-blue-200 opacity-60 cursor-not-allowed">
+                        Proceed with Other Accepted Items (waiting for counter resolution)
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* State 4 — Already responded, read-only */}
+                {displayStatus === 'REVIEWING' && (
+                  <div className="bg-muted/40 rounded-xl p-4 text-sm text-muted-foreground">
+                    <p className="font-500 text-foreground">Your responses have been submitted</p>
+                    <p className="mt-0.5">Elios team will review your counter offers and get back to you.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {showQuote && logistics && (
               <div className="mt-5 pt-5 border-t border-border">
                 <h4 className="text-sm font-700 mb-3">Logistics Total on Quotation</h4>
@@ -332,18 +735,22 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
           <div className="bg-card rounded-xl border border-border shadow-card p-4 sm:p-5">
             <h3 className="text-sm font-700 mb-3">Conversation</h3>
             <div className="space-y-3">
-              {reqChatMessages.map(msg => (
-                <div key={msg.id} className="flex gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-700 flex-shrink-0 ${msg.sender === 'admin' ? 'bg-[#5c5470] text-white' : 'bg-[#c17b5c] text-white'}`}>
-                    {msg.sender === 'admin' ? 'AS' : 'RK'}
+              {chatMessages.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">No messages yet. Start a conversation with the team.</p>
+              )}
+              {chatMessages.map(msg => (
+                <div key={msg.id} className={`flex gap-3 ${msg.senderRole === 'ADMIN' || msg.senderRole === 'STAFF' ? 'flex-row-reverse' : ''}`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-700 flex-shrink-0 ${msg.senderRole === 'ADMIN' || msg.senderRole === 'STAFF' ? 'bg-[#4f6f8f] text-white' : 'bg-[#8f6b4f] text-white'}`}>
+                    {msg.senderRole === 'ADMIN' || msg.senderRole === 'STAFF' ? 'AS' : 'You'}
                   </div>
-                  <div className={`max-w-[85%] rounded-lg p-3 break-words ${msg.sender === 'admin' ? 'bg-muted/50' : 'bg-[#f0eef8]'}`}>
-                    <p className="text-xs font-600">{msg.sender === 'admin' ? 'Arjun (Admin)' : 'You'}</p>
+                  <div className={`max-w-[85%] rounded-lg p-3 break-words ${msg.senderRole === 'ADMIN' || msg.senderRole === 'STAFF' ? 'bg-blue-50 border border-blue-100' : 'bg-amber-50 border border-amber-100'}`}>
+                    <p className="text-xs font-600">{msg.senderRole === 'ADMIN' || msg.senderRole === 'STAFF' ? 'Team' : 'You'}</p>
                     <p className="text-sm mt-1">{msg.text}</p>
-                    <p className="text-[10px] text-muted-foreground mt-1">{msg.time}</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">{new Date(msg.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
                   </div>
                 </div>
               ))}
+              <div ref={chatEndRef} />
             </div>
             <div className="flex gap-2 mt-4">
               <input
@@ -389,7 +796,7 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
           </ol>
         </div>
       </div>
-      </div>{/* end outer wrapper */}
+      </div>
     </ClientLayout>
   );
 }

@@ -12,6 +12,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authApi } from '@/lib/api/auth.api';
 import { TOKEN_KEY } from '@/lib/api/axiosClient';
+import { setOrders } from '@/lib/ordersStore';
+import { requestsCache } from '@/lib/api/requestsCache';
 import type { ApiUser } from '@/lib/types/api.types';
 
 interface ApiAuthState {
@@ -61,7 +63,10 @@ export function ApiAuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // Ignore errors — still clear local state
     } finally {
+      // Clear auth token and client-scoped caches to avoid stale UI flashes
       localStorage.removeItem(TOKEN_KEY);
+      try { setOrders([]); } catch {}
+      try { requestsCache.clear(); } catch {}
       setUser(null);
     }
   }, []);

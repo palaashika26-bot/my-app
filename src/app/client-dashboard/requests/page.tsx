@@ -1,30 +1,93 @@
-﻿'use client';
-import React, { useState, useMemo, useEffect } from 'react';
+'use client';
+import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import ClientLayout from '@/components/ClientLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { mockRequests } from '@/lib/mockData';
+import { requestsApi } from '@/lib/api/requests.api';
+import { requestsCache } from '@/lib/api/requestsCache';
+import { SkeletonTable } from '@/components/SkeletonLoader';
 import { Plus, Eye, Camera } from 'lucide-react';
 
 const tabs = ['All', 'Pending', 'Quotation Ready', 'In Progress', 'Completed'];
 
-export default function AllRequestsPage() {
+// Map API RequestStatus → tab grouping
+function matchesTab(status: string, tab: string): boolean {
+  if (tab === 'All') return true;
+  if (tab === 'Pending') return ['SUBMITTED', 'REVIEWING', 'Request Submitted', 'Awaiting Approval'].includes(status);
+  if (tab === 'Quotation Ready') return ['QUOTED', 'PARTIALLY_ACCEPTED', 'Quotation in Progress'].includes(status);
+  if (tab === 'In Progress') return ['ACCEPTED', 'Sourcing', 'At China Warehouse', 'Payment Pending'].includes(status);
+  if (tab === 'Completed') return ['CONVERTED', 'Completed'].includes(status);
+  return true;
+}
+
+interface DisplayRequest {
+  id: string;
+  requestId: string;
+  date: string;
+  items: number;
+  itemNames: string;
+  status: string;
+  totalBudget: string;
+  source?: string;
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatBudget(amount: number | null | undefined): string {
+  if (!amount) return '—';
+  return `₹${Number(amount).toLocaleString('en-IN')}`;
+}
+
+function AllRequestsContent() {
   const searchParams = useSearchParams();
   const [tab, setTab] = useState('All');
+  const [requests, setRequests] = useState<DisplayRequest[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const filter = searchParams.get('filter');
     if (filter === 'awaiting-approval') setTab('Pending');
   }, [searchParams]);
-  const filtered = useMemo(() => mockRequests.filter(r => {
-    if (tab === 'All') return true;
-    if (tab === 'Pending') return ['Request Submitted', 'Awaiting Approval'].includes(r.status as string);
-    if (tab === 'Quotation Ready') return r.status === 'Quotation in Progress';
-    if (tab === 'In Progress') return ['Sourcing', 'At China Warehouse', 'Payment Pending'].includes(r.status as string);
-    if (tab === 'Completed') return r.status === 'Completed';
-    return true;
-  }), [tab]);
+
+  useEffect(() => {
+    const abortController = new AbortController();
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000));
+    // clear previous results and show loader while fetching
+    setRequests([]);
+    setLoading(true);
+
+    Promise.race([
+      requestsApi.getRequests({ limit: 100 }, abortController.signal),
+      timeout,
+    ])
+      .then((r: any) => {
+        if (abortController.signal.aborted) return;
+        const apiData = r.data?.data ?? [];
+        requestsCache.setList(apiData);
+        const mapped: DisplayRequest[] = apiData.map((req: any) => ({
+          id: req.id,
+          requestId: req.requestNumber,
+          date: formatDate(req.createdAt),
+          items: req.items?.length ?? 0,
+          itemNames: (req.items ?? []).map((i: any) => i.productName).join(', '),
+          status: req.status,
+          totalBudget: formatBudget(req.totalBudgetINR),
+          source: undefined,
+        }));
+        setRequests(mapped);
+      })
+      .catch(() => { if (!abortController.signal.aborted) setRequests([]); })
+      .finally(() => { if (!abortController.signal.aborted) setLoading(false); });
+    return () => abortController.abort();
+  }, []);
+
+  const filtered = useMemo(
+    () => requests.filter((r) => matchesTab(r.status, tab)),
+    [requests, tab]
+  );
 
   return (
     <ClientLayout>
@@ -50,7 +113,11 @@ export default function AllRequestsPage() {
               {['Request ID', 'Date', 'Items', 'Status', 'Budget', 'Action'].map(h => <th key={h} className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{h}</th>)}
             </tr></thead>
             <tbody className="divide-y divide-border">
-              {filtered.length === 0 ? <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">No requests in this filter.</td></tr> : filtered.map(r => (
+              {loading ? (
+                <SkeletonTable rows={5} cols={6} />
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">No requests in this filter.</td></tr>
+              ) : filtered.map(r => (
                 <tr key={r.id} className="table-row-hover">
                   <td className="px-4 py-3.5"><div className="flex items-center gap-2">{r.source === 'photo_scan' && <Camera className="w-3.5 h-3.5 text-[#4A3B52]" />}<span className="text-sm font-600 text-primary font-tabular">{r.requestId}</span></div></td>
                   <td className="px-4 py-3.5 text-sm text-muted-foreground font-tabular">{r.date}</td>
@@ -65,5 +132,13 @@ export default function AllRequestsPage() {
         </div>
       </div>
     </ClientLayout>
+  );
+}
+
+export default function AllRequestsPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <AllRequestsContent />
+    </Suspense>
   );
 }

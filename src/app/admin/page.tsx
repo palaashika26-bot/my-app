@@ -3,12 +3,13 @@ import React from 'react';
 import Link from 'next/link';
 import AdminLayout from '@/components/AdminLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { mockAdminOrders, mockRequests, adminKpis, recentActivity, pendingActions } from '@/lib/adminMockData';
+import { adminKpis, recentActivity, pendingActions } from '@/lib/adminMockData';
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, Cell } from 'recharts';
 import { ShoppingBag, Users, Truck, Clock, IndianRupee, AlertTriangle, ArrowRight, Sun, Plus, Download, MapPin, Eye, Camera } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import { useRouter } from 'next/navigation';
+import { adminApi, type AdminStats } from '@/lib/api/admin.api';
 
 function Kpi({ icon: Icon, label, value, sub, accent, color, onClick }: any) {
   return (
@@ -30,17 +31,26 @@ export default function AdminDashboardPage() {
   const { user } = useAuth();
   const perms = useAdminPermissions();
   const router = useRouter();
-  const recentOrders = mockAdminOrders.slice(0, 5);
-  const recentRequestsList = mockRequests.slice(0, 5);
   const [today, setToday] = React.useState('');
-  React.useEffect(() => { setToday(new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })); }, []);
+  const [stats, setStats] = React.useState<AdminStats | null>(null);
+  const [statsLoading, setStatsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    setToday(new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
+  }, []);
+
+  React.useEffect(() => {
+    adminApi.getStats()
+      .then(r => setStats(r.data.data))
+      .catch(err => console.error('Failed to load admin stats', err))
+      .finally(() => setStatsLoading(false));
+  }, []);
 
   function handleExportReports() {
     let ordersData: any[] = [];
     try {
-      const stored = localStorage.getItem('bk-orders');
-      ordersData = stored ? JSON.parse(stored) : mockAdminOrders;
-    } catch { ordersData = mockAdminOrders; }
+      ordersData = stats?.recentOrders ?? [];
+    } catch { ordersData = []; }
 
     const headers = ['Order ID', 'Client', 'Items', 'Amount', 'Status', 'Date'];
     const rows = ordersData.map((o: any) => [
@@ -93,16 +103,16 @@ export default function AdminDashboardPage() {
       </div>
 
       <div className={`grid grid-cols-2 gap-3 mb-6 ${perms.canSeeGrandTotalsAndMargins ? 'lg:grid-cols-3 xl:grid-cols-6' : 'lg:grid-cols-3 xl:grid-cols-5'}`}>
-        <Kpi icon={ShoppingBag} label="Total Orders"      value="247"        sub="+12 this month"  accent="border-[#c17b5c]" color="bg-[#fdf2ed] text-[#c17b5c]" onClick={() => router.push('/admin/all-orders')} />
+        <Kpi icon={ShoppingBag} label="Total Orders"      value={statsLoading ? '—' : String(stats?.totalOrders ?? 0)}    sub="all time"         accent="border-[#c17b5c]" color="bg-[#fdf2ed] text-[#c17b5c]" onClick={() => router.push('/admin/all-orders')} />
         {perms.isFullAdmin && (
-          <Kpi icon={Users}       label="Total Clients"     value="156"        sub="+8 this month"   accent="border-[#5c5470]"   color="bg-[#f0eef8] text-[#5c5470]" onClick={() => router.push('/admin/users')} />
+          <Kpi icon={Users}       label="Total Clients"   value={statsLoading ? '—' : String(stats?.totalClients ?? 0)}   sub="active accounts"  accent="border-[#5c5470]"   color="bg-[#f0eef8] text-[#5c5470]" onClick={() => router.push('/admin/users')} />
         )}
-        <Kpi icon={Truck}       label="Active Shipments"  value="23"         sub="in pipeline"     accent="border-cyan-500"   color="bg-cyan-50 text-cyan-600" onClick={() => router.push('/admin/logistics')} />
-        <Kpi icon={Clock}       label="Pending Approvals" value="8"          sub="need attention"  accent="border-yellow-500" color="bg-yellow-50 text-yellow-600" onClick={() => router.push('/admin/requests?filter=awaiting-approval')} />
+        <Kpi icon={Truck}       label="Active Orders"    value={statsLoading ? '—' : String(stats?.activeOrders ?? 0)}   sub="in pipeline"      accent="border-cyan-500"   color="bg-cyan-50 text-cyan-600" onClick={() => router.push('/admin/logistics')} />
+        <Kpi icon={Clock}       label="Pending Inquiries" value={statsLoading ? '—' : String(stats?.pendingInquiries ?? 0)} sub="need attention" accent="border-yellow-500" color="bg-yellow-50 text-yellow-600" onClick={() => router.push('/admin/requests?filter=awaiting-approval')} />
         {perms.canSeeGrandTotalsAndMargins && (
-          <Kpi icon={IndianRupee} label="Revenue (MTD)"     value="₹45.2L"    sub="+18% vs last"    accent="border-emerald-500" color="bg-emerald-50 text-emerald-600" onClick={() => router.push('/admin/all-orders?filter=completed')} />
+          <Kpi icon={IndianRupee} label="Total Inquiries"  value={statsLoading ? '—' : String(stats?.totalInquiries ?? 0)} sub="all time"       accent="border-emerald-500" color="bg-emerald-50 text-emerald-600" onClick={() => router.push('/admin/all-orders?filter=completed')} />
         )}
-        <Kpi icon={AlertTriangle} label="Exceptions"       value="3"          sub="to resolve"      accent="border-red-500"    color="bg-red-50 text-red-600" onClick={() => router.push('/admin/all-orders?filter=exception')} />
+        <Kpi icon={AlertTriangle} label="Pending Payments" value={statsLoading ? '—' : String(stats?.pendingPayments ?? 0)} sub="to confirm"    accent="border-red-500"    color="bg-red-50 text-red-600" onClick={() => router.push('/admin/all-orders?filter=exception')} />
       </div>
 
       <div className={`grid lg:grid-cols-3 gap-5 mb-6 ${perms.canSeeGrandTotalsAndMargins ? '' : 'lg:grid-cols-1'}`}>
@@ -181,11 +191,18 @@ export default function AdminDashboardPage() {
         <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
           <div className="flex items-center justify-between p-4 border-b border-border"><h3 className="font-700">Recent Orders</h3><Link href="/admin/all-orders" className="text-xs text-[#4A3B52] font-600">View all →</Link></div>
           <div className="divide-y divide-border">
-            {recentOrders.map(o => (
+            {statsLoading ? (
+              <div className="p-4 text-sm text-muted-foreground">Loading...</div>
+            ) : (stats?.recentOrders ?? []).length === 0 ? (
+              <div className="p-4 text-sm text-muted-foreground">No orders yet</div>
+            ) : (stats?.recentOrders ?? []).map(o => (
               <Link key={o.id} href={`/admin/orders/${o.id}`} className="flex items-center gap-3 p-3 hover:bg-muted/40 transition-colors">
-                <div className="flex-1 min-w-0"><p className="font-tabular font-600 text-sm truncate">{o.orderId}</p><p className="text-xs text-muted-foreground truncate">{o.client} • {o.itemNames}</p></div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-tabular font-600 text-sm truncate">{o.orderNumber}</p>
+                  <p className="text-xs text-muted-foreground truncate">{o.client.companyName} • {o.client.user.firstName} {o.client.user.lastName}</p>
+                </div>
                 {perms.canSeeOrderListAmounts && (
-                  <span className="font-tabular font-600 text-sm flex-shrink-0">{o.amount}</span>
+                  <span className="font-tabular font-600 text-sm flex-shrink-0">₹{Number(o.totalINR).toLocaleString('en-IN')}</span>
                 )}
                 <StatusBadge status={o.status as any} />
               </Link>
@@ -193,14 +210,18 @@ export default function AdminDashboardPage() {
           </div>
         </div>
         <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
-          <div className="flex items-center justify-between p-4 border-b border-border"><h3 className="font-700">Recent Requests</h3><Link href="/admin/requests" className="text-xs text-[#4A3B52] font-600">View all →</Link></div>
+          <div className="flex items-center justify-between p-4 border-b border-border"><h3 className="font-700">Recent Inquiries</h3><Link href="/admin/requests" className="text-xs text-[#4A3B52] font-600">View all →</Link></div>
           <div className="divide-y divide-border">
-            {recentRequestsList.map(r => (
-              <Link key={r.id} href={`/admin/requests/${r.id}`} className={`flex items-center gap-3 p-3 hover:bg-muted/40 transition-colors ${r.status === 'Exception' ? 'bg-red-50/40' : ''}`}>
-                <div className="flex-1 min-w-0"><div className="flex items-center gap-1.5">{r.source === 'photo_scan' && <Camera className="w-3 h-3 text-[#4A3B52]" />}<p className="font-tabular font-600 text-sm">{r.requestId}</p></div><p className="text-xs text-muted-foreground truncate">{r.client} • {r.itemNames}</p></div>
-                {perms.canSeeRequestBudget && (
-                  <span className="font-tabular font-600 text-sm flex-shrink-0">{r.totalBudget}</span>
-                )}
+            {statsLoading ? (
+              <div className="p-4 text-sm text-muted-foreground">Loading...</div>
+            ) : (stats?.recentInquiries ?? []).length === 0 ? (
+              <div className="p-4 text-sm text-muted-foreground">No inquiries yet</div>
+            ) : (stats?.recentInquiries ?? []).map(r => (
+              <Link key={r.id} href={`/admin/requests/${r.id}`} className="flex items-center gap-3 p-3 hover:bg-muted/40 transition-colors">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5"><Camera className="w-3 h-3 text-[#4A3B52]" /><p className="font-tabular font-600 text-sm">{r.product?.name ?? 'Custom item'}</p></div>
+                  <p className="text-xs text-muted-foreground truncate">{r.client.companyName} • qty {r.quantity}</p>
+                </div>
                 <StatusBadge status={r.status as any} />
               </Link>
             ))}

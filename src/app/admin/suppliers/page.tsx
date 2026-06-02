@@ -1,7 +1,8 @@
 ﻿'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import AdminLayout from '@/components/AdminLayout';
 import { mockSuppliers, type Supplier } from '@/lib/adminMockData';
+import { suppliersApi, type ApiSupplier } from '@/lib/api/suppliers.api';
 import { useToast } from '@/components/ui/Toast';
 import { Plus, Edit3, Trash2, Star, X, Search } from 'lucide-react';
 
@@ -9,10 +10,36 @@ function Stars({ rating }: { rating: number }) {
   return <span className="inline-flex items-center gap-0.5">{Array.from({length:5}).map((_,i) => <Star key={i} className={`w-3.5 h-3.5 ${i < Math.round(rating) ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'}`} />)}<span className="text-xs text-muted-foreground ml-1">{rating.toFixed(1)}</span></span>;
 }
 
+function apiSupplierToLocal(s: ApiSupplier): Supplier {
+  return {
+    id: s.id,
+    name: s.companyName,
+    city: s.city ?? '',
+    province: s.province ?? '',
+    contactPerson: s.contactPerson ?? '—',
+    phone: s.phone ?? '—',
+    email: s.email ?? '',
+    categories: [],
+    rating: s.rating ?? 0,
+    status: s.isVerified ? 'Active' : 'Inactive',
+    joined: new Date(s.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+    productsCount: s._count?.products ?? 0,
+  };
+}
+
 export default function AdminSuppliersPage() {
   const { addToast } = useToast();
   const [suppliers, setSuppliers] = useState<Supplier[]>(mockSuppliers);
   const [showAdd, setShowAdd] = useState(false);
+
+  useEffect(() => {
+    suppliersApi.getSuppliers({ limit: 100 })
+      .then(r => {
+        const apiData = r.data?.data ?? [];
+        if (apiData.length > 0) setSuppliers(apiData.map(apiSupplierToLocal));
+      })
+      .catch(() => {});
+  }, []);
   const [viewing, setViewing] = useState<Supplier | null>(null);
   const [q, setQ] = useState('');
   const [form, setForm] = useState({ name: '', city: '', province: '', contactPerson: '', phone: '', email: '', categories: '' });

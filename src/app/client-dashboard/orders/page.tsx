@@ -1,11 +1,9 @@
 'use client';
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import ClientLayout from '@/components/ClientLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { mockOrders } from '@/lib/mockData';
-import { getOrders } from '@/lib/ordersStore';
 import type { OrderRow } from '@/lib/ordersStore';
 import { ordersApi } from '@/lib/api/orders.api';
 import { TOKEN_KEY } from '@/lib/api/axiosClient';
@@ -35,7 +33,7 @@ function mapApiOrder(o: ApiOrder): OrderRow {
     orderId: o.orderNumber,
     date: new Date(o.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
     itemCount: o.items?.length ?? 0,
-    itemNames: o.items?.map((i) => i.product.name).join(', ') || '',
+    itemNames: o.items?.map((i) => i.product?.name ?? i.notes ?? '—').join(', ') || '',
     amount: `₹${totalINR.toLocaleString('en-IN')}`,
     estimatedDelivery: o.shipment?.estimatedDelivery
       ? new Date(o.shipment.estimatedDelivery).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
@@ -60,22 +58,19 @@ const ALL_STAGES = [
   { id: 'exception',          label: 'Exception',                   statuses: ['Exception'],                                 icon: AlertCircle,   color: 'text-red-600',      bg: 'bg-red-50'    },
 ];
 
-function PipelineView() {
+function PipelineView({ orders }: { orders: OrderRow[] }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [orders, setOrders] = useState<OrderRow[]>([]);
 
   useEffect(() => {
-    const loaded = getOrders();
-    setOrders(loaded);
     // Auto-expand stages that have orders
     const initExpanded: Record<string, boolean> = {};
     ALL_STAGES.forEach(stage => {
-      if (loaded.some(o => stage.statuses.includes(o.status as string))) {
+      if (orders.some(o => stage.statuses.includes(o.status as string))) {
         initExpanded[stage.id] = true;
       }
     });
     setExpanded(initExpanded);
-  }, []);
+  }, [orders]);
 
   return (
     <div className="space-y-3">
@@ -140,7 +135,7 @@ function PipelineView() {
   );
 }
 
-export default function AllOrdersPage() {
+function AllOrdersContent() {
   const searchParams = useSearchParams();
   const viewParam = searchParams.get('view');
   const filterParam = searchParams.get('filter');
@@ -163,19 +158,23 @@ export default function AllOrdersPage() {
       setTimeout(() => setIsLoading(false), 300);
       return;
     }
-    ordersApi
-      .getOrders({ limit: 100 })
+
+    const ac = new AbortController();
+    setIsLoading(true);
+    setLiveOrders([]);
+
+    ordersApi.getOrders({ limit: 100 }, ac.signal)
       .then((res) => {
-        if (res.data.success && res.data.data.length > 0) {
-          setLiveOrders(res.data.data.map(mapApiOrder));
-        }
+        if (ac.signal.aborted) return;
+        setLiveOrders((res.data.data ?? []).map(mapApiOrder));
       })
-      .catch(() => {/* Fall back to mockOrders silently */})
-      .finally(() => setIsLoading(false));
+      .catch(() => { if (!ac.signal.aborted) setLiveOrders([]); })
+      .finally(() => { if (!ac.signal.aborted) setIsLoading(false); });
+
+    return () => ac.abort();
   }, []);
 
-  // Prefer live backend orders; fall back to mock when not logged in
-  const allOrders = liveOrders.length > 0 ? liveOrders : mockOrders;
+  const allOrders = liveOrders;
 
   const filtered = useMemo(() => allOrders.filter(o => {
     const matchesSearch = !q || o.orderId.toLowerCase().includes(q.toLowerCase()) || (o.itemNames || '').toLowerCase().includes(q.toLowerCase());
@@ -257,8 +256,22 @@ export default function AllOrdersPage() {
           </div>
         </>
       ) : (
-        <PipelineView />
+        isLoading ? (
+          <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden p-6">
+            <SkeletonTable rows={6} cols={3} />
+          </div>
+        ) : (
+          <PipelineView orders={liveOrders} />
+        )
       )}
     </ClientLayout>
+  );
+}
+
+export default function AllOrdersPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <AllOrdersContent />
+    </Suspense>
   );
 }

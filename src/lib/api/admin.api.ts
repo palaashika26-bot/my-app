@@ -1,0 +1,89 @@
+import axiosClient from './axiosClient';
+import type { ApiResponse, PaginationMeta } from '../types/api.types';
+
+export interface AdminStats {
+  totalInquiries: number;
+  pendingInquiries: number;
+  totalOrders: number;
+  activeOrders: number;
+  totalClients: number;
+  pendingPayments: number;
+  recentInquiries: {
+    id: string;
+    quantity: number;
+    status: string;
+    createdAt: string;
+    product: { name: string } | null;
+    client: {
+      companyName: string;
+      user: { firstName: string; lastName: string };
+    };
+  }[];
+  recentOrders: {
+    id: string;
+    orderNumber: string;
+    status: string;
+    totalINR: string;
+    createdAt: string;
+    client: {
+      companyName: string;
+      user: { firstName: string; lastName: string };
+    };
+  }[];
+}
+
+export interface AdminClient {
+  id: string;
+  companyName: string;
+  gstin: string | null;
+  city: string | null;
+  state: string | null;
+  isActive: boolean;
+  createdAt: string;
+  user: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string | null;
+  };
+  _count: { orders: number; inquiries: number };
+}
+
+export interface AdminClientDetail extends AdminClient {
+  orders: {
+    id: string;
+    orderNumber: string;
+    status: string;
+    totalINR: string;
+    createdAt: string;
+  }[];
+  inquiries: {
+    id: string;
+    quantity: number;
+    status: string;
+    createdAt: string;
+    product: { name: string } | null;
+  }[];
+}
+
+export interface ClientsParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  isActive?: boolean;
+}
+
+export const adminApi = {
+  getStats: () =>
+    axiosClient.get<ApiResponse<AdminStats>>('/admin/stats'),
+
+  getClients: (params?: ClientsParams) =>
+    axiosClient.get<ApiResponse<AdminClient[]> & { pagination: PaginationMeta }>(
+      '/admin/clients',
+      { params }
+    ),
+
+  getClientById: (id: string) =>
+    axiosClient.get<ApiResponse<AdminClientDetail>>(`/admin/clients/${id}`),
+};

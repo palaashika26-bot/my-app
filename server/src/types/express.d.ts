@@ -4,6 +4,7 @@ declare namespace Express {
     user?: {
       userId: string;
       role: string;
+      clientId?: string;
     };
   }
 }

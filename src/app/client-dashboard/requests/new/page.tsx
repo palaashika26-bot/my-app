@@ -1,39 +1,129 @@
-﻿'use client';
-import React, { useState } from 'react';
+'use client';
+import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import ClientLayout from '@/components/ClientLayout';
 import { useToast } from '@/components/ui/Toast';
-import { Camera, Upload, ArrowLeft, ArrowRight, Plus, X, Check } from 'lucide-react';
+import { requestsApi } from '@/lib/api/requests.api';
+import { requestsCache } from '@/lib/api/requestsCache';
+import { Camera, Upload, ArrowLeft, ArrowRight, Plus, X, Check, ImageIcon } from 'lucide-react';
 
-interface Item { name: string; desc: string; qty: string; url: string; files: string[] }
+interface Item {
+  name: string;
+  desc: string;
+  qty: string;
+  url: string;
+  refImages: string[]; // base64 data URLs
+}
 
 export default function NewRequestPage() {
   const router = useRouter();
   const { addToast } = useToast();
   const [step, setStep] = useState(1);
-  const [items, setItems] = useState<Item[]>([{ name: '', desc: '', qty: '', url: '', files: [] }]);
+  const [items, setItems] = useState<Item[]>([{ name: '', desc: '', qty: '', url: '', refImages: [] }]);
   const [budgetMin, setBudgetMin] = useState('');
   const [budgetMax, setBudgetMax] = useState('');
   const [totalBudget, setTotalBudget] = useState('');
   const [deadline, setDeadline] = useState('');
   const [special, setSpecial] = useState('');
+  const [referenceNote, setReferenceNote] = useState('');
   const [chinaAddress, setChinaAddress] = useState('');
   const [agree, setAgree] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   function updateItem(i: number, key: keyof Item, val: any) {
     setItems(prev => prev.map((it, idx) => idx === i ? { ...it, [key]: val } : it));
   }
-  function addItem() { if (items.length < 5) setItems([...items, { name: '', desc: '', qty: '', url: '', files: [] }]); }
+  function addItem() { if (items.length < 5) setItems([...items, { name: '', desc: '', qty: '', url: '', refImages: [] }]); }
   function removeItem(i: number) { if (items.length > 1) setItems(items.filter((_, idx) => idx !== i)); }
 
+  const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2MB
+
+  function handleRefImages(itemIdx: number, e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    const current = items[itemIdx].refImages;
+    const remaining = 5 - current.length;
+    const toAdd = files.slice(0, remaining);
+
+    const oversized = toAdd.filter(f => f.size > MAX_IMAGE_SIZE);
+    if (oversized.length > 0) {
+      addToast({ type: 'error', title: 'Image too large. Max 2MB per image.' });
+      e.target.value = '';
+      return;
+    }
+
+    Promise.all(
+      toAdd.map(file => new Promise<string>((resolve, reject) => {
+        const ALLOWED = ['image/jpeg', 'image/png', 'image/webp'];
+        if (!ALLOWED.includes(file.type)) { reject(new Error('Invalid type')); return; }
+        const reader = new FileReader();
+        reader.onload = ev => resolve(ev.target?.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      }))
+    ).then(dataUrls => {
+      updateItem(itemIdx, 'refImages', [...current, ...dataUrls]);
+    }).catch(() => {
+      addToast({ type: 'error', title: 'Some images could not be added', description: 'Only JPG/PNG accepted.' });
+    });
+    e.target.value = '';
+  }
+
+  function removeRefImage(itemIdx: number, imgIdx: number) {
+    const next = items[itemIdx].refImages.filter((_, i) => i !== imgIdx);
+    updateItem(itemIdx, 'refImages', next);
+  }
+
   async function submit() {
+    const validItems = items.filter(it => it.name.trim());
+    if (!validItems.length) {
+      addToast({ type: 'error', title: 'Add at least one product', description: 'Enter a product name to continue.' });
+      return;
+    }
+
     setSubmitting(true);
-    await new Promise(r => setTimeout(r, 1000));
-    const id = `BK-REQ-2026-${Math.floor(1000 + Math.random()*9000)}`;
-    addToast({ type: 'success', title: 'Request submitted!', description: `${id} created. Our team will contact you within 24 hours.` });
-    setTimeout(() => router.push('/client-dashboard/requests'), 2000);
+    try {
+      const notes = [
+        special,
+        chinaAddress ? `China delivery address: ${chinaAddress}` : '',
+        deadline ? `Required by: ${deadline}` : '',
+        budgetMin && budgetMax ? `Budget per unit: ₹${budgetMin}–₹${budgetMax}` : '',
+      ].filter(Boolean).join('\n') || undefined;
+
+      const payload = {
+        notes,
+        referenceNote: referenceNote.trim() || undefined,
+        totalBudgetINR: totalBudget ? parseFloat(totalBudget) : undefined,
+        items: validItems.map(it => ({
+          type: 'CUSTOM' as const,
+          productName: it.name.trim(),
+          productDescription: it.desc.trim() || undefined,
+          quantity: Math.max(1, parseInt(it.qty) || 1),
+          unit: 'PCS' as const,
+          notes: it.url.trim() ? `Reference URL: ${it.url.trim()}` : undefined,
+          referenceImageUrls: it.refImages.length > 0 ? it.refImages : undefined,
+        })),
+      };
+
+      const response = await requestsApi.createRequest(payload);
+      const request = response.data?.data;
+      if (request) requestsCache.set(request.id, request);
+      addToast({
+        type: 'success',
+        title: 'Request submitted!',
+        description: `${request.requestNumber} created. Our team will contact you within 24 hours.`,
+      });
+      router.push(`/client-dashboard/requests/${request.id}`);
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: 'Failed to submit request',
+        description: error?.response?.data?.message || 'Please try again.',
+      });
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -71,11 +161,36 @@ export default function NewRequestPage() {
                   <input value={it.qty} onChange={e => updateItem(i, 'qty', e.target.value)} type="number" className="input-field" placeholder="Quantity" />
                   <input value={it.url} onChange={e => updateItem(i, 'url', e.target.value)} className="input-field" placeholder="Reference URL (Alibaba)" />
                 </div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <span className="btn-secondary px-3 py-1.5 text-xs inline-flex items-center gap-1.5"><Upload className="w-3.5 h-3.5" /> Upload reference images</span>
-                  <input type="file" multiple className="hidden" onChange={e => updateItem(i, 'files', Array.from(e.target.files || []).map(f => f.name))} />
-                  {it.files.length > 0 && <span className="text-xs text-muted-foreground">{it.files.length} file(s)</span>}
-                </label>
+
+                {/* Reference images upload */}
+                <div>
+                  <p className="text-xs font-600 text-muted-foreground mb-2">Reference Images (optional)</p>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {it.refImages.map((src, imgIdx) => (
+                      <div key={imgIdx} className="relative">
+                        <img src={src} alt={`ref-${imgIdx}`} className="w-16 h-16 rounded-lg object-cover border border-border" />
+                        <button type="button" onClick={() => removeRefImage(i, imgIdx)}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                    {it.refImages.length < 5 && (
+                      <button type="button" onClick={() => fileInputRefs.current[i]?.click()}
+                        className="w-16 h-16 rounded-lg border-2 border-dashed border-border flex flex-col items-center justify-center gap-1 text-muted-foreground hover:border-[#4A3B52]/50 hover:text-[#4A3B52] transition-colors">
+                        <ImageIcon className="w-5 h-5" />
+                        <span className="text-[10px]">Add</span>
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="file" multiple accept="image/jpeg,image/png,image/webp"
+                    ref={el => { fileInputRefs.current[i] = el; }}
+                    className="hidden"
+                    onChange={e => handleRefImages(i, e)}
+                  />
+                  <p className="text-[11px] text-muted-foreground">JPG, PNG accepted · Max 5 images per item</p>
+                </div>
               </div>
             ))}
             {items.length < 5 && <button onClick={addItem} className="flex items-center gap-2 text-sm text-[#4A3B52] font-600"><Plus className="w-4 h-4" /> Add Another Item</button>}
@@ -91,18 +206,38 @@ export default function NewRequestPage() {
             <div><label className="text-xs font-600 text-muted-foreground">Total Budget (INR)</label><input value={totalBudget} onChange={e => setTotalBudget(e.target.value)} type="number" className="input-field mt-1" placeholder="e.g. 50000" /></div>
             <div><label className="text-xs font-600 text-muted-foreground">Required by</label><input value={deadline} onChange={e => setDeadline(e.target.value)} type="date" className="input-field mt-1" /></div>
             <div><label className="text-xs font-600 text-muted-foreground">Special requirements</label><textarea value={special} onChange={e => setSpecial(e.target.value)} className="input-field mt-1" rows={3} placeholder="QC, packaging, labeling notes..." /></div>
+            <div>
+              <label className="text-xs font-600 text-muted-foreground">Overall Reference Note (optional)</label>
+              <textarea
+                value={referenceNote}
+                onChange={e => setReferenceNote(e.target.value)}
+                className="input-field mt-1" rows={3}
+                placeholder="Any specific requirements, reference links, sample images description..."
+              />
+            </div>
             <div><label className="text-xs font-600 text-muted-foreground">China Delivery Address</label><textarea value={chinaAddress} onChange={e => setChinaAddress(e.target.value)} className="input-field mt-1" rows={2} placeholder="Enter the address in China where goods should be delivered" /></div>
           </div>
         )}
         {step === 3 && (
           <div className="space-y-4">
             <h3 className="font-700">Step 3 — Review & Submit</h3>
-            <div className="bg-muted/40 rounded-xl p-4"><p className="text-xs font-600 text-muted-foreground mb-2">ITEMS</p>{items.map((it, i) => <p key={i} className="text-sm">• {it.name || `Item ${i+1}`} — Qty: {it.qty || '-'}</p>)}</div>
+            <div className="bg-muted/40 rounded-xl p-4">
+              <p className="text-xs font-600 text-muted-foreground mb-2">ITEMS</p>
+              {items.map((it, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm mb-1">
+                  <span>• {it.name || `Item ${i+1}`} — Qty: {it.qty || '-'}</span>
+                  {it.refImages.length > 0 && (
+                    <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{it.refImages.length} ref image{it.refImages.length > 1 ? 's' : ''}</span>
+                  )}
+                </div>
+              ))}
+            </div>
             <div className="bg-muted/40 rounded-xl p-4 grid grid-cols-2 gap-3 text-sm">
               <div><p className="text-xs text-muted-foreground">Budget Range</p><p className="font-600">₹{budgetMin || '—'} – ₹{budgetMax || '—'}/unit</p></div>
               <div><p className="text-xs text-muted-foreground">Total Budget</p><p className="font-600">₹{totalBudget || '—'}</p></div>
               <div><p className="text-xs text-muted-foreground">Required by</p><p className="font-600">{deadline || '—'}</p></div>
               <div className="col-span-2"><p className="text-xs text-muted-foreground">China Delivery Address</p><p className="font-600">{chinaAddress || '—'}</p></div>
+              {referenceNote && <div className="col-span-2"><p className="text-xs text-muted-foreground">Reference Note</p><p className="font-600 text-sm">{referenceNote}</p></div>}
             </div>
             <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={agree} onChange={e => setAgree(e.target.checked)} className="accent-accent w-4 h-4" /><span className="text-sm">I confirm the details are accurate</span></label>
           </div>

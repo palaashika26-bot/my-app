@@ -1,23 +1,103 @@
 ﻿'use client';
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import AdminLayout from '@/components/AdminLayout';
 import StatusBadge, { OrderStatus } from '@/components/ui/StatusBadge';
-import { mockAdminOrders, mockClients } from '@/lib/adminMockData';
+import { mockClients } from '@/lib/adminMockData';
+import { ordersApi } from '@/lib/api/orders.api';
+import type { ApiOrder } from '@/lib/types/api.types';
+import { ordersCache } from '@/lib/api/ordersCache';
 import { useToast } from '@/components/ui/Toast';
 import { Search, Download, Eye, ChevronDown, ChevronUp, Mail } from 'lucide-react';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import { isWarehouseShippingOrderStatus } from '@/lib/staffRoles';
 
-const statusOptions: OrderStatus[] = ['Payment Pending','Payment Confirmed','Sourcing','At China Warehouse','Repacking Warehouse','Ready for Shipping','Shipped from China','Arrived India Warehouse','Out for Delivery','Completed','Exception'];
+const statusOptions: OrderStatus[] = ['Payment Pending','Payment Confirmed','Sourcing','At China Warehouse','Repacking Warehouse','Ready for Shipping','Shipped from China','In Transit','Arrived India Warehouse','Out for Delivery','Completed','Exception'];
 const pageSizes = [10, 25, 50];
 
-export default function AdminAllOrdersPage() {
+const ORDER_STATUS_MAP: Record<string, string> = {
+  PAYMENT_PENDING: 'Payment Pending',
+  CONFIRMED: 'Payment Confirmed',
+  SOURCING: 'Sourcing',
+  QC_PENDING: 'At China Warehouse',
+  QC_PASSED: 'At China Warehouse',
+  QC_FAILED: 'Exception',
+  REPACKING: 'Repacking Warehouse',
+  SHIPPED: 'Shipped from China',
+  DELIVERED: 'Completed',
+  CANCELLED: 'Exception',
+};
+
+// Timeline stages in order — used to find the furthest completed one
+const STAGE_ORDER = [
+  'Order Placed','Payment Confirmed','Sourcing','At China Warehouse',
+  'China Consolidation Warehouse','Repacking Warehouse','Shipped from China',
+  'In Transit','Arrived India Warehouse','Out for Delivery','Completed',
+];
+
+function mapApiAdminOrder(o: ApiOrder) {
+  const totalINR = parseFloat(o.totalINR || '0');
+  const totalCNY = (o.items ?? []).reduce((sum, item) => sum + parseFloat(item.unitPriceCNY || '0') * item.quantity, 0);
+
+  // Derive the most granular display status from completedStages when available.
+  // This fixes the case where SHIPPED maps to multiple sub-stages
+  // (Shipped from China / In Transit / Arrived India Warehouse / Out for Delivery).
+  const cs = o.completedStages ?? [];
+  let displayStatus: string;
+  if (cs.length > 0) {
+    // Find the furthest stage in STAGE_ORDER that is in completedStages
+    let maxIdx = -1;
+    for (let i = 0; i < STAGE_ORDER.length; i++) {
+      if (cs.includes(STAGE_ORDER[i])) maxIdx = i;
+    }
+    displayStatus = maxIdx >= 0 ? STAGE_ORDER[maxIdx] : (ORDER_STATUS_MAP[o.status] ?? o.status);
+  } else {
+    displayStatus = ORDER_STATUS_MAP[o.status] ?? o.status;
+  }
+
+  return {
+    id: o.id,
+    orderId: o.orderNumber,
+    client: o.client?.companyName ?? '—',
+    itemCount: o.items?.length ?? 0,
+    itemNames: o.items?.map(i => i.product?.name ?? i.notes ?? '—').join(', ') || '',
+    amount: `₹${totalINR.toLocaleString('en-IN')}`,
+    amountCny: totalCNY > 0 ? `¥${Math.round(totalCNY).toLocaleString('en-IN')}` : '—',
+    date: new Date(o.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+    estimatedDelivery: o.shipment?.estimatedDelivery
+      ? new Date(o.shipment.estimatedDelivery).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+      : '—',
+    status: displayStatus as OrderStatus,
+    hasUnreadWarehouseUpdate: o.warehouseReport?.isReadByAdmin === false && !!o.warehouseReport?.lastUpdatedAt,
+  };
+}
+
+function AdminAllOrdersContent() {
   const { addToast } = useToast();
   const perms = useAdminPermissions();
   const searchParams = useSearchParams();
-  const [orders, setOrders] = useState(mockAdminOrders);
+  const [orders, setOrders] = useState<ReturnType<typeof mapApiAdminOrder>[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchOrders = (signal?: AbortSignal) => {
+    setLoading(true);
+    ordersApi.getOrders({ limit: 50 }, signal)
+      .then(r => {
+        const rawOrders = r.data?.data ?? [];
+        ordersCache.setList(rawOrders);
+        setOrders(rawOrders.map(mapApiAdminOrder));
+      })
+      .catch(() => { setOrders([]); })
+      .finally(() => setLoading(false));
+  };
+
+  // Initial fetch with cancellation on unmount
+  useEffect(() => {
+    const abortController = new AbortController();
+    fetchOrders(abortController.signal);
+    return () => abortController.abort();
+  }, []);
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
 
@@ -69,8 +149,18 @@ export default function AdminAllOrdersPage() {
   const allOnPageSelected = pageRows.length > 0 && pageRows.every(r => selected[r.id]);
 
   function changeStatus(id: string, ns: string) {
-    setOrders(prev => prev.map(o => o.id === id ? { ...o, status: ns as any } : o));
-    addToast({ type: 'success', title: 'Status updated', description: `Order set to “${ns}”.` });
+    // Optimistic update
+    const prev = orders.find(o => o.id === id)?.status;
+    setOrders(cur => cur.map(o => o.id === id ? { ...o, status: ns as any } : o));
+    ordersApi.updateOrderStatus(id, ns)
+      .then(() => {
+        addToast({ type: 'success', title: 'Status updated', description: `Order set to “${ns}”.` });
+      })
+      .catch(() => {
+        // Roll back on failure
+        setOrders(cur => cur.map(o => o.id === id ? { ...o, status: (prev ?? o.status) as any } : o));
+        addToast({ type: 'error', title: 'Update failed', description: 'Could not save status. Please try again.' });
+      });
   }
 
   function toggleSelect(id: string) { setSelected(s => ({ ...s, [id]: !s[id] })); }
@@ -82,9 +172,20 @@ export default function AdminAllOrdersPage() {
   function bulkUpdate(ns: string) {
     const ids = Object.keys(selected).filter(k => selected[k]);
     if (!ids.length) { addToast({ type: 'warning', title: 'No orders selected' }); return; }
+    // Save previous statuses for rollback
+    const prevStatuses = Object.fromEntries(orders.filter(o => ids.includes(o.id)).map(o => [o.id, o.status]));
+    // Optimistic update
     setOrders(prev => prev.map(o => ids.includes(o.id) ? { ...o, status: ns as any } : o));
     setSelected({});
-    addToast({ type: 'success', title: `Updated ${ids.length} order(s)`, description: `Set to “${ns}”.` });
+    Promise.all(ids.map(id => ordersApi.updateOrderStatus(id, ns)))
+      .then(() => {
+        addToast({ type: 'success', title: `Updated ${ids.length} order(s)`, description: `Set to “${ns}”.` });
+      })
+      .catch(() => {
+        // Roll back all on any failure
+        setOrders(prev => prev.map(o => ids.includes(o.id) ? { ...o, status: (prevStatuses[o.id] ?? o.status) as any } : o));
+        addToast({ type: 'error', title: 'Bulk update failed', description: 'Some statuses could not be saved. Please retry.' });
+      });
   }
 
   function exportCsv() { addToast({ type: 'info', title: 'Exporting CSV...', description: `${filtered.length} rows queued.` }); }
@@ -162,7 +263,11 @@ export default function AdminAllOrdersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {pageRows.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={colCount} className="px-3 py-10 text-center text-sm text-muted-foreground">Loading orders...</td>
+                </tr>
+              ) : pageRows.length === 0 ? (
                 <tr>
                   <td colSpan={colCount} className="px-3 py-10 text-center text-sm text-muted-foreground">
                     No orders match your filters.
@@ -174,7 +279,12 @@ export default function AdminAllOrdersPage() {
                   return (
                   <tr key={o.id} className="table-row-hover">
                     <td className="px-3 py-3"><input type="checkbox" checked={!!selected[o.id]} onChange={() => toggleSelect(o.id)} className="accent-accent" /></td>
-                    <td className="px-3 py-3"><Link href={`/admin/orders/${o.id}`} className="font-tabular font-600 text-primary hover:text-[#4A3B52]">{o.orderId}</Link></td>
+                    <td className="px-3 py-3">
+                      <Link href={`/admin/orders/${o.id}`} className="font-tabular font-600 text-primary hover:text-[#4A3B52]">{o.orderId}</Link>
+                      {o.hasUnreadWarehouseUpdate && (
+                        <span className="ml-1.5 inline-flex items-center gap-0.5 text-[10px] font-700 px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">Warehouse Update</span>
+                      )}
+                    </td>
                     <td className="px-3 py-3"><p className="text-sm font-500">{o.client}</p><p className="text-[11px] text-muted-foreground">{client?.email}</p></td>
                     <td className="px-3 py-3 text-[11px] font-tabular text-muted-foreground">{client?.gstin || '—'}</td>
                     <td className="px-3 py-3">
@@ -218,5 +328,17 @@ export default function AdminAllOrdersPage() {
         </div>
       </div>
     </AdminLayout>
+  );
+}
+
+export default function AdminAllOrdersPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen">
+        <div>Loading...</div>
+      </div>
+    }>
+      <AdminAllOrdersContent />
+    </Suspense>
   );
 }

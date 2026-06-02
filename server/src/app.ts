@@ -41,8 +41,8 @@ app.use(generalLimiter);
 app.use(speedLimiter);
 
 // ── 5. Body + cookie parsing ──────────────────────────────────────────────────
-app.use(express.json({ limit: "10kb" }));
-app.use(express.urlencoded({ extended: true, limit: "10kb" }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
 
 // ── 6. Input sanitization — strip $-prefixed and dot-path keys ───────────────

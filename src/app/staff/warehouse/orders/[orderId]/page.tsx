@@ -1,9 +1,10 @@
 'use client';
 
-import React, { use, useEffect, useState } from 'react';
+import React, { use, useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
+import { TOKEN_KEY } from '@/lib/api/axiosClient';
 import {
   ArrowLeft,
   Package,
@@ -15,66 +16,12 @@ import {
   MessageSquare,
 } from 'lucide-react';
 
-interface DemoOrder {
-  orderId: string;
-  clientName: string;
-  items: string[];
-  stage: string;
-  assignedAt: string;
-  packagingListUploaded: boolean;
-  reportSubmitted: boolean;
-}
-
-const DEMO_ORDERS: DemoOrder[] = [
-  {
-    orderId: 'BK-ORD-2024-0274',
-    clientName: 'Sunita Verma',
-    items: ['LED Strip Light (RGB, 5m) x50', 'USB-C Cable (Braided) x100'],
-    stage: 'Repacking Warehouse',
-    assignedAt: '2026-05-18',
-    packagingListUploaded: true,
-    reportSubmitted: false,
-  },
-  {
-    orderId: 'BK-ORD-2024-0268',
-    clientName: 'Amit Patel',
-    items: ['Wireless Earbuds x25', 'Phone Case x200'],
-    stage: 'Repacking Warehouse',
-    assignedAt: '2026-05-17',
-    packagingListUploaded: true,
-    reportSubmitted: true,
-  },
-  {
-    orderId: 'BK-ORD-2024-0261',
-    clientName: 'Rajesh Kumar',
-    items: ['Steel Bottles x100'],
-    stage: 'Repacking Warehouse',
-    assignedAt: '2026-05-16',
-    packagingListUploaded: false,
-    reportSubmitted: false,
-  },
-];
-
-interface PackagingItem {
-  item: string;
-  qty: number;
-  image: string | null;
-  adminNote: string;
-}
-
-const DEMO_PACKAGING: PackagingItem[] = [
-  { item: 'LED Strip Light RGB 5m', qty: 50, image: null, adminNote: 'Handle with care' },
-  { item: 'USB-C Cable Braided', qty: 100, image: null, adminNote: '' },
-  { item: 'Remote Control', qty: 50, image: null, adminNote: 'Check all included' },
-];
-
 interface ItemReport {
   name: string;
   expectedQty: number;
   status: 'ok' | 'issue';
   issue: string;
   receivedQty: string;
-  photo: string | null;
 }
 
 interface RepackDetails {
@@ -91,11 +38,9 @@ interface OutboundShipment {
 }
 
 interface Reply {
-  id: string;
-  sender: string;
-  role: string;
   message: string;
-  time: string;
+  sentAt: string;
+  sentBy: string;
 }
 
 async function readFileAsDataUrl(file: File): Promise<string> {
@@ -104,6 +49,23 @@ async function readFileAsDataUrl(file: File): Promise<string> {
     reader.onload = () => resolve(String(reader.result));
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
+  });
+}
+
+function getToken() {
+  if (typeof window === 'undefined') return '';
+  return localStorage.getItem(TOKEN_KEY) ?? '';
+}
+
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const token = getToken();
+  return fetch(path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...(options.headers ?? {}),
+    },
   });
 }
 
@@ -116,128 +78,139 @@ export default function WarehouseOrderDetailPage({
   const { user } = useAuth();
   const { addToast } = useToast();
 
-  const [order, setOrder] = useState<DemoOrder | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const [packagingList, setPackagingList] = useState<PackagingItem[]>([]);
+  const [order, setOrder] = useState<any>(null);
+  const [orderLoading, setOrderLoading] = useState(true);
+  const [orderNotFound, setOrderNotFound] = useState(false);
+
+  const [warehouseReport, setWarehouseReport] = useState<any>(null);
+  const [reportLoading, setReportLoading] = useState(true);
+
   const [itemReports, setItemReports] = useState<ItemReport[]>([]);
   const [reportSubmitted, setReportSubmitted] = useState(false);
-  const [repack, setRepack] = useState<RepackDetails>({
-    weight: '',
-    cbm: '',
-    notes: '',
-    photos: [],
-  });
+
+  const [repack, setRepack] = useState<RepackDetails>({ weight: '', cbm: '', notes: '', photos: [] });
   const [repackSaved, setRepackSaved] = useState(false);
-  const [outbound, setOutbound] = useState<OutboundShipment>({
-    trackingId: '',
-    finalPackingList: null,
-    deliverySlip: null,
-  });
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  // Upload & Notify state
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
+  const [warehouseNote, setWarehouseNote] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([]);
+  const [uploadLightboxUrl, setUploadLightboxUrl] = useState<string | null>(null);
+
+  const [outbound, setOutbound] = useState<OutboundShipment>({ trackingId: '', finalPackingList: null, deliverySlip: null });
   const [outboundSent, setOutboundSent] = useState(false);
+
   const [replies, setReplies] = useState<Reply[]>([]);
 
-  useEffect(() => {
-    // Seed demo orders if not present
-    const stored = localStorage.getItem('warehouse-demo-orders');
-    if (!stored) {
-      localStorage.setItem('warehouse-demo-orders', JSON.stringify(DEMO_ORDERS));
-    }
-    const orders: DemoOrder[] = stored ? JSON.parse(stored) : DEMO_ORDERS;
-    const found = orders.find((o) => o.orderId === orderId);
-    if (found) {
-      setOrder(found);
-    } else {
-      setNotFound(true);
-      return;
-    }
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    // Load packaging list (admin-uploaded or demo fallback)
-    let pkgList = DEMO_PACKAGING;
+  async function fetchOrder() {
     try {
-      const pkgStored = localStorage.getItem(`admin-packaging-list-${orderId}`);
-      if (pkgStored) pkgList = JSON.parse(pkgStored);
-    } catch {}
-    setPackagingList(pkgList);
-
-    // Load existing report or initialise from packaging list
-    try {
-      const reportStored = localStorage.getItem(`warehouse-report-${orderId}`);
-      if (reportStored) {
-        const parsed = JSON.parse(reportStored);
-        const items: ItemReport[] = parsed.items ?? parsed;
-        setItemReports(items);
-        setReportSubmitted(true);
+      const res = await apiFetch(`/api/orders/${orderId}`);
+      const json = await res.json();
+      const data = json.data ?? json;
+      if (data && (data.id || data.orderNumber)) {
+        setOrder(data);
+        setOrderNotFound(false);
       } else {
-        setItemReports(
-          pkgList.map((pkg) => ({
-            name: pkg.item,
-            expectedQty: pkg.qty,
-            status: 'ok' as const,
-            issue: '',
-            receivedQty: String(pkg.qty),
-            photo: null,
-          }))
-        );
+        setOrderNotFound(true);
       }
     } catch {
-      setItemReports(
-        pkgList.map((pkg) => ({
-          name: pkg.item,
-          expectedQty: pkg.qty,
-          status: 'ok' as const,
-          issue: '',
-          receivedQty: String(pkg.qty),
-          photo: null,
-        }))
-      );
+      setOrderNotFound(true);
+    } finally {
+      setOrderLoading(false);
     }
-
-    // Load repacking details
-    try {
-      const repackStored = localStorage.getItem(`warehouse-repack-${orderId}`);
-      if (repackStored) {
-        setRepack(JSON.parse(repackStored));
-        setRepackSaved(true);
-      }
-    } catch {}
-
-    // Load outbound
-    try {
-      const outboundStored = localStorage.getItem(`warehouse-outbound-${orderId}`);
-      if (outboundStored) {
-        setOutbound(JSON.parse(outboundStored));
-        setOutboundSent(true);
-      }
-    } catch {}
-
-    // Load replies
-    try {
-      const repliesStored = localStorage.getItem(`warehouse-replies-${orderId}`);
-      if (repliesStored) setReplies(JSON.parse(repliesStored));
-    } catch {}
-  }, [orderId]);
-
-  if (notFound) {
-    return (
-      <div className="space-y-4">
-        <Link
-          href="/staff/warehouse/orders"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="w-4 h-4" /> Back to My Orders
-        </Link>
-        <div className="bg-card rounded-xl border border-border shadow-card p-10 text-center">
-          <Package className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-          <p className="font-600 text-foreground">Order not found</p>
-          <p className="text-sm text-muted-foreground mt-1">
-            This order is not in your assigned list.
-          </p>
-        </div>
-      </div>
-    );
   }
 
-  if (!order) {
+  // Full fetch — downloads photos too. Called ONCE on mount.
+  async function fetchWarehouseReport() {
+    try {
+      const res = await apiFetch(`/api/orders/${orderId}/warehouse-report`);
+      const data = await res.json();
+      if (data?.success && data?.data) {
+        const report = data.data;
+        setWarehouseReport(report);
+
+        if (report.reportSubmitted) {
+          setReportSubmitted(true);
+          if (report.itemReports) {
+            setItemReports(report.itemReports as ItemReport[]);
+          }
+        }
+
+        if (report.repackPhotos?.length > 0) {
+          setUploadedPhotos(report.repackPhotos as string[]);
+        }
+        if (report.warehouseNote) {
+          setWarehouseNote(report.warehouseNote as string);
+        }
+
+        if (report.repackSaved) {
+          setRepackSaved(true);
+          setRepack({
+            weight: String(report.finalWeightKg ?? ''),
+            cbm: String(report.finalVolumeCbm ?? ''),
+            notes: report.repackNotes ?? '',
+            photos: [],
+          });
+        }
+
+        if (report.sentToChina) {
+          setOutboundSent(true);
+          setOutbound(prev => ({ ...prev, trackingId: report.outboundTrackingId ?? '' }));
+        }
+
+        setReplies(report.adminReplies ?? []);
+      }
+    } catch {
+      // silent — report might not exist yet
+    } finally {
+      setReportLoading(false);
+    }
+  }
+
+  // Lightweight poll — only fetches replies + metadata, never re-downloads photo blobs
+  function pollWarehouseReport() {
+    apiFetch(`/api/orders/${orderId}/warehouse-report?photos=false`)
+      .then(r => r.json())
+      .then(data => {
+        if (data?.success && data?.data) {
+          setReplies(data.data.adminReplies ?? []);
+        }
+      })
+      .catch(() => {});
+  }
+
+  useEffect(() => {
+    fetchOrder();
+    fetchWarehouseReport();
+
+    // Poll replies every 30 s — lightweight, no photos
+    pollRef.current = setInterval(pollWarehouseReport, 30000);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [orderId]);
+
+  // Initialise item reports from order items once order loads and report is not yet submitted
+  useEffect(() => {
+    if (!order || reportSubmitted || itemReports.length > 0) return;
+    const items: ItemReport[] = (order.items ?? []).map((item: any) => ({
+      name: item.product?.name ?? item.notes ?? 'Item',
+      expectedQty: item.quantity,
+      status: 'ok' as const,
+      issue: '',
+      receivedQty: String(item.quantity),
+    }));
+    if (items.length > 0) setItemReports(items);
+  }, [order, reportSubmitted, itemReports.length]);
+
+  if (orderLoading || reportLoading) {
     return (
       <div className="flex items-center justify-center h-48">
         <p className="text-sm text-muted-foreground">Loading order...</p>
@@ -245,200 +218,254 @@ export default function WarehouseOrderDetailPage({
     );
   }
 
+  if (orderNotFound || !order) {
+    return (
+      <div className="space-y-4">
+        <Link href="/staff/warehouse/orders" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="w-4 h-4" /> Back to My Orders
+        </Link>
+        <div className="bg-card rounded-xl border border-border shadow-card p-10 text-center">
+          <Package className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+          <p className="font-600 text-foreground">Order not found</p>
+          <p className="text-sm text-muted-foreground mt-1">This order could not be loaded.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const orderDisplayId = order.orderNumber ?? orderId;
+  const clientName = order.client
+    ? `${order.client.user.firstName} ${order.client.user.lastName}`
+    : '—';
+
   function updateItemReport(idx: number, patch: Partial<ItemReport>) {
-    setItemReports((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+    setItemReports(prev => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   }
 
-  async function handleIssuePhoto(idx: number, files: FileList | null) {
-    if (!files?.length) return;
-    const url = await readFileAsDataUrl(files[0]);
-    updateItemReport(idx, { photo: url });
+  async function submitReport() {
+    const itemReportPayload = itemReports.map(r => ({
+      itemName: r.name,
+      status: r.status === 'ok' ? 'ok' : 'issue',
+      receivedQty: Number(r.receivedQty),
+      notes: r.issue || undefined,
+    }));
+
     try {
-      localStorage.setItem(`warehouse-issue-photo-${orderId}-${idx}`, url);
-    } catch {}
+      const res = await apiFetch(`/api/orders/${orderId}/warehouse-report`, {
+        method: 'PATCH',
+        body: JSON.stringify({ itemReports: itemReportPayload, reportSubmitted: true }),
+      });
+      const data = await res.json();
+      if (!data?.success) throw new Error(data?.message ?? 'Failed');
+      setReportSubmitted(true);
+
+      await apiFetch(`/api/orders/${orderId}/warehouse-reply`, {
+        method: 'POST',
+        body: JSON.stringify({ message: 'Warehouse has submitted the items inspection report.' }),
+      }).catch(() => {});
+
+      addToast({ type: 'success', title: 'Update sent to admin & staff successfully' });
+    } catch {
+      addToast({ type: 'error', title: 'Failed to submit report' });
+    }
   }
 
-  function submitReport() {
-    const reportData = {
-      orderId,
-      staffId: user?.staffId,
-      staffName: user?.name,
-      submittedAt: new Date().toISOString(),
-      items: itemReports.map((r) => ({
-        name: r.name,
-        status: r.status,
-        issue: r.issue,
-        receivedQty: r.receivedQty,
-      })),
-      hasIssues: itemReports.some((r) => r.status === 'issue'),
-    };
-
+  async function deleteUploadedPhoto(index: number) {
+    if (!confirm('Remove this photo? This cannot be undone.')) return;
     try {
-      localStorage.setItem(`warehouse-report-${orderId}`, JSON.stringify(reportData));
-
-      // Update reportSubmitted flag in demo-orders
-      const stored = localStorage.getItem('warehouse-demo-orders');
-      if (stored) {
-        const orders: DemoOrder[] = JSON.parse(stored);
-        const updated = orders.map((o) =>
-          o.orderId === orderId ? { ...o, reportSubmitted: true } : o
-        );
-        localStorage.setItem('warehouse-demo-orders', JSON.stringify(updated));
+      const res = await apiFetch(`/api/orders/${orderId}/warehouse-photos`, {
+        method: 'DELETE',
+        body: JSON.stringify({ photoIndex: index }),
+      });
+      const data = await res.json();
+      if (data?.success) {
+        setUploadedPhotos(data.data?.photoUrls ?? uploadedPhotos.filter((_, i) => i !== index));
+        addToast({ type: 'success', title: 'Photo removed' });
+      } else {
+        throw new Error(data?.message ?? 'Delete failed');
       }
+    } catch {
+      addToast({ type: 'error', title: 'Failed to remove photo' });
+    }
+  }
 
-      // Notify admin
-      const adminNotifs = JSON.parse(localStorage.getItem('notifications-admin') ?? '[]');
-      adminNotifs.unshift({
-        id: `wh-report-${Date.now()}`,
-        title: 'Warehouse Report Submitted',
-        description: `Warehouse report submitted for ${orderId}`,
-        time: 'Just now',
-        read: false,
-        type: 'alert',
-        href: `/admin/orders/${orderId}`,
-      });
-      localStorage.setItem('notifications-admin', JSON.stringify(adminNotifs));
-
-      // Notify sourcing staff
-      const sourcingNotifs = JSON.parse(localStorage.getItem('notifications-sourcing') ?? '[]');
-      sourcingNotifs.unshift({
-        id: `wh-report-s-${Date.now()}`,
-        title: 'Warehouse Report Submitted',
-        description: `Warehouse report submitted for ${orderId}`,
-        time: 'Just now',
-        read: false,
-        type: 'alert',
-        href: `/admin/orders/${orderId}`,
-      });
-      localStorage.setItem('notifications-sourcing', JSON.stringify(sourcingNotifs));
-    } catch {}
-
-    setReportSubmitted(true);
-    addToast({
-      type: 'success',
-      title: 'Report submitted',
-      description: 'Admin and sourcing staff have been notified.',
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    const combined = [...selectedFiles, ...files].slice(0, 30);
+    setSelectedFiles(combined);
+    combined.forEach((file, idx) => {
+      if (previews[idx]) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setPreviews(prev => {
+          const updated = [...prev];
+          updated[idx] = ev.target?.result as string;
+          return updated;
+        });
+      };
+      reader.readAsDataURL(file);
     });
+  }
+
+  function removePhoto(index: number) {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    setPreviews(prev => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleDeletePhoto(index: number) {
+    if (!confirm('Remove this photo? This cannot be undone.')) return;
+    try {
+      const res = await apiFetch(`/api/orders/${orderId}/warehouse-photos`, {
+        method: 'DELETE',
+        body: JSON.stringify({ photoIndex: index }),
+      });
+      const data = await res.json();
+      if (data?.success) {
+        setUploadedPhotos(data.data?.photoUrls ?? uploadedPhotos.filter((_, i) => i !== index));
+        addToast({ type: 'success', title: 'Photo removed' });
+      } else {
+        throw new Error(data?.message);
+      }
+    } catch {
+      addToast({ type: 'error', title: 'Failed to remove photo' });
+    }
+  }
+
+  async function handleUploadAndNotify() {
+    if (selectedFiles.length === 0) {
+      addToast({ type: 'warning', title: 'No photos selected', description: 'Please select at least one photo.' });
+      return;
+    }
+    setUploading(true);
+    try {
+      const base64Photos = await Promise.all(selectedFiles.map(readFileAsDataUrl));
+      const res = await apiFetch(`/api/orders/${orderId}/warehouse-photos`, {
+        method: 'POST',
+        body: JSON.stringify({ photos: base64Photos, note: warehouseNote }),
+      });
+      const data = await res.json();
+      if (data?.success) {
+        setUploadedPhotos(data.data?.photoUrls ?? [...uploadedPhotos, ...base64Photos]);
+        setSelectedFiles([]);
+        setPreviews([]);
+        setUploadSuccess(true);
+        setTimeout(() => setUploadSuccess(false), 5000);
+        addToast({ type: 'success', title: 'Photos uploaded & both client and staff/admin notified' });
+      } else {
+        throw new Error(data?.message ?? 'Upload failed');
+      }
+    } catch {
+      addToast({ type: 'error', title: 'Upload failed', description: 'Please check your connection and try again.' });
+    } finally {
+      setUploading(false);
+    }
   }
 
   async function handleRepackPhotos(files: FileList | null) {
     if (!files?.length) return;
     const remaining = 10 - repack.photos.length;
     const toProcess = Array.from(files).slice(0, remaining);
-    const urls = await Promise.all(toProcess.map(readFileAsDataUrl));
-    setRepack((prev) => ({ ...prev, photos: [...prev.photos, ...urls] }));
+    const dataUrls = await Promise.all(toProcess.map(readFileAsDataUrl));
+    setRepack(prev => ({ ...prev, photos: [...prev.photos, ...dataUrls] }));
   }
 
-  function saveRepackDetails() {
+  async function saveRepackDetails() {
     try {
-      localStorage.setItem(`warehouse-repack-${orderId}`, JSON.stringify(repack));
-      localStorage.setItem(
-        `warehouse-repack-photos-${orderId}`,
-        JSON.stringify(repack.photos)
-      );
-    } catch {}
-    setRepackSaved(true);
-    addToast({ type: 'success', title: 'Repacking details saved' });
+      const res = await apiFetch(`/api/orders/${orderId}/warehouse-report`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          finalWeightKg: repack.weight ? parseFloat(repack.weight) : null,
+          finalVolumeCbm: repack.cbm ? parseFloat(repack.cbm) : null,
+          repackNotes: repack.notes || null,
+          repackSaved: true,
+        }),
+      });
+      const data = await res.json();
+      if (!data?.success) throw new Error(data?.message ?? 'Failed');
+      setRepackSaved(true);
+      fetchWarehouseReport();
+
+      await apiFetch(`/api/orders/${orderId}/warehouse-reply`, {
+        method: 'POST',
+        body: JSON.stringify({ message: 'Warehouse has updated the repacking details (weight, dimensions, photos).' }),
+      }).catch(() => {});
+
+      addToast({ type: 'success', title: 'Update sent to admin & staff successfully' });
+    } catch {
+      addToast({ type: 'error', title: 'Failed to save repacking details' });
+    }
   }
 
   async function handleFinalPackingList(files: FileList | null) {
     if (!files?.length) return;
     const url = await readFileAsDataUrl(files[0]);
-    setOutbound((prev) => ({ ...prev, finalPackingList: url }));
-    try {
-      localStorage.setItem(`warehouse-final-packinglist-${orderId}`, url);
-    } catch {}
+    setOutbound(prev => ({ ...prev, finalPackingList: url }));
   }
 
   async function handleDeliverySlip(files: FileList | null) {
     if (!files?.length) return;
     const url = await readFileAsDataUrl(files[0]);
-    setOutbound((prev) => ({ ...prev, deliverySlip: url }));
-    try {
-      localStorage.setItem(`warehouse-delivery-slip-${orderId}`, url);
-    } catch {}
+    setOutbound(prev => ({ ...prev, deliverySlip: url }));
   }
 
-  function markSentToChina() {
+  async function markSentToChina() {
     if (!outbound.trackingId.trim()) {
-      addToast({
-        type: 'error',
-        title: 'Tracking ID required',
-        description: 'Enter the outbound tracking number first.',
-      });
+      addToast({ type: 'error', title: 'Tracking ID required', description: 'Enter the outbound tracking number first.' });
       return;
     }
 
     try {
-      const payload = {
-        ...outbound,
-        sentAt: new Date().toISOString(),
-        staffId: user?.staffId,
-      };
-      localStorage.setItem(`warehouse-outbound-${orderId}`, JSON.stringify(payload));
-
-      const msg = `Order ${orderId} sent to China Warehouse. Tracking: ${outbound.trackingId}`;
-
-      const adminNotifs = JSON.parse(localStorage.getItem('notifications-admin') ?? '[]');
-      adminNotifs.unshift({
-        id: `wh-sent-${Date.now()}`,
-        title: 'Sent to China Warehouse',
-        description: msg,
-        time: 'Just now',
-        read: false,
-        type: 'order',
-        href: `/admin/orders/${orderId}`,
+      // 1. Update warehouse report with sentToChina + trackingId
+      const reportRes = await apiFetch(`/api/orders/${orderId}/warehouse-report`, {
+        method: 'PATCH',
+        body: JSON.stringify({ outboundTrackingId: outbound.trackingId.trim(), sentToChina: true }),
       });
-      localStorage.setItem('notifications-admin', JSON.stringify(adminNotifs));
+      const reportData = await reportRes.json();
+      if (!reportData?.success) throw new Error(reportData?.message ?? 'Failed');
 
-      const sourcingNotifs = JSON.parse(localStorage.getItem('notifications-sourcing') ?? '[]');
-      sourcingNotifs.unshift({
-        id: `wh-sent-s-${Date.now()}`,
-        title: 'Sent to China Warehouse',
-        description: msg,
-        time: 'Just now',
-        read: false,
-        type: 'order',
-        href: `/admin/orders/${orderId}`,
+      // 2. Update completedStages — add "Repacking Warehouse" if not already present
+      const currentStages: string[] = order.completedStages ?? [];
+      const stageLabel = 'Repacking Warehouse';
+      const updatedStages = currentStages.includes(stageLabel)
+        ? currentStages
+        : [...currentStages, stageLabel];
+      await apiFetch(`/api/orders/${orderId}/stages`, {
+        method: 'PATCH',
+        body: JSON.stringify({ completedStages: updatedStages }),
       });
-      localStorage.setItem('notifications-sourcing', JSON.stringify(sourcingNotifs));
-    } catch {}
 
-    setOutboundSent(true);
-    addToast({
-      type: 'success',
-      title: 'Order marked as sent',
-      description: `Tracking ID: ${outbound.trackingId}`,
-    });
+      // 3. Update status to "Shipped from China"
+      await apiFetch(`/api/orders/${orderId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'SHIPPED' }),
+      });
+
+      setOutboundSent(true);
+      addToast({ type: 'success', title: 'Order marked as sent', description: `Tracking ID: ${outbound.trackingId}` });
+    } catch {
+      addToast({ type: 'error', title: 'Failed to mark as sent' });
+    }
   }
 
   return (
     <div className="space-y-6 max-w-3xl">
-      {/* Header */}
-      <Link
-        href="/staff/warehouse/orders"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      >
+      <Link href="/staff/warehouse/orders" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="w-4 h-4" /> Back to My Orders
       </Link>
 
       <div className="bg-card rounded-xl border border-border shadow-card p-5">
         <div className="flex flex-wrap items-center gap-3 mb-2">
-          <span className="font-tabular font-700 text-lg">{order.orderId}</span>
+          <span className="font-tabular font-700 text-lg">{orderDisplayId}</span>
           <span className="text-xs font-600 px-2 py-0.5 rounded-full bg-[#4A3B52]/10 text-[#4A3B52]">
-            {order.stage}
+            Repacking Warehouse
           </span>
         </div>
         <p className="text-sm text-muted-foreground">
-          Client: <span className="font-600 text-foreground">{order.clientName}</span>
+          Client: <span className="font-600 text-foreground">{clientName}</span>
         </p>
         <p className="text-xs text-muted-foreground mt-1">
-          Assigned:{' '}
-          {new Date(order.assignedAt).toLocaleDateString('en-IN', {
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric',
-          })}
+          Created:{' '}
+          {new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
         </p>
       </div>
 
@@ -446,38 +473,27 @@ export default function WarehouseOrderDetailPage({
       <div className="bg-card rounded-xl border border-border shadow-card p-5">
         <div className="flex items-center gap-2 mb-1">
           <Package className="w-4 h-4 text-muted-foreground" />
-          <h2 className="font-700">Packaging List from Admin</h2>
+          <h2 className="font-700">Items from Order</h2>
           <span className="ml-auto text-[10px] font-600 uppercase bg-muted text-muted-foreground px-2 py-0.5 rounded">
             Read Only
           </span>
         </div>
-        <p className="text-xs text-muted-foreground mb-4">
-          Review items carefully before repacking
-        </p>
+        <p className="text-xs text-muted-foreground mb-4">Review items carefully before repacking</p>
         <div className="space-y-3">
-          {packagingList.map((pkg) => (
-            <div key={pkg.item} className="rounded-lg border border-border p-3 flex items-start gap-3">
+          {(order.items ?? []).map((item: any) => (
+            <div key={item.id} className="rounded-lg border border-border p-3 flex items-start gap-3">
               <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-                {pkg.image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={pkg.image}
-                    alt={pkg.item}
-                    className="w-full h-full object-cover rounded-lg"
-                  />
+                {item.imageUrl ? (
+                  <img src={item.imageUrl} alt="" className="w-full h-full object-cover rounded-lg" />
                 ) : (
                   <Package className="w-5 h-5 text-muted-foreground" />
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-600 text-sm">{pkg.item}</p>
+                <p className="font-600 text-sm">{item.product?.name ?? item.notes ?? 'Item'}</p>
                 <p className="text-xs text-muted-foreground">
-                  Expected Qty:{' '}
-                  <span className="font-tabular font-700 text-foreground">{pkg.qty}</span>
+                  Expected Qty: <span className="font-tabular font-700 text-foreground">{item.quantity}</span>
                 </p>
-                {pkg.adminNote && (
-                  <p className="text-xs text-muted-foreground italic mt-0.5">{pkg.adminNote}</p>
-                )}
               </div>
             </div>
           ))}
@@ -490,9 +506,7 @@ export default function WarehouseOrderDetailPage({
           <AlertTriangle className="w-4 h-4 text-amber-500" />
           <h2 className="font-700">Report Missing or Damaged Items</h2>
         </div>
-        <p className="text-xs text-muted-foreground mb-4">
-          Mark each item as OK or report an issue.
-        </p>
+        <p className="text-xs text-muted-foreground mb-4">Mark each item as OK or report an issue.</p>
 
         {reportSubmitted && (
           <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
@@ -505,15 +519,12 @@ export default function WarehouseOrderDetailPage({
           {itemReports.map((item, idx) => (
             <div key={`${item.name}-${idx}`} className="border border-border rounded-lg p-4">
               <p className="font-600 text-sm mb-3">
-                {item.name} — Expected Qty:{' '}
-                <span className="font-tabular">{item.expectedQty}</span>
+                {item.name} — Expected Qty: <span className="font-tabular">{item.expectedQty}</span>
               </p>
               <div className="flex gap-3 mb-3">
                 <button
                   type="button"
-                  onClick={() =>
-                    updateItemReport(idx, { status: 'ok', issue: '', photo: null })
-                  }
+                  onClick={() => updateItemReport(idx, { status: 'ok', issue: '' })}
                   disabled={reportSubmitted}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-600 border transition-colors ${
                     item.status === 'ok'
@@ -544,41 +555,19 @@ export default function WarehouseOrderDetailPage({
                     rows={2}
                     placeholder="Describe the issue..."
                     value={item.issue}
-                    onChange={(e) => updateItemReport(idx, { issue: e.target.value })}
+                    onChange={e => updateItemReport(idx, { issue: e.target.value })}
                     disabled={reportSubmitted}
                   />
-                  {!reportSubmitted && (
-                    <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer hover:text-foreground">
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>Upload issue photo</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => handleIssuePhoto(idx, e.target.files)}
-                      />
-                    </label>
-                  )}
-                  {item.photo && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={item.photo}
-                      alt="Issue"
-                      className="w-24 h-24 object-cover rounded-lg border border-border"
-                    />
-                  )}
                 </div>
               )}
 
               <div>
-                <label className="text-xs font-600 text-muted-foreground block mb-1">
-                  Received Quantity
-                </label>
+                <label className="text-xs font-600 text-muted-foreground block mb-1">Received Quantity</label>
                 <input
                   type="number"
                   className="input-field w-32"
                   value={item.receivedQty}
-                  onChange={(e) => updateItemReport(idx, { receivedQty: e.target.value })}
+                  onChange={e => updateItemReport(idx, { receivedQty: e.target.value })}
                   disabled={reportSubmitted}
                   placeholder="0"
                 />
@@ -587,7 +576,7 @@ export default function WarehouseOrderDetailPage({
           ))}
         </div>
 
-        {!reportSubmitted && (
+        {!reportSubmitted && itemReports.length > 0 && (
           <button
             onClick={submitReport}
             className="mt-4 px-4 py-2 text-sm rounded-lg text-white font-600 transition-colors"
@@ -598,84 +587,173 @@ export default function WarehouseOrderDetailPage({
         )}
       </div>
 
-      {/* Section 3 — Repacking Details */}
+      {/* Section 3 — Upload Product Photos (sends to client + staff/admin) */}
+      <div className="bg-card rounded-xl border border-border shadow-card p-5">
+        <h2 className="font-700 text-base mb-1">📦 Upload Product Photos</h2>
+        <p className="text-xs text-muted-foreground mb-5">
+          Upload product photos below. Once you click "Upload &amp; Notify", the photos will be sent to both the client (for approval) and staff/admin (for review) simultaneously.
+        </p>
+
+        {/* Already uploaded photos */}
+        {uploadedPhotos.length > 0 && (
+          <div className="mb-5">
+            <p className="text-xs font-600 text-muted-foreground mb-2">Previously Uploaded ({uploadedPhotos.length} photos)</p>
+            <div className="grid grid-cols-4 gap-2">
+              {uploadedPhotos.map((url, i) => (
+                <div key={i} className="relative group">
+                  <img
+                    src={url}
+                    className="w-full h-24 object-cover rounded-lg cursor-pointer border border-border"
+                    onClick={() => setUploadLightboxUrl(url)}
+                  />
+                  {/* Download on hover — bottom right */}
+                  <a
+                    href={url}
+                    download
+                    target="_blank"
+                    rel="noreferrer"
+                    className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    ⬇
+                  </a>
+                  {/* Delete button — top right */}
+                  <button
+                    onClick={() => deleteUploadedPhoto(i)}
+                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-700 hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Remove photo"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Two info boxes */}
+        <div className="grid sm:grid-cols-2 gap-3 mb-5">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-sm font-600 text-blue-800">👤 Client Update</p>
+            <p className="text-xs text-blue-600 mt-1">Client will see these photos and can approve or flag an issue before shipment continues.</p>
+          </div>
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+            <p className="text-sm font-600 text-purple-800">🏢 Staff/Admin Update</p>
+            <p className="text-xs text-purple-600 mt-1">Staff and admin will see photos + your note and get notified of a new warehouse update.</p>
+          </div>
+        </div>
+
+        {/* Note for staff/admin */}
+        <div className="mb-4">
+          <label className="text-xs font-600 text-muted-foreground block mb-1">Note to Staff/Admin</label>
+          <textarea
+            value={warehouseNote}
+            onChange={e => setWarehouseNote(e.target.value)}
+            placeholder="Add any notes about the product condition, packaging details, or issues found..."
+            className="input-field w-full text-sm resize-none"
+            rows={3}
+          />
+        </div>
+
+        {/* File input */}
+        <div className="mb-4">
+          <label className="text-xs font-600 text-muted-foreground block mb-1">Select Photos (max 30)</label>
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleFileSelect}
+            className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-600 file:bg-muted file:text-foreground hover:file:bg-muted/70 cursor-pointer"
+          />
+          <p className="text-xs text-muted-foreground mt-1">{selectedFiles.length}/30 photos selected</p>
+        </div>
+
+        {/* New photo previews */}
+        {previews.length > 0 && (
+          <div className="grid grid-cols-4 gap-2 mb-4">
+            {previews.map((src, i) => (
+              src ? (
+                <div key={i} className="relative">
+                  <img src={src} className="w-full h-24 object-cover rounded-lg border border-border" />
+                  <button
+                    onClick={() => removePhoto(i)}
+                    className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-700 hover:bg-red-600"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : null
+            ))}
+          </div>
+        )}
+
+        {/* Upload button */}
+        <button
+          onClick={handleUploadAndNotify}
+          disabled={uploading || selectedFiles.length === 0}
+          className="w-full py-3 rounded-lg font-700 text-sm text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ backgroundColor: uploading || selectedFiles.length === 0 ? '#9ca3af' : '#4A3B52' }}
+        >
+          {uploading ? '⏳ Uploading & Notifying...' : '📤 Upload & Notify (Client + Staff/Admin)'}
+        </button>
+
+        {uploadSuccess && (
+          <div className="mt-3 bg-emerald-50 border border-emerald-300 rounded-lg p-3">
+            <p className="text-emerald-700 text-sm font-600">✓ Photos uploaded successfully! Client and Staff/Admin have been notified.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Upload lightbox */}
+      {uploadLightboxUrl && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setUploadLightboxUrl(null)}>
+          <div className="relative" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setUploadLightboxUrl(null)} className="absolute -top-8 right-0 text-white text-xl font-700">✕</button>
+            <img src={uploadLightboxUrl} className="max-w-[90vw] max-h-[85vh] object-contain rounded-lg" />
+            <a href={uploadLightboxUrl} download target="_blank" rel="noreferrer" className="block mt-2 text-center text-white underline text-sm">⬇ Download Full Image</a>
+          </div>
+        </div>
+      )}
+
+      {/* Section 4 — Repacking Details (weight, dimensions, notes) */}
       <div className="bg-card rounded-xl border border-border shadow-card p-5">
         <div className="flex items-center gap-2 mb-4">
           <Camera className="w-4 h-4 text-muted-foreground" />
           <h2 className="font-700">Repacking Information</h2>
         </div>
         <div className="space-y-4">
-          <div>
-            <label className="text-xs font-600 text-muted-foreground block mb-1">
-              Upload photos of repacked items
-            </label>
-            {!repackSaved && repack.photos.length < 10 && (
-              <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer hover:text-foreground border border-dashed border-border rounded-lg px-4 py-3">
-                <Upload className="w-4 h-4" />
-                <span>
-                  Click to upload photos (up to {10 - repack.photos.length} more allowed)
-                </span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => handleRepackPhotos(e.target.files)}
-                />
-              </label>
-            )}
-            {repack.photos.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-2">
-                {repack.photos.map((url, i) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    key={i}
-                    src={url}
-                    alt={`Repack ${i + 1}`}
-                    className="w-20 h-20 object-cover rounded-lg border border-border"
-                  />
-                ))}
-              </div>
-            )}
-          </div>
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-600 text-muted-foreground block mb-1">
-                Final Weight (KG)
-              </label>
+              <label className="text-xs font-600 text-muted-foreground block mb-1">Final Weight (KG)</label>
               <input
                 type="number"
                 className="input-field w-full"
                 placeholder="e.g. 42.5"
                 value={repack.weight}
-                onChange={(e) => setRepack((prev) => ({ ...prev, weight: e.target.value }))}
+                onChange={e => setRepack(prev => ({ ...prev, weight: e.target.value }))}
                 disabled={repackSaved}
               />
             </div>
             <div>
-              <label className="text-xs font-600 text-muted-foreground block mb-1">
-                Final Volume (CBM)
-              </label>
+              <label className="text-xs font-600 text-muted-foreground block mb-1">Final Volume (CBM)</label>
               <input
                 type="number"
                 className="input-field w-full"
                 placeholder="e.g. 0.38"
                 value={repack.cbm}
-                onChange={(e) => setRepack((prev) => ({ ...prev, cbm: e.target.value }))}
+                onChange={e => setRepack(prev => ({ ...prev, cbm: e.target.value }))}
                 disabled={repackSaved}
               />
             </div>
           </div>
           <div>
-            <label className="text-xs font-600 text-muted-foreground block mb-1">
-              Notes / Observations
-            </label>
+            <label className="text-xs font-600 text-muted-foreground block mb-1">Notes / Observations</label>
             <textarea
               className="input-field w-full"
               rows={3}
               placeholder="Any notes about repacking condition..."
               value={repack.notes}
-              onChange={(e) => setRepack((prev) => ({ ...prev, notes: e.target.value }))}
+              onChange={e => setRepack(prev => ({ ...prev, notes: e.target.value }))}
               disabled={repackSaved}
             />
           </div>
@@ -703,75 +781,40 @@ export default function WarehouseOrderDetailPage({
           <div className="flex items-start gap-3 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-lg">
             <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-600 text-emerald-700">
-                Order marked as sent. Admin and sourcing staff have been notified.
-              </p>
+              <p className="text-sm font-600 text-emerald-700">Order marked as sent. Admin and sourcing staff have been notified.</p>
               <p className="text-xs text-emerald-600 mt-0.5">Tracking: {outbound.trackingId}</p>
             </div>
           </div>
         ) : (
           <div className="space-y-4">
             <div>
-              <label className="text-xs font-600 text-muted-foreground block mb-1">
-                Outbound Tracking ID *
-              </label>
+              <label className="text-xs font-600 text-muted-foreground block mb-1">Outbound Tracking ID *</label>
               <input
                 type="text"
                 className="input-field w-full"
                 placeholder="e.g. SF1234567890CN"
                 value={outbound.trackingId}
-                onChange={(e) =>
-                  setOutbound((prev) => ({ ...prev, trackingId: e.target.value }))
-                }
+                onChange={e => setOutbound(prev => ({ ...prev, trackingId: e.target.value }))}
               />
             </div>
             <div>
-              <label className="text-xs font-600 text-muted-foreground block mb-1">
-                Upload final packaging list
-              </label>
+              <label className="text-xs font-600 text-muted-foreground block mb-1">Upload final packaging list</label>
               <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer hover:text-foreground border border-dashed border-border rounded-lg px-4 py-3">
                 <Upload className="w-4 h-4" />
-                <span>
-                  {outbound.finalPackingList
-                    ? 'File uploaded — click to replace'
-                    : 'Upload packing list (PDF / image)'}
-                </span>
-                <input
-                  type="file"
-                  accept="image/*,.pdf"
-                  className="hidden"
-                  onChange={(e) => handleFinalPackingList(e.target.files)}
-                />
+                <span>{outbound.finalPackingList ? 'File uploaded — click to replace' : 'Upload packing list (PDF / image)'}</span>
+                <input type="file" accept="image/*,.pdf" className="hidden" onChange={e => handleFinalPackingList(e.target.files)} />
               </label>
-              {outbound.finalPackingList && (
-                <p className="text-xs text-emerald-700 font-600 mt-1">File uploaded</p>
-              )}
+              {outbound.finalPackingList && <p className="text-xs text-emerald-700 font-600 mt-1">File uploaded</p>}
             </div>
             <div>
-              <label className="text-xs font-600 text-muted-foreground block mb-1">
-                Upload delivery slip / receipt photo
-              </label>
+              <label className="text-xs font-600 text-muted-foreground block mb-1">Upload delivery slip / receipt photo</label>
               <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer hover:text-foreground border border-dashed border-border rounded-lg px-4 py-3">
                 <Upload className="w-4 h-4" />
-                <span>
-                  {outbound.deliverySlip
-                    ? 'Photo uploaded — click to replace'
-                    : 'Upload delivery slip photo'}
-                </span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => handleDeliverySlip(e.target.files)}
-                />
+                <span>{outbound.deliverySlip ? 'Photo uploaded — click to replace' : 'Upload delivery slip photo'}</span>
+                <input type="file" accept="image/*" className="hidden" onChange={e => handleDeliverySlip(e.target.files)} />
               </label>
               {outbound.deliverySlip && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={outbound.deliverySlip}
-                  alt="Delivery slip"
-                  className="w-32 h-32 object-cover rounded-lg border border-border mt-2"
-                />
+                <img src={outbound.deliverySlip} alt="Delivery slip" className="w-32 h-32 object-cover rounded-lg border border-border mt-2" />
               )}
             </div>
             <button
@@ -795,21 +838,22 @@ export default function WarehouseOrderDetailPage({
           <p className="text-sm text-muted-foreground">No updates yet from admin.</p>
         ) : (
           <div className="space-y-3">
-            {replies.map((reply) => (
-              <div key={reply.id} className="border border-border rounded-lg p-4">
+            {replies.map((reply, i) => (
+              <div key={i} className="border border-border rounded-lg p-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="font-600 text-sm">{reply.sender}</span>
-                  <span className="text-[10px] font-600 px-2 py-0.5 rounded-full bg-[#4A3B52]/10 text-[#4A3B52]">
-                    {reply.role}
-                  </span>
+                  <span className="font-600 text-sm">Admin / Staff</span>
+                  <span className="text-[10px] font-600 px-2 py-0.5 rounded-full bg-[#4A3B52]/10 text-[#4A3B52]">Team</span>
                 </div>
                 <p className="text-sm text-foreground">{reply.message}</p>
-                <p className="text-[11px] text-muted-foreground mt-1">{reply.time}</p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {new Date(reply.sentAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </p>
               </div>
             ))}
           </div>
         )}
       </div>
+
     </div>
   );
 }

@@ -9,6 +9,10 @@ export interface RequestLineItem {
   specs?: string;
   /** Product image URL — shown in items table */
   imageUrl?: string;
+  /** Client-uploaded reference images */
+  referenceImageUrls?: string[];
+  /** Client target price per unit in INR */
+  targetPriceINR?: number;
   /** Supplier RMB cost per unit — internal only */
   rmbCostPerUnit: number;
   /** Quoted selling price per unit in CNY (entered by admin) */
@@ -20,6 +24,12 @@ export interface RequestLineItem {
   revisionRequested?: boolean;
   /** Optional value captured from client counter-offer flow */
   clientProposedInr?: number;
+  /** Client's formal response: ACCEPTED | REJECTED | COUNTERED */
+  clientResponse?: string;
+  /** Client counter price in INR */
+  counterPriceINR?: number;
+  /** Client counter note */
+  counterNote?: string;
 }
 
 export interface RequestRow {

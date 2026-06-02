@@ -4,7 +4,7 @@ import slowDown from "express-slow-down";
 // ── General API limiter — applied to ALL routes ───────────────────────────────
 export const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,                  // 100 requests per IP per window
+  max: 500,                  // 500 requests per IP per window (allows polling)
   message: {
     success: false,
     message: "Too many requests, please try again after 15 minutes",
@@ -15,15 +15,15 @@ export const generalLimiter = rateLimit({
 
 // ── Auth limiter — strict, only for login / register routes ──────────────────
 export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10,                   // only 10 attempts per IP
+  windowMs: 15 * 60 * 1000,
+  max: 200,
   message: {
     success: false,
-    message: "Too many login attempts, please try again after 15 minutes",
+    message: "Too many login attempts, please try again later",
   },
   standardHeaders: true,
   legacyHeaders: false,
-  skipSuccessfulRequests: true, // only failed attempts count toward the limit
+  skipSuccessfulRequests: true,
 });
 
 // ── Speed limiter — slows down repeat requesters before outright blocking ─────

@@ -1,45 +1,95 @@
-﻿'use client';
-import React, { useState, useMemo, useEffect } from 'react';
+'use client';
+import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import AdminLayout from '@/components/AdminLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { mockRequests, mockClients } from '@/lib/adminMockData';
+import { mockClients } from '@/lib/adminMockData';
+import { requestsApi } from '@/lib/api/requests.api';
 import { useToast } from '@/components/ui/Toast';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import { Search, Download, Camera, Eye, Send, AlertTriangle } from 'lucide-react';
 
 const tabs = ['All Requests','Pending Quotations','Awaiting Approval','Approved','Rejected','Exception'];
 
-export default function AdminRequestsPage() {
+interface DisplayRequest {
+  id: string;
+  requestId: string;
+  client: string;
+  clientEmail: string;
+  items: number;
+  itemNames: string;
+  totalBudget: string;
+  date: string;
+  status: string;
+  source?: string;
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function matchesTab(status: string, tab: string): boolean {
+  if (tab === 'All Requests') return true;
+  if (tab === 'Pending Quotations') return ['SUBMITTED', 'REVIEWING', 'Quotation in Progress'].includes(status);
+  if (tab === 'Awaiting Approval') return ['QUOTED', 'Awaiting Approval'].includes(status);
+  if (tab === 'Approved') return ['ACCEPTED', 'CONVERTED', 'Sourcing', 'At China Warehouse', 'Payment Pending', 'Completed'].includes(status);
+  if (tab === 'Rejected') return ['REJECTED', 'CANCELLED', 'Cancelled'].includes(status);
+  if (tab === 'Exception') return status === 'Exception';
+  return true;
+}
+
+function AdminRequestsContent() {
   const { addToast } = useToast();
   const perms = useAdminPermissions();
   const searchParams = useSearchParams();
-  const [items, setItems] = useState(mockRequests);
+  const [requests, setRequests] = useState<DisplayRequest[]>([]);
+  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('All Requests');
+  const [q, setQ] = useState('');
+  const [clientFilter, setClientFilter] = useState('All');
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const filter = searchParams.get('filter');
     if (filter === 'awaiting-approval') setTab('Awaiting Approval');
   }, [searchParams]);
-  const [q, setQ] = useState('');
-  const [clientFilter, setClientFilter] = useState('All');
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
 
-  const filtered = useMemo(() => items.filter(r => {
+  useEffect(() => {
+    setLoading(true);
+    requestsApi.getRequests({ limit: 100 })
+      .then((r) => {
+        const apiData = r.data?.data ?? [];
+        const mapped: DisplayRequest[] = apiData.map((req: any) => ({
+          id: req.id,
+          requestId: req.requestNumber,
+          client: req.client?.companyName ?? '—',
+          clientEmail: req.client?.user?.email ?? '',
+          items: req.items?.length ?? 0,
+          itemNames: (req.items ?? []).map((i: any) => i.productName).join(', '),
+          totalBudget: req.totalBudgetINR ? `₹${Number(req.totalBudgetINR).toLocaleString('en-IN')}` : '—',
+          date: formatDate(req.createdAt),
+          status: req.status,
+          source: undefined,
+        }));
+        setRequests(mapped);
+      })
+      .catch(() => setRequests([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = useMemo(() => requests.filter(r => {
     if (q && !(r.requestId.toLowerCase().includes(q.toLowerCase()) || (r.client||'').toLowerCase().includes(q.toLowerCase()) || r.itemNames.toLowerCase().includes(q.toLowerCase()))) return false;
     if (clientFilter !== 'All' && r.client !== clientFilter) return false;
-    if (tab === 'Pending Quotations' && r.status !== 'Quotation in Progress') return false;
-    if (tab === 'Awaiting Approval' && r.status !== 'Awaiting Approval') return false;
-    if (tab === 'Approved' && !['Sourcing','At China Warehouse','Payment Pending','Completed'].includes(r.status as string)) return false;
-    if (tab === 'Rejected' && r.status !== 'Cancelled' as any) return false;
-    if (tab === 'Exception' && r.status !== 'Exception') return false;
-    return true;
-  }), [items, q, clientFilter, tab]);
+    return matchesTab(r.status, tab);
+  }), [requests, q, clientFilter, tab]);
 
-  function sendQuote(id: string) { setItems(p => p.map(r => r.id === id ? { ...r, status: 'Quotation in Progress' } as any : r)); addToast({ type: 'success', title: 'Quotation sent', description: 'Client has been notified.' }); }
-  function markException(id: string) { setItems(p => p.map(r => r.id === id ? { ...r, status: 'Exception' } as any : r)); addToast({ type: 'warning', title: 'Marked as exception' }); }
-  function deleteSelected() { const ids = Object.keys(selected).filter(k => selected[k]); setItems(p => p.filter(r => !ids.includes(r.id))); setSelected({}); addToast({ type: 'success', title: `Deleted ${ids.length} request(s)` }); }
+  function deleteSelected() {
+    const ids = Object.keys(selected).filter(k => selected[k]);
+    setRequests(p => p.filter(r => !ids.includes(r.id)));
+    setSelected({});
+    addToast({ type: 'success', title: `Removed ${ids.length} request(s) from view` });
+  }
   function exportSelected() { addToast({ type: 'info', title: 'Exporting...', description: `${Object.values(selected).filter(Boolean).length} rows` }); }
 
   return (
@@ -79,17 +129,15 @@ export default function AdminRequestsPage() {
             {filtered.length === 0 ? (
               <tr>
                 <td colSpan={perms.canSeeRequestBudget ? 8 : 7} className="py-10 text-center text-muted-foreground text-sm">
-                  No requests match.
+                  {loading ? '' : 'No requests match.'}
                 </td>
               </tr>
             ) : (
-              filtered.map((r) => {
-                const client = mockClients.find((c) => c.name === r.client);
-                return (
+              filtered.map((r) => (
                 <tr key={r.id} className={`table-row-hover ${r.status === 'Exception' ? 'bg-red-50/40' : ''}`}>
                   <td className="px-3 py-3"><input type="checkbox" checked={!!selected[r.id]} onChange={() => setSelected(s => ({ ...s, [r.id]: !s[r.id] }))} className="accent-accent" /></td>
                   <td className="px-3 py-3"><div className="flex items-center gap-2">{r.source === 'photo_scan' && <Camera className="w-3.5 h-3.5 text-[#4A3B52]" aria-label="Photo-scan submission" />}<Link href={`/admin/requests/${r.id}`} className="font-tabular font-600 text-primary hover:text-[#4A3B52]">{r.requestId}</Link></div></td>
-                  <td className="px-3 py-3"><p className="text-sm">{r.client}</p><p className="text-[11px] text-muted-foreground">{client?.email}</p></td>
+                  <td className="px-3 py-3"><p className="text-sm">{r.client}</p><p className="text-[11px] text-muted-foreground">{r.clientEmail}</p></td>
                   <td className="px-3 py-3">
                     <p className="text-sm">{r.items} items</p>
                     <p className="text-[11px] text-muted-foreground truncate max-w-[180px]">{r.itemNames}</p>
@@ -103,20 +151,27 @@ export default function AdminRequestsPage() {
                     <div className="flex items-center justify-end gap-1">
                       <Link href={`/admin/requests/${r.id}`} className="p-1.5 rounded-md hover:bg-muted" title="View"><Eye className="w-3.5 h-3.5" /></Link>
                       {perms.quotationScope === 'full' && (
-                        <button onClick={() => sendQuote(r.id)} className="p-1.5 rounded-md hover:bg-muted text-[#4A3B52]" title="Send Quotation"><Send className="w-3.5 h-3.5" /></button>
+                        <Link href={`/admin/requests/${r.id}`} className="p-1.5 rounded-md hover:bg-muted text-[#4A3B52]" title="Send Quotation"><Send className="w-3.5 h-3.5" /></Link>
                       )}
                       {perms.isFullAdmin && (
-                        <button onClick={() => markException(r.id)} className="p-1.5 rounded-md hover:bg-muted text-red-500" title="Mark Exception"><AlertTriangle className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => addToast({ type: 'warning', title: 'Mark Exception', description: 'Open the request to take action.' })} className="p-1.5 rounded-md hover:bg-muted text-red-500" title="Mark Exception"><AlertTriangle className="w-3.5 h-3.5" /></button>
                       )}
                     </div>
                   </td>
                 </tr>
-                );
-              })
+              ))
             )}
           </tbody>
         </table></div>
       </div>
     </AdminLayout>
+  );
+}
+
+export default function AdminRequestsPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <AdminRequestsContent />
+    </Suspense>
   );
 }

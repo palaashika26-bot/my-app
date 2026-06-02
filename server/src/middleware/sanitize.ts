@@ -4,7 +4,7 @@ import { ParsedQs } from "qs";
 /**
  * Strip keys that start with "$" or contain "." from body and query.
  * Prevents NoSQL-style injection payloads passed as JSON (e.g. { "$where": "1=1" }).
- * Also trims strings and caps each field at 2000 characters.
+ * Trims string whitespace but does NOT truncate — base64 image fields need full length.
  */
 export const sanitizeInput = (
   req: Request,
@@ -38,7 +38,8 @@ function sanitizeObject(obj: unknown): unknown {
     if (typeof value === "object" && value !== null) {
       clean[key] = sanitizeObject(value);
     } else if (typeof value === "string") {
-      clean[key] = value.trim().slice(0, 2000); // max 2000 chars per field
+      // Trim whitespace only — do NOT truncate (base64 images need full length)
+      clean[key] = value.trim();
     } else {
       clean[key] = value;
     }

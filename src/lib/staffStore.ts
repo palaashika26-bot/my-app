@@ -23,7 +23,7 @@ function seedStaff(): StaffMember[] {
       email: 'sourcing.staff@elioswholesale.in',
       phone: '+91 22 4000 1001',
       role: 'sourcing-logistics',
-      password: 'staff-demo-24',
+      password: 'Demo@1234',
       lastLogin: null,
       createdAt,
     },
@@ -33,7 +33,27 @@ function seedStaff(): StaffMember[] {
       email: 'warehouse.staff@elioswholesale.in',
       phone: '+91 22 4000 1002',
       role: 'warehouse-qc',
-      password: 'warehouse-24',
+      password: 'Demo@1234',
+      lastLogin: null,
+      createdAt,
+    },
+    {
+      id: 'st-seed-logistics',
+      name: 'Rohit Menon',
+      email: 'logistics.staff@elioswholesale.in',
+      phone: '+91 22 4000 1003',
+      role: 'sourcing-logistics',
+      password: 'Demo@1234',
+      lastLogin: null,
+      createdAt,
+    },
+    {
+      id: 'st-seed-qc',
+      name: 'Ananya Bose',
+      email: 'qc.staff@elioswholesale.in',
+      phone: '+91 22 4000 1004',
+      role: 'warehouse-qc',
+      password: 'Demo@1234',
       lastLogin: null,
       createdAt,
     },
@@ -41,33 +61,24 @@ function seedStaff(): StaffMember[] {
 }
 
 export function getStaffRegistry(): StaffMember[] {
-  if (typeof window === 'undefined') return seedStaff();
+  const seeds = seedStaff();
+
+  if (typeof window === 'undefined') return seeds;
+
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      const initial = seedStaff();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
-      return initial;
-    }
+    if (!raw) return seeds;
+
     const parsed = JSON.parse(raw) as StaffMember[];
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      const initial = seedStaff();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
-      return initial;
-    }
-    // Migrate old role IDs to new combined roles
-    const migrated = parsed.map((s) => {
-      if ((s.role as string) === 'sourcing_staff' || (s.role as string) === 'logistics_staff') {
-        return { ...s, role: 'sourcing-logistics' as StaffRoleId };
-      }
-      if ((s.role as string) === 'warehouse_staff' || (s.role as string) === 'qc_staff') {
-        return { ...s, role: 'warehouse-qc' as StaffRoleId };
-      }
-      return s;
-    });
-    return migrated;
+    if (!Array.isArray(parsed)) return seeds;
+
+    // Seeds are always authoritative — only pull extra non-seed entries from localStorage
+    const seedIds = new Set(seeds.map((s) => s.id));
+    const extraStaff = parsed.filter((s) => !seedIds.has(s.id));
+
+    return [...seeds, ...extraStaff];
   } catch {
-    return seedStaff();
+    return seeds;
   }
 }
 
@@ -82,9 +93,18 @@ export function findStaffByEmail(email: string): StaffMember | undefined {
 }
 
 export function authenticateStaff(email: string, password: string): StaffMember | null {
-  const s = findStaffByEmail(email);
-  if (!s || s.password !== password) return null;
-  return s;
+  const registry = getStaffRegistry();
+  console.log('[staffStore] registry:', registry.map((s) => ({ id: s.id, email: s.email })));
+  console.log('[staffStore] trying:', email.trim(), '/', password.trim());
+
+  const member = registry.find(
+    (s) => s.email.toLowerCase() === email.toLowerCase().trim()
+  );
+  console.log('[staffStore] found member:', member ?? null);
+
+  if (!member) return null;
+  if (member.password !== password.trim()) return null;
+  return member;
 }
 
 export function touchStaffLastLogin(id: string) {

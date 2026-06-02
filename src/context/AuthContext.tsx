@@ -60,6 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       localStorage.removeItem('bk_role');
       localStorage.removeItem('bk_user');
+      localStorage.removeItem('elios_access_token'); // clear JWT on explicit logout
       document.cookie = 'bk_role=;path=/;max-age=0';
     } catch {
       /* ignore */

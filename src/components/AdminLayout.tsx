@@ -32,6 +32,7 @@ import { STAFF_ROLE_LABELS } from '@/lib/staffRoles';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import AdminRouteGuard from '@/components/AdminRouteGuard';
 import AdminBottomNav from '@/components/AdminBottomNav';
+import { notificationsApi, type ApiNotification } from '@/lib/api/notifications.api';
 
 import type { EffectivePermissions } from '@/lib/staffRoles';
 
@@ -50,24 +51,22 @@ const navBlueprint: NavItem[] = [
   { icon: SettingsIcon, label: 'Settings', href: '/admin/settings', show: (p) => p.navSettings },
 ];
 
-const ADMIN_NOTIF_KEY = 'notifications-admin';
-
-interface AdminNotif {
-  id: string;
-  title: string;
-  description: string;
-  time: string;
-  read: boolean;
-  type: 'request' | 'payment' | 'order' | 'alert';
-  href: string;
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hour${hrs > 1 ? 's' : ''} ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days} day${days > 1 ? 's' : ''} ago`;
 }
 
-const defaultAdminNotifs: AdminNotif[] = [
-  { id: 'an-001', title: 'New Request', description: 'Client Rahul Kumar submitted BK-REQ-2024-0315.', time: '5 min ago', read: false, type: 'request', href: '/admin/requests/req-012' },
-  { id: 'an-002', title: 'Payment Received', description: 'Payment confirmed for BK-ORD-2024-0287.', time: '1 hour ago', read: false, type: 'payment', href: '/admin/all-orders/ord-006' },
-  { id: 'an-003', title: 'Exception Flagged', description: 'Item shortage on BK-ORD-2024-0241.', time: '3 hours ago', read: false, type: 'alert', href: '/admin/all-orders/ord-008' },
-  { id: 'an-004', title: 'Order Shipped', description: 'BK-ORD-2024-0268 shipped from China.', time: '1 day ago', read: true, type: 'order', href: '/admin/all-orders/ord-004' },
-];
+function notifHref(n: ApiNotification, role: string): string {
+  if (n.relatedType === 'ORDER') return `/admin/orders/${n.relatedId}`;
+  if (n.relatedType === 'INQUIRY') return `/admin/requests/${n.relatedId}`;
+  return role === 'staff' ? '/staff/warehouse' : '/admin';
+}
 
 function initialsFromName(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -101,14 +100,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
-  const [adminNotifs, setAdminNotifs] = useState<AdminNotif[]>(defaultAdminNotifs);
+  const [adminNotifs, setAdminNotifs] = useState<ApiNotification[]>([]);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
+
+  const fetchNotifs = useCallback(() => {
+    notificationsApi.getNotifications({ limit: 10 })
+      .then(r => setAdminNotifs(r.data.data))
+      .catch(() => {/* silently fail — bell just stays empty */});
+  }, []);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(ADMIN_NOTIF_KEY);
-      setAdminNotifs(stored ? JSON.parse(stored) : defaultAdminNotifs);
-    } catch { setAdminNotifs(defaultAdminNotifs); }
-  }, []);
+    fetchNotifs();
+    const interval = setInterval(fetchNotifs, 30000);
+    return () => clearInterval(interval);
+  }, [fetchNotifs]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -120,15 +125,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const adminUnreadCount = adminNotifs.filter(n => !n.read).length;
+  const adminUnreadCount = adminNotifs.filter(n => !readIds.has(n.id)).length;
 
   function openAdminNotifs() {
     const opening = !notifOpen;
     setNotifOpen(opening);
     if (opening) {
-      const updated = adminNotifs.map(n => ({ ...n, read: true }));
-      setAdminNotifs(updated);
-      try { localStorage.setItem(ADMIN_NOTIF_KEY, JSON.stringify(updated)); } catch {}
+      // Mark all currently visible as read client-side; fire-and-forget to backend
+      const ids = new Set(adminNotifs.map(n => n.id));
+      setReadIds(ids);
+      notificationsApi.markAllAsRead().catch(() => {});
     }
   }
 
@@ -143,7 +149,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   const sidebar = (
-    <aside className="flex flex-col h-full w-64 bg-[#1a1423] text-white sidebar-scroll overflow-y-auto">
+    <aside className="flex flex-col h-full w-64 bg-primary text-white sidebar-scroll overflow-y-auto">
       <div className="px-5 py-5 flex items-center gap-2.5 border-b border-white/10">
         <div className="rounded-lg bg-white/95 p-1.5 flex-shrink-0 shadow-sm ring-1 ring-white/20">
           <Image
@@ -164,7 +170,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           const active = it.href === '/admin' ? pathname === '/admin' : pathname?.startsWith(it.href);
           return (
             <Link key={it.href} href={it.href} onClick={() => setOpen(false)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-500 transition-colors ${active ? 'bg-[#c17b5c] text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-500 transition-colors ${active ? 'bg-[#4A3B52] text-white shadow-orange-glow' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>
               <it.icon className="w-4 h-4" /> {it.label}
             </Link>
           );
@@ -180,7 +186,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <p className="text-[10px] text-slate-400 truncate">{displayEmail}</p>
           </div>
         </div>
-        <button onClick={logout} className="flex items-center gap-2 text-xs text-red-300 hover:text-red-200 font-500">
+        <button suppressHydrationWarning onClick={logout} className="flex items-center gap-2 text-xs text-red-300 hover:text-red-200 font-500">
           <LogOut className="w-3.5 h-3.5" /> Sign Out
         </button>
       </div>
@@ -202,7 +208,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </button>
           <form onSubmit={submitSearch} className="flex-1 max-w-xl relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none z-10" />
-            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search orders, clients, requests..." className="w-full pl-10 pr-3 py-2 rounded-lg bg-muted border border-transparent focus:bg-card focus:border-[#4A3B52] text-sm outline-none transition-colors" />
+            <input suppressHydrationWarning value={query} onChange={e => setQuery(e.target.value)} placeholder="Search orders, clients, requests..." className="w-full pl-10 pr-3 py-2 rounded-lg bg-muted border border-transparent focus:bg-card focus:border-[#4A3B52] text-sm outline-none transition-colors" />
           </form>
           <div className="hidden lg:flex items-center gap-3 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1"><Sun className="w-3.5 h-3.5 text-yellow-500" /> 33°C Sunny</span>
@@ -211,6 +217,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
           <div className="relative" ref={notifRef}>
             <button
+              suppressHydrationWarning
               onClick={openAdminNotifs}
               className="w-9 h-9 rounded-lg hover:bg-muted flex items-center justify-center relative"
               aria-label={`Notifications — ${adminUnreadCount} unread`}
@@ -230,28 +237,32 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   <span className="text-xs text-muted-foreground">{adminUnreadCount > 0 ? `${adminUnreadCount} unread` : 'All read'}</span>
                 </div>
                 <div className="max-h-80 overflow-y-auto divide-y divide-border notification-scroll">
-                  {adminNotifs.map(notif => (
-                    <Link
-                      key={notif.id}
-                      href={notif.href}
-                      onClick={() => setNotifOpen(false)}
-                      className={`flex gap-3 px-4 py-3 hover:bg-muted transition-colors ${!notif.read ? 'bg-[#faf9f7]' : ''}`}
-                    >
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-xs font-700 ${
-                        notif.type === 'request' ? 'bg-[#f0eef8] text-[#5c5470]' :
-                        notif.type === 'payment' ? 'bg-green-100 text-green-600' :
-                        notif.type === 'alert' ? 'bg-red-100 text-red-600' :
-                        'bg-[#e4eeee] text-[#7a9e9f]'
-                      }`}>
-                        {notif.type === 'order' ? 'OR' : notif.type === 'payment' ? 'PM' : notif.type === 'alert' ? '!' : 'RQ'}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm ${!notif.read ? 'font-600 text-foreground' : 'font-500 text-foreground'}`}>{notif.title}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5 truncate">{notif.description}</p>
-                        <p className="text-[11px] text-muted-foreground mt-1">{notif.time}</p>
-                      </div>
-                    </Link>
-                  ))}
+                  {adminNotifs.length === 0 ? (
+                    <p className="px-4 py-4 text-sm text-muted-foreground">No notifications yet</p>
+                  ) : adminNotifs.map(notif => {
+                    const isUnread = !readIds.has(notif.id);
+                    return (
+                      <Link
+                        key={notif.id}
+                        href={notifHref(notif, role ?? 'admin')}
+                        onClick={() => setNotifOpen(false)}
+                        className={`flex gap-3 px-4 py-3 hover:bg-muted transition-colors ${isUnread ? 'bg-[#faf9f7]' : ''}`}
+                      >
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-xs font-700 ${
+                          notif.type === 'request' ? 'bg-[#f0eef8] text-[#5c5470]' :
+                          notif.type === 'alert'   ? 'bg-red-100 text-red-600' :
+                          'bg-[#e4eeee] text-[#7a9e9f]'
+                        }`}>
+                          {notif.type === 'order' ? 'OR' : notif.type === 'alert' ? '!' : 'RQ'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm ${isUnread ? 'font-600 text-foreground' : 'font-500 text-foreground'}`}>{notif.title}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5 truncate">{notif.message}</p>
+                          <p className="text-[11px] text-muted-foreground mt-1">{timeAgo(notif.createdAt)}</p>
+                        </div>
+                      </Link>
+                    );
+                  })}
                 </div>
                 <div className="px-4 py-2.5 border-t border-border">
                   <Link
@@ -266,7 +277,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             )}
           </div>
           <div className="relative">
-            <button onClick={() => setProfileOpen((v) => !v)} className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity px-2 py-1 rounded-lg">
+            <button suppressHydrationWarning onClick={() => setProfileOpen((v) => !v)} className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity px-2 py-1 rounded-lg">
               <div className="w-9 h-9 rounded-full bg-[#5c5470] text-white flex items-center justify-center font-semibold text-sm">
                 {initialsFromName(displayName)}
               </div>

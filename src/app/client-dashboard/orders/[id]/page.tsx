@@ -6,6 +6,18 @@ import { ordersApi } from '@/lib/api/orders.api';
 import { TOKEN_KEY } from '@/lib/api/axiosClient';
 import type { ApiOrder } from '@/lib/types/api.types';
 
+function getToken() {
+  if (typeof window === 'undefined') return '';
+  return localStorage.getItem(TOKEN_KEY) ?? '';
+}
+
+async function apiFetch(path: string, options: RequestInit = {}) {
+  return fetch(path, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}`, ...(options.headers ?? {}) },
+  });
+}
+
 // ─── Backend-ready tracking functions ─────────────────────────────────────────
 
 const DEMO_SEED_UPDATES = [
@@ -47,12 +59,32 @@ import ShipmentMapModal from '@/components/ShipmentMapModal';
 import ExceptionChat from '@/components/ExceptionChat';
 import { mockOrders, statusToLocation } from '@/lib/mockData';
 import { getEffectiveOrderStatus, getOrderQcBundle } from '@/lib/orderQcStore';
-import { ArrowLeft, Download, AlertTriangle, MapPin, CheckCircle2, Circle, FileText, Info, Camera, X, ChevronLeft, ChevronRight, ZoomIn, MessageCircle, MessageSquare, Paperclip, Play, Package, Truck, Home } from 'lucide-react';
+import { ArrowLeft, Download, AlertTriangle, MapPin, CheckCircle2, Circle, FileText, Info, Camera, X, ChevronLeft, ChevronRight, ZoomIn, MessageCircle, MessageSquare, Paperclip, Play, Package, Truck, Home, CreditCard } from 'lucide-react';
+import { generateInvoice } from '@/lib/generateInvoice';
+import { generateGSTInvoice } from '@/lib/generateGSTInvoice';
+import { generateCommercialInvoice } from '@/lib/generateCommercialInvoice';
+import { generatePackingList } from '@/lib/generatePackingList';
+import type { GSTData } from '@/components/GSTInvoicePopover';
+import { paymentsApi } from '@/lib/api/payments.api';
 import ProductImage from '@/components/ProductImage';
 import { notFound } from 'next/navigation';
 
 const stages = ['Order Placed', 'Payment Confirmed', 'Sourcing', 'At China Warehouse', 'China Consolidation Warehouse', 'Repacking Warehouse', 'Shipped from China', 'In Transit', 'Arrived India Warehouse', 'Out for Delivery', 'Completed'];
 const stageMap: Record<string, number> = { 'Payment Pending': 0, 'Payment Confirmed': 1, 'Sourcing': 2, 'At China Warehouse': 3, 'China Consolidation Warehouse': 4, 'Repacking Warehouse': 5, 'Shipped from China': 6, 'In Transit': 7, 'Arrived India Warehouse': 8, 'Out for Delivery': 9, 'Completed': 10 };
+
+const CLIENT_STATUS_TO_STAGES: Record<string, string[]> = {
+  'Order Confirmed':               ['Order Placed', 'Payment Confirmed'],
+  'Payment Confirmed':             ['Order Placed', 'Payment Confirmed'],
+  'Sourcing':                      ['Order Placed', 'Payment Confirmed', 'Sourcing'],
+  'At China Warehouse':            ['Order Placed', 'Payment Confirmed', 'Sourcing', 'At China Warehouse'],
+  'China Consolidation Warehouse': ['Order Placed', 'Payment Confirmed', 'Sourcing', 'At China Warehouse', 'China Consolidation Warehouse'],
+  'Repacking Warehouse':           ['Order Placed', 'Payment Confirmed', 'Sourcing', 'At China Warehouse', 'China Consolidation Warehouse', 'Repacking Warehouse'],
+  'Shipped from China':            ['Order Placed', 'Payment Confirmed', 'Sourcing', 'At China Warehouse', 'China Consolidation Warehouse', 'Repacking Warehouse', 'Shipped from China'],
+  'In Transit':                    ['Order Placed', 'Payment Confirmed', 'Sourcing', 'At China Warehouse', 'China Consolidation Warehouse', 'Repacking Warehouse', 'Shipped from China', 'In Transit'],
+  'Arrived India Warehouse':       ['Order Placed', 'Payment Confirmed', 'Sourcing', 'At China Warehouse', 'China Consolidation Warehouse', 'Repacking Warehouse', 'Shipped from China', 'In Transit', 'Arrived India Warehouse'],
+  'Out for Delivery':              ['Order Placed', 'Payment Confirmed', 'Sourcing', 'At China Warehouse', 'China Consolidation Warehouse', 'Repacking Warehouse', 'Shipped from China', 'In Transit', 'Arrived India Warehouse', 'Out for Delivery'],
+  'Completed':                     ['Order Placed', 'Payment Confirmed', 'Sourcing', 'At China Warehouse', 'China Consolidation Warehouse', 'Repacking Warehouse', 'Shipped from China', 'In Transit', 'Arrived India Warehouse', 'Out for Delivery', 'Completed'],
+};
 
 const repackPhotos = [
   { id: 1, emoji: '📦', label: 'Sealed outer carton',     bg: 'bg-gradient-to-br from-[#E8E1F5] to-[#D6CEE8]', note: 'Reinforced corrugated carton with EliosWholesale tape seal' },
@@ -83,7 +115,7 @@ function mapApiOrderToRow(o: ApiOrder) {
     orderId: o.orderNumber,
     date: new Date(o.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
     itemCount: o.items?.length ?? 0,
-    itemNames: o.items?.map((i) => i.product.name).join(', ') || '',
+    itemNames: o.items?.map((i) => i.product?.name ?? i.notes ?? '—').join(', ') || '',
     amount: `₹${totalINR.toLocaleString('en-IN')}`,
     amountCny: '',
     estimatedDelivery: o.shipment?.estimatedDelivery
@@ -93,10 +125,11 @@ function mapApiOrderToRow(o: ApiOrder) {
     client: o.client?.companyName,
     lineItems: o.items?.map((i) => ({
       id: i.id,
-      name: i.product.name,
+      name: i.product?.name ?? i.notes ?? '—',
       qty: i.quantity,
       unitPriceInr: parseFloat(i.unitPriceINR || '0'),
       totalInr: parseFloat(i.totalINR || '0'),
+      imageUrl: i.imageUrl ?? null,
     })),
   };
 }
@@ -107,19 +140,91 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [liveOrder, setLiveOrder] = useState<ReturnType<typeof mapApiOrderToRow> | null>(null);
   const [apiLoading, setApiLoading] = useState(!mockOrder);
 
+  // completedStages must be declared before the useEffect that calls setCompletedStages
+  const [completedStages, setCompletedStages] = useState<string[]>([]);
+
   useEffect(() => {
-    if (mockOrder) return; // found in mock — no API call needed
     const token = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null;
-    if (!token) { setApiLoading(false); return; }
-    ordersApi.getOrderById(id)
-      .then(res => {
-        if (res.data.success && res.data.data) {
-          setLiveOrder(mapApiOrderToRow(res.data.data));
+
+    async function fetchGSTData() {
+      if (!token) return;
+      try {
+        const res = await fetch(`/api/orders/${id}/gst`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const d = await res.json();
+        if (d?.data) {
+          setGstInvoiceData(d.data as GSTData);
+          try { localStorage.setItem(`gst-invoice-${id}`, JSON.stringify(d.data)); } catch {}
         }
-      })
-      .catch(() => {})
-      .finally(() => setApiLoading(false));
-  }, [id, mockOrder]);
+      } catch {}
+    }
+
+    if (mockOrder) {
+      // Mock order: no order polling, but still try to fetch GST data
+      fetchGSTData();
+      const gstInterval = setInterval(fetchGSTData, 30000);
+      return () => clearInterval(gstInterval);
+    }
+
+    // Lightweight poll — no photos, just status/approval/count.
+    // Never re-downloads the heavy base64 array on every tick.
+    async function fetchWarehouseStatus() {
+      if (!token) return;
+      try {
+        const res = await apiFetch(`/api/orders/${id}/warehouse-report?photos=false`);
+        const data = await res.json();
+        if (data?.success && data?.data && data.data.orderId) {
+          // Merge: preserve already-loaded photos so a poll never wipes them
+          setWarehouseReport((prev: any) => ({
+            ...data.data,
+            repackPhotos: prev?.repackPhotos?.length ? prev.repackPhotos : [],
+          }));
+        }
+      } catch {}
+    }
+
+    async function fetchOrder() {
+      if (!token) { setApiLoading(false); return; }
+      try {
+        const res = await ordersApi.getOrderById(id);
+        if (res.data.success && res.data.data) {
+          const order = res.data.data;
+          setLiveOrder(mapApiOrderToRow(order));
+          const requestPayments = (order as any).requestPayments ?? [];
+          setPayments(requestPayments);
+          // Reconcile completedStages with DB status — DB status is authoritative
+          const displayStatus: string = ORDER_STATUS_MAP[order.status] ?? order.status;
+          const cs: string[] = (order as any).completedStages ?? [];
+          const csMaxIdx = cs.length > 0
+            ? Math.max(-1, ...cs.map((s: string) => stages.indexOf(s)).filter((n: number) => n >= 0))
+            : -1;
+          const dbStatusIdx = stageMap[displayStatus] ?? -1;
+          let effectiveStages = cs;
+          if (dbStatusIdx > csMaxIdx) {
+            const derived = CLIENT_STATUS_TO_STAGES[displayStatus];
+            if (derived && derived.length > 0) effectiveStages = derived;
+          }
+          setCompletedStages(effectiveStages);
+          // Restore delivery preference if already saved
+          if ((order as any).deliveryPreference) {
+            setDeliveryOption((order as any).deliveryPreference === 'self_pickup' ? 'self' : 'deliver');
+            if ((order as any).deliveryAddress) setDeliveryAddress((order as any).deliveryAddress);
+            setDeliverySubmitted(true);
+          }
+        }
+      } catch {}
+      finally { setApiLoading(false); }
+    }
+
+    fetchOrder();
+    fetchGSTData();
+    fetchWarehouseStatus();
+    // Poll order + GST every 30s; warehouse status every 60s (it's cheap now — no photos)
+    const orderInterval = setInterval(() => { fetchOrder(); fetchGSTData(); }, 30000);
+    const whInterval   = setInterval(fetchWarehouseStatus, 60000);
+    return () => { clearInterval(orderInterval); clearInterval(whInterval); };
+  }, [id]);
 
   const order = mockOrder ?? liveOrder;
   const [mapOpen, setMapOpen] = useState(false);
@@ -136,16 +241,36 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [isSubmittingConcern, setIsSubmittingConcern] = useState(false);
   const concernFileRef = useRef<HTMLInputElement>(null);
 
+  // Warehouse report from API (for repack photos and approval status)
+  const [warehouseReport, setWarehouseReport] = useState<any>(null);
+  // true once the full base64 photos have been fetched and cached
+  const [photosLoaded, setPhotosLoaded] = useState(false);
+  const [modalPhotoLoading, setModalPhotoLoading] = useState(false);
+
   // Arrived India Warehouse delivery options
   const [deliveryOption, setDeliveryOption] = useState<null | 'self' | 'deliver'>(null);
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [deliverySubmitted, setDeliverySubmitted] = useState(false);
   const [logisticsEstimate, setLogisticsEstimate] = useState<null | { weight: string; mode: string; pricePerKg: string; note: string }>(null);
   const [approvalStatus, setApprovalStatus] = useState<null | 'approved' | 'flagged'>(null);
+  const [showConcernInput, setShowConcernInput] = useState(false);
+  const [clientLightboxUrl, setClientLightboxUrl] = useState<string | null>(null);
+  const [concernText, setConcernText] = useState('');
 
   // Tracking updates state (read-only for client)
   interface TrackingUpdate { id: string; location: string; message: string; stage: string; addedBy: string; addedByRole: string; timestamp: string; }
   const [trackingUpdates, setTrackingUpdates] = useState<TrackingUpdate[]>([]);
+
+  // Payment state — fetched inside the main polling effect above
+  const [payments, setPayments] = useState<any[]>([]);
+  const [gstInvoiceData, setGstInvoiceData] = useState<GSTData | null>(() => {
+    // Read from localStorage immediately so the GST row appears without waiting for API
+    if (typeof window === 'undefined') return null;
+    try {
+      const stored = localStorage.getItem(`gst-invoice-${id}`);
+      return stored ? JSON.parse(stored) as GSTData : null;
+    } catch { return null; }
+  });
 
   useEffect(() => {
     const saved = localStorage.getItem(`logistics-estimate-${id}`);
@@ -210,17 +335,27 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const displayStatus = getEffectiveOrderStatus(order.id, order.status as any);
   const currentStage = stageMap[order.status] ?? -1;
   const hasMap = !!statusToLocation[order.status];
-  const repackingDone = currentStage >= 5;
-  const isAtRepacking = order.status === 'Repacking Warehouse';
-  const isAtIndiaWarehouse = order.status === 'Arrived India Warehouse';
+
+  // Highest stage index marked complete — handles both cumulative and legacy non-cumulative arrays
+  const maxCompletedIdx = completedStages.length > 0
+    ? stages.reduce((max, stage, idx) => (completedStages.includes(stage) ? idx : max), -1)
+    : currentStage;
+  const repackingDone = completedStages.length > 0
+    ? completedStages.includes('Repacking Warehouse')
+    : currentStage >= 5;
+  const isAtRepacking = repackingDone;
+  const isAtIndiaWarehouse = completedStages.length > 0
+    ? completedStages.includes('Arrived India Warehouse')
+    : order.status === 'Arrived India Warehouse';
 
   // For live API orders use real line items; for mock orders use the hardcoded demo set
-  const items: { name: string; qty: number; unitInr: number; totalInr: number }[] =
+  const items: { name: string; qty: number; unitInr: number; totalInr: number; imageUrl?: string | null }[] =
     (order as any).lineItems?.map((li: any) => ({
       name: li.name,
       qty: li.qty ?? li.quantity ?? 0,
       unitInr: li.unitPriceInr ?? li.unitPriceINR ?? 0,
       totalInr: li.totalInr ?? li.totalINR ?? 0,
+      imageUrl: li.imageUrl ?? null,
     })) ?? [
       { name: 'LED Strip Light (RGB, 5m)', qty: 50,  unitInr: 504,   totalInr: 25200 },
       { name: 'USB-C Cable (Braided)',     qty: 100, unitInr: 96,    totalInr: 9600 },
@@ -233,9 +368,34 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const logistics = (order as any).lineItems ? 0 : 8160;
   const grandTotal = productCost + logistics - ((order as any).lineItems ? 0 : ADVANCE_PAID);
 
-  function openPhoto(i: number) { setPhotoIdx(i); setRepackOpen(true); }
-  function prevPhoto() { setPhotoIdx((p) => (p - 1 + repackPhotos.length) % repackPhotos.length); }
-  function nextPhoto() { setPhotoIdx((p) => (p + 1) % repackPhotos.length); }
+  // Fetches the full base64 photos exactly once; subsequent opens use the cache.
+  async function fetchWarehousePhotos() {
+    if (photosLoaded) return;
+    setModalPhotoLoading(true);
+    try {
+      const res = await apiFetch(`/api/orders/${id}/warehouse-report`);
+      const data = await res.json();
+      if (data?.success && data?.data && data.data.orderId) {
+        setWarehouseReport(data.data);
+        setPhotosLoaded(true);
+      }
+    } catch {}
+    finally { setModalPhotoLoading(false); }
+  }
+
+  function openPhoto(i: number) {
+    setPhotoIdx(i);
+    setRepackOpen(true);
+    fetchWarehousePhotos(); // lazy — no-op if already cached
+  }
+  function prevPhoto() {
+    const count = warehouseReport?.repackPhotos?.length || repackPhotos.length;
+    setPhotoIdx((p) => (p - 1 + count) % count);
+  }
+  function nextPhoto() {
+    const count = warehouseReport?.repackPhotos?.length || repackPhotos.length;
+    setPhotoIdx((p) => (p + 1) % count);
+  }
 
   async function handleConcernImageAdd(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(e.target.files || []);
@@ -270,14 +430,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     e.target.value = '';
   }
 
-  function submitConcern() {
+  async function submitConcern() {
     const sanitized = concernMsg.replace(/[<>"']/g, '').trim().slice(0, 2000);
     if (!sanitized || isSubmittingConcern) return;
     setIsSubmittingConcern(true);
-    if (concernAttachments.length > 0) {
-      localStorage.setItem(`concern-attachments-${order?.id}-${Date.now()}`, JSON.stringify(concernAttachments));
-    }
-    localStorage.setItem(`concern-${order?.id}-${Date.now()}`, JSON.stringify({ message: sanitized, timestamp: Date.now() }));
+    // Call repack-approval API if this concern is from the repack review flow
+    await handleFlagIssue(sanitized);
     setConcernSubmitted(true);
     setIsSubmittingConcern(false);
   }
@@ -307,10 +465,28 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     URL.revokeObjectURL(url);
   }
 
-  function handleApproveShipping() {
-    localStorage.setItem(`repack-approval-${order?.id}`, JSON.stringify({ status: 'approved', timestamp: Date.now() }));
+  async function handleApproveShipping() {
     setApprovalStatus('approved');
     setRepackOpen(false);
+    if (liveOrder) {
+      try {
+        await apiFetch(`/api/orders/${id}/repack-approval`, {
+          method: 'PATCH',
+          body: JSON.stringify({ approved: true }),
+        });
+      } catch {}
+    }
+  }
+
+  async function handleFlagIssue(concernText: string) {
+    if (liveOrder) {
+      try {
+        await apiFetch(`/api/orders/${id}/repack-approval`, {
+          method: 'PATCH',
+          body: JSON.stringify({ approved: false, concern: concernText }),
+        });
+      } catch {}
+    }
   }
 
   return (
@@ -350,6 +526,17 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               <MapPin className="w-4 h-4" /> View Live Location
             </button>
           )}
+          {(payments.some((p: any) => p.status === 'VERIFIED') || order?.status === 'Payment Confirmed' || order?.status === 'Completed') && (
+            <button onClick={() => generateInvoice(order)} className="px-4 py-2 text-sm font-600 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 inline-flex items-center gap-2"><Download className="w-4 h-4" /> Download Invoice</button>
+          )}
+          {gstInvoiceData && (
+            <button
+              onClick={() => generateGSTInvoice(order, gstInvoiceData)}
+              className="px-4 py-2 text-sm font-600 rounded-lg border border-indigo-400 text-indigo-700 hover:bg-indigo-50 inline-flex items-center gap-2"
+            >
+              <FileText className="w-4 h-4" /> Download GST Invoice
+            </button>
+          )}
         </div>
       </div>
 
@@ -368,14 +555,41 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
       <div className="grid lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 space-y-5">
+          {/* 1. Items */}
+          <div className="bg-card rounded-xl border border-border shadow-card p-5">
+            <h3 className="text-sm font-700 mb-4">Items</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-border text-[11px] uppercase text-muted-foreground">
+                  <th className="py-2 text-left font-600 w-14">Image</th><th className="py-2 text-left font-600">Item</th><th className="text-right font-600">Qty</th><th className="text-right font-600">Unit Price</th><th className="text-right font-600">Total</th>
+                </tr></thead>
+                <tbody className="divide-y divide-border">
+                  {items.map(it => (
+                    <tr key={it.name}>
+                      <td className="py-3 pr-3">
+                        {it.imageUrl ? (
+                          <img src={it.imageUrl} alt={it.name} className="w-12 h-12 object-cover rounded" />
+                        ) : (
+                          <ProductImage productName={it.name} canUpload={false} />
+                        )}
+                      </td>
+                      <td className="py-3 font-500">{it.name}</td><td className="text-right font-tabular">{it.qty}</td><td className="text-right font-tabular">₹{it.unitInr.toLocaleString()}</td><td className="text-right font-tabular font-600">₹{it.totalInr.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* 2. Timeline */}
           <div className="bg-card rounded-xl border border-border shadow-card p-5">
             <h3 className="text-sm font-700 mb-4">Shipment Timeline</h3>
             <ol className="space-y-3">
               {stages.map((s, i) => {
-                const done = i <= currentStage;
-                const current = i === currentStage;
+                const done = i <= maxCompletedIdx;
+                const current = i === maxCompletedIdx && maxCompletedIdx >= 0;
                 const isRepack = s === 'Repacking Warehouse';
-                const showRepackBtn = isRepack && repackingDone;
+                const showRepackBtn = isRepack && done;
                 return (
                   <li key={s} className="flex items-start gap-3">
                     <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${done ? 'bg-emerald-500 text-white' : current ? 'bg-[#4A3B52] text-white animate-pulse' : 'bg-muted text-muted-foreground'}`}>
@@ -407,6 +621,100 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             )}
           </div>
 
+          {/* Repacking Warehouse Approval — inline card */}
+          {repackingDone && ((warehouseReport?.repackPhotos?.length ?? 0) > 0 || (warehouseReport?.photoCount ?? 0) > 0) && (() => {
+            const alreadyApproved = warehouseReport?.clientApproved === true || approvalStatus === 'approved';
+            const alreadyFlagged = warehouseReport?.clientApproved === false || approvalStatus === 'flagged';
+
+            if (alreadyApproved) return (
+              <div className="bg-green-50 border border-green-300 rounded-xl p-4">
+                <p className="text-green-700 font-medium">✓ You approved these products for shipping</p>
+              </div>
+            );
+
+            if (alreadyFlagged) return (
+              <div className="bg-red-50 border border-red-300 rounded-xl p-4">
+                <p className="text-red-700 font-medium">✗ You flagged an issue{warehouseReport?.clientConcern ? `: ${warehouseReport.clientConcern}` : ''}</p>
+                <p className="text-sm text-red-600 mt-1">Our team has been notified and will reach out to you shortly.</p>
+              </div>
+            );
+
+            const photoCount = warehouseReport?.repackPhotos?.length || warehouseReport?.photoCount || 0;
+
+            return (
+              <div className="border-2 border-orange-400 rounded-xl p-5 bg-orange-50">
+                <h3 className="font-semibold text-orange-800 text-lg mb-1">📦 Your Products are at Repacking Warehouse</h3>
+                <p className="text-sm text-orange-700 mb-4">Please review the product photos below and confirm everything looks correct before we ship.</p>
+
+                {warehouseReport?.repackPhotos?.length > 0 ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                      {warehouseReport.repackPhotos.map((url: string, i: number) => (
+                        <img
+                          key={i}
+                          src={url}
+                          className={`w-full h-40 object-cover rounded-lg cursor-pointer border-2 transition-all ${clientLightboxUrl === url ? 'border-[#4A3B52]' : 'border-orange-200'}`}
+                          onClick={() => setClientLightboxUrl(clientLightboxUrl === url ? null : url)}
+                        />
+                      ))}
+                    </div>
+                    {clientLightboxUrl && (
+                      <div className="mb-4 relative rounded-lg overflow-hidden border border-orange-200">
+                        <button onClick={() => setClientLightboxUrl(null)} className="absolute top-2 right-2 z-10 bg-black/60 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold">✕</button>
+                        <img src={clientLightboxUrl} className="w-full max-h-72 object-contain bg-black/5" />
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <button
+                    onClick={() => openPhoto(0)}
+                    className="w-full mb-4 py-4 rounded-xl border-2 border-dashed border-orange-300 bg-orange-100/50 text-orange-800 text-sm font-medium hover:bg-orange-100 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Camera className="w-4 h-4" />
+                    View {photoCount > 0 ? `${photoCount} product photo${photoCount > 1 ? 's' : ''}` : 'product photos'}
+                  </button>
+                )}
+                {!showConcernInput ? (
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleApproveShipping}
+                      className="flex-1 bg-green-600 text-white py-2.5 rounded-lg font-medium hover:bg-green-700"
+                    >
+                      ✓ Approve for Shipping
+                    </button>
+                    <button
+                      onClick={() => setShowConcernInput(true)}
+                      className="flex-1 bg-red-100 text-red-700 py-2.5 rounded-lg font-medium border border-red-300 hover:bg-red-200"
+                    >
+                      ✗ Flag an Issue
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-3">
+                    <textarea
+                      value={concernText}
+                      onChange={e => setConcernText(e.target.value)}
+                      placeholder="Describe the issue with your products..."
+                      className="w-full border border-red-300 rounded-lg p-3 text-sm resize-none"
+                      rows={3}
+                    />
+                    <button
+                      onClick={async () => {
+                        if (!concernText.trim()) return;
+                        await handleFlagIssue(concernText);
+                        setApprovalStatus('flagged');
+                        setShowConcernInput(false);
+                      }}
+                      className="mt-2 w-full bg-red-600 text-white py-2 rounded-lg font-medium hover:bg-red-700"
+                    >
+                      Submit Issue Report
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Arrived India Warehouse — delivery options */}
           {isAtIndiaWarehouse && (
             <div className="bg-card rounded-xl border border-border shadow-card p-5">
@@ -429,7 +737,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               ) : (
                 <>
                   <div className="grid sm:grid-cols-2 gap-3 mb-4">
-                    {/* Self Pickup */}
                     <button
                       onClick={() => setDeliveryOption('self')}
                       className={`flex flex-col items-start gap-2 p-4 rounded-xl border-2 text-left transition-all ${
@@ -448,7 +755,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                       {deliveryOption === 'self' && <span className="text-[11px] font-600 text-[#4A3B52]">Selected ✓</span>}
                     </button>
 
-                    {/* Deliver to Address */}
                     <button
                       onClick={() => setDeliveryOption('deliver')}
                       className={`flex flex-col items-start gap-2 p-4 rounded-xl border-2 text-left transition-all ${
@@ -484,7 +790,20 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
                   {deliveryOption && (
                     <button
-                      onClick={() => setDeliverySubmitted(true)}
+                      onClick={async () => {
+                        setDeliverySubmitted(true);
+                        if (liveOrder) {
+                          try {
+                            await apiFetch(`/api/orders/${id}/delivery-preference`, {
+                              method: 'PATCH',
+                              body: JSON.stringify({
+                                deliveryPreference: deliveryOption === 'self' ? 'self_pickup' : 'delivery',
+                                deliveryAddress: deliveryOption === 'deliver' ? deliveryAddress : undefined,
+                              }),
+                            });
+                          } catch {}
+                        }
+                      }}
                       disabled={deliveryOption === 'deliver' && !deliveryAddress.trim()}
                       className="btn-primary mt-4 px-5 py-2.5 text-sm disabled:opacity-40"
                     >
@@ -496,8 +815,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             </div>
           )}
 
-          {/* Live Shipment Tracking — read-only client view, shown from Shipped from China onwards */}
-          {currentStage >= 6 && (
+          {/* Live Shipment Tracking */}
+          {maxCompletedIdx >= 6 && (
             <div className="bg-card rounded-xl border border-border shadow-card p-5">
               <div className="flex items-center justify-between gap-2 mb-1">
                 <h3 className="text-sm font-700 flex items-center gap-2">
@@ -545,25 +864,169 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             </div>
           )}
 
+          {/* 3. Payment / Payment Gateway — only for live API orders */}
+          {liveOrder && (
+            <div className="bg-card rounded-xl border border-border shadow-card p-5">
+              <h3 className="text-sm font-700 mb-3 flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-[#4A3B52]" /> Payment
+              </h3>
+
+              {payments.length === 0 && (liveOrder as any).status === 'CONFIRMED' && (
+                <Link
+                  href={`/payment/${id}`}
+                  className="btn-primary w-full py-2.5 text-sm inline-flex items-center justify-center gap-2"
+                >
+                  <CreditCard className="w-4 h-4" /> Make Payment →
+                </Link>
+              )}
+
+              {payments.length === 0 && (liveOrder as any).status !== 'CONFIRMED' && (
+                <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
+              )}
+
+              {payments.map((p: any) => {
+                const amount = parseFloat(p.amountINR || '0').toLocaleString('en-IN');
+                const typeLabel = p.type === 'ADVANCE' ? 'Advance' : 'Balance';
+                const dateStr = p.submittedAt
+                  ? new Date(p.submittedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                  : '';
+
+                if (p.status === 'SUBMITTED') return (
+                  <div key={p.id} className="rounded-xl border border-blue-200 bg-blue-50 p-4 mb-3">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-sm font-600">💰 {typeLabel} Payment — ₹{amount}</span>
+                      <span className="text-xs font-600 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Under Review</span>
+                    </div>
+                    {dateStr && <p className="text-xs text-blue-700">Submitted: {dateStr}</p>}
+                    <p className="text-xs text-blue-600 mt-1">Our team will verify within 24 hours.</p>
+                  </div>
+                );
+
+                if (p.status === 'VERIFIED') return (
+                  <div key={p.id} className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 mb-3">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                      <span className="text-sm font-600 text-emerald-800">✅ {typeLabel} Payment — ₹{amount} Confirmed</span>
+                    </div>
+                    {p.verifiedAt && (
+                      <p className="text-xs text-emerald-700 mt-1">
+                        Verified on: {new Date(p.verifiedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </p>
+                    )}
+                  </div>
+                );
+
+                if (p.status === 'REJECTED') return (
+                  <div key={p.id} className="rounded-xl border border-red-200 bg-red-50 p-4 mb-3">
+                    <p className="text-sm font-600 text-red-800 mb-1">❌ Payment Proof Rejected</p>
+                    {p.rejectionReason && (
+                      <p className="text-xs text-red-700 mb-2">Reason: {p.rejectionReason}</p>
+                    )}
+                    <Link
+                      href={`/payment/${id}`}
+                      className="inline-flex items-center gap-1.5 text-sm font-600 text-red-700 hover:underline"
+                    >
+                      Resubmit Payment →
+                    </Link>
+                  </div>
+                );
+
+                return null;
+              })}
+
+              {(() => {
+                const verifiedAdvance = payments
+                  .filter((p: any) => p.type === 'ADVANCE' && p.status === 'VERIFIED')
+                  .reduce((s: number, p: any) => s + parseFloat(p.amountINR || '0'), 0);
+                const orderTotal = (liveOrder as any)?.totalINR ? parseFloat((liveOrder as any).totalINR) : 0;
+                const balanceDue = orderTotal - verifiedAdvance;
+                const hasBalance = payments.some((p: any) => p.type === 'BALANCE');
+                if (verifiedAdvance > 0 && balanceDue > 0 && !hasBalance) {
+                  return (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 mb-3">
+                      <p className="text-sm font-600 text-amber-800">✅ Advance paid: ₹{verifiedAdvance.toLocaleString('en-IN')}</p>
+                      <p className="text-sm text-amber-700 mt-1">💰 Balance due before shipping: ₹{balanceDue.toLocaleString('en-IN')}</p>
+                      <Link
+                        href={`/payment/${id}?type=BALANCE`}
+                        className="btn-primary mt-3 w-full py-2.5 text-sm inline-flex items-center justify-center gap-2"
+                      >
+                        <CreditCard className="w-4 h-4" /> Pay Balance →
+                      </Link>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              {payments.some((p: any) => p.type === 'ADVANCE' && p.status === 'VERIFIED') &&
+               !payments.some((p: any) => p.type === 'BALANCE') &&
+               (() => {
+                 const verifiedAdvance = payments
+                   .filter((p: any) => p.type === 'ADVANCE' && p.status === 'VERIFIED')
+                   .reduce((s: number, p: any) => s + parseFloat(p.amountINR || '0'), 0);
+                 const orderTotal = (liveOrder as any)?.totalINR ? parseFloat((liveOrder as any).totalINR) : 0;
+                 return verifiedAdvance >= orderTotal;
+               })() && (
+                <p className="text-xs text-emerald-700 font-600 text-center py-2">✅ Fully paid</p>
+              )}
+            </div>
+          )}
+
+          {/* 4. Payment Summary — moved below Payment */}
           <div className="bg-card rounded-xl border border-border shadow-card p-5">
-            <h3 className="text-sm font-700 mb-4">Items</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead><tr className="border-b border-border text-[11px] uppercase text-muted-foreground">
-                  <th className="py-2 text-left font-600 w-14">Image</th><th className="py-2 text-left font-600">Item</th><th className="text-right font-600">Qty</th><th className="text-right font-600">Unit Price</th><th className="text-right font-600">Total</th>
-                </tr></thead>
-                <tbody className="divide-y divide-border">
-                  {items.map(it => (
-                    <tr key={it.name}>
-                      <td className="py-3 pr-3"><ProductImage productName={it.name} canUpload={false} /></td>
-                      <td className="py-3 font-500">{it.name}</td><td className="text-right font-tabular">{it.qty}</td><td className="text-right font-tabular">₹{it.unitInr.toLocaleString()}</td><td className="text-right font-tabular font-600">₹{it.totalInr.toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <h3 className="text-sm font-700 mb-3">Payment Summary</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Product Cost</span><span className="font-tabular font-500">₹{productCost.toLocaleString()}</span></div>
+              <div className="flex items-center justify-between"><span className="text-emerald-600 font-500">Advance Paid</span><span className="font-tabular font-500 text-emerald-600">− ₹{ADVANCE_PAID.toLocaleString()}</span></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Logistics (Sea)</span><span className="font-tabular font-500">₹{logistics.toLocaleString()}</span></div>
+              <div className="flex items-center justify-between border-t border-dashed border-border pt-2 mt-1">
+                <span className="text-muted-foreground inline-flex items-center gap-1"><Info className="w-3.5 h-3.5" /> Indian Exchange Rate</span>
+                <span className="font-tabular text-xs text-muted-foreground">1 CNY = ₹12.0</span>
+              </div>
+              <div className="border-t border-border pt-2 mt-2 flex items-center justify-between"><span className="font-700">Grand Total</span><p className="font-700 font-tabular text-foreground">₹{grandTotal.toLocaleString()}</p></div>
             </div>
           </div>
 
+          {/* 5. Documents — moved after Payment Summary */}
+          <div className="bg-card rounded-xl border border-border shadow-card p-5">
+            <h3 className="text-sm font-700 mb-3">Documents</h3>
+            <ul className="space-y-2">
+                <li className="flex items-center justify-between text-sm py-2 border-b border-border">
+                <span className="flex items-center gap-2"><FileText className="w-4 h-4 text-muted-foreground" />Commercial Invoice</span>
+                <button onClick={() => generateCommercialInvoice(order)} className="text-[#4A3B52] text-xs font-600 hover:underline inline-flex items-center gap-1"><Download className="w-3.5 h-3.5" /> Download</button>
+              </li>
+              <li className="flex items-center justify-between text-sm py-2 border-b border-border last:border-0">
+                <span className="flex items-center gap-2"><FileText className="w-4 h-4 text-muted-foreground" />Packing List</span>
+                <button onClick={() => generatePackingList(order)} className="text-[#4A3B52] text-xs font-600 hover:underline inline-flex items-center gap-1"><Download className="w-3.5 h-3.5" /> Download</button>
+              </li>
+              {gstInvoiceData && (
+                <li className="flex items-center justify-between text-sm py-2">
+                  <span className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-indigo-500" />
+                    <span>GST Invoice</span>
+                    {(() => {
+                      try {
+                        const msgs = JSON.parse(localStorage.getItem(`order-chat-${id}`) || '[]');
+                        const today = new Date().toDateString();
+                        const hasNew = msgs.some((m: any) => m.id?.startsWith('gst-') && new Date(m.time).toDateString?.() === today || (m.id?.startsWith('gst-') && Date.now() - parseInt(m.id.replace('gst-', '')) < 86400000));
+                        return hasNew ? (
+                          <span className="text-[10px] font-600 px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">New</span>
+                        ) : null;
+                      } catch { return null; }
+                    })()}
+                  </span>
+                  <button
+                    onClick={() => generateGSTInvoice(order, gstInvoiceData)}
+                    className="text-indigo-600 text-xs font-600 hover:underline inline-flex items-center gap-1"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Download
+                  </button>
+                </li>
+              )}
+            </ul>
+          </div>
+
+          {/* 5. Conversation */}
           <div className="bg-card rounded-xl border border-border shadow-card p-4 sm:p-5">
             <h3 className="text-sm font-700 mb-3">Conversation</h3>
             <div className="space-y-3">
@@ -599,19 +1062,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         </div>
 
         <div className="space-y-5">
-          <div className="bg-card rounded-xl border border-border shadow-card p-5">
-            <h3 className="text-sm font-700 mb-3">Payment Summary</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between"><span className="text-muted-foreground">Product Cost</span><span className="font-tabular font-500">₹{productCost.toLocaleString()}</span></div>
-              <div className="flex items-center justify-between"><span className="text-emerald-600 font-500">Advance Paid</span><span className="font-tabular font-500 text-emerald-600">− ₹{ADVANCE_PAID.toLocaleString()}</span></div>
-              <div className="flex items-center justify-between"><span className="text-muted-foreground">Logistics (Sea)</span><span className="font-tabular font-500">₹{logistics.toLocaleString()}</span></div>
-              <div className="flex items-center justify-between border-t border-dashed border-border pt-2 mt-1">
-                <span className="text-muted-foreground inline-flex items-center gap-1"><Info className="w-3.5 h-3.5" /> Indian Exchange Rate</span>
-                <span className="font-tabular text-xs text-muted-foreground">1 CNY = ₹12.0</span>
-              </div>
-              <div className="border-t border-border pt-2 mt-2 flex items-center justify-between"><span className="font-700">Grand Total</span><p className="font-700 font-tabular text-foreground">₹{grandTotal.toLocaleString()}</p></div>
-            </div>
-          </div>
           {logisticsEstimate && (
             <div className="bg-card rounded-xl border border-border shadow-card p-5">
               <h3 className="text-sm font-700 mb-3">Logistics Details</h3>
@@ -638,21 +1088,11 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               </div>
             </div>
           )}
-          <div className="bg-card rounded-xl border border-border shadow-card p-5">
-            <h3 className="text-sm font-700 mb-3">Documents</h3>
-            <ul className="space-y-2">
-              {['Commercial Invoice', 'Packing List'].map(d => (
-                <li key={d} className="flex items-center justify-between text-sm py-2 border-b border-border last:border-0">
-                  <span className="flex items-center gap-2"><FileText className="w-4 h-4 text-muted-foreground" />{d}</span>
-                  <button onClick={() => handleDownloadDocument(d)} className="text-[#4A3B52] text-xs font-600 hover:underline inline-flex items-center gap-1"><Download className="w-3.5 h-3.5" /> Download</button>
-                </li>
-              ))}
-            </ul>
-          </div>
         </div>
       </div>
 
       <ShipmentMapModal isOpen={mapOpen} onClose={() => setMapOpen(false)} order={{ orderId: order.orderId, status: order.status as string, estimatedDelivery: order.estimatedDelivery }} />
+
 
       {/* Repackaged Product Photo Gallery Modal */}
       {repackOpen && (
@@ -668,47 +1108,84 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
             <div className="p-5">
               <div className="relative">
-                <div className={`aspect-video rounded-xl ${repackPhotos[photoIdx].bg} flex items-center justify-center text-8xl shadow-inner`}>
-                  <span aria-hidden="true">{repackPhotos[photoIdx].emoji}</span>
-                </div>
-                <button onClick={prevPhoto} className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 shadow flex items-center justify-center hover:bg-white" aria-label="Previous photo">
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button onClick={nextPhoto} className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 shadow flex items-center justify-center hover:bg-white" aria-label="Next photo">
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-                <span className="absolute top-3 right-3 badge bg-white/90 text-foreground font-600">
-                  <ZoomIn className="w-3 h-3 mr-1" /> {photoIdx + 1} / {repackPhotos.length}
-                </span>
+                {modalPhotoLoading ? (
+                  <div className="aspect-video rounded-xl bg-muted flex flex-col items-center justify-center gap-3">
+                    <div className="w-8 h-8 border-2 border-[#4A3B52] border-t-transparent rounded-full animate-spin" />
+                    <p className="text-sm text-muted-foreground">Loading photos…</p>
+                  </div>
+                ) : warehouseReport?.repackPhotos?.length > 0 ? (
+                  <div className="aspect-video rounded-xl bg-muted flex items-center justify-center overflow-hidden shadow-inner">
+                    <img
+                      src={warehouseReport.repackPhotos[photoIdx % warehouseReport.repackPhotos.length]}
+                      alt={`Repack photo ${photoIdx + 1}`}
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                ) : (
+                  <div className={`aspect-video rounded-xl ${repackPhotos[photoIdx].bg} flex items-center justify-center text-8xl shadow-inner`}>
+                    <span aria-hidden="true">{repackPhotos[photoIdx].emoji}</span>
+                  </div>
+                )}
+                {!modalPhotoLoading && (
+                  <>
+                    <button onClick={prevPhoto} className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 shadow flex items-center justify-center hover:bg-white" aria-label="Previous photo">
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button onClick={nextPhoto} className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 shadow flex items-center justify-center hover:bg-white" aria-label="Next photo">
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                    <span className="absolute top-3 right-3 badge bg-white/90 text-foreground font-600">
+                      <ZoomIn className="w-3 h-3 mr-1" />
+                      {warehouseReport?.repackPhotos?.length > 0
+                        ? `${photoIdx + 1} / ${warehouseReport.repackPhotos.length}`
+                        : `${photoIdx + 1} / ${repackPhotos.length}`}
+                    </span>
+                  </>
+                )}
               </div>
 
-              <div className="mt-4 p-3 rounded-xl bg-muted/40 border border-border">
-                <p className="font-600 text-foreground">{repackPhotos[photoIdx].label}</p>
-                <p className="text-xs text-muted-foreground mt-1">{repackPhotos[photoIdx].note}</p>
-                <p className="text-[11px] text-muted-foreground mt-2 font-tabular">📅 Captured: 10 May 2026 • 14:22 CST • Shenzhen Consolidation Warehouse</p>
-              </div>
+              {!(warehouseReport?.repackPhotos?.length > 0) && repackPhotos[photoIdx] && (
+                <div className="mt-4 p-3 rounded-xl bg-muted/40 border border-border">
+                  <p className="font-600 text-foreground">{repackPhotos[photoIdx].label}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{repackPhotos[photoIdx].note}</p>
+                  <p className="text-[11px] text-muted-foreground mt-2 font-tabular">📅 Captured: 10 May 2026 • 14:22 CST • Shenzhen Consolidation Warehouse</p>
+                </div>
+              )}
 
               <div className="grid grid-cols-4 gap-2 mt-4">
-                {repackPhotos.map((p, i) => (
-                  <button key={p.id} onClick={() => setPhotoIdx(i)} className={`aspect-square rounded-lg ${p.bg} flex items-center justify-center text-3xl transition-all ${i === photoIdx ? 'ring-2 ring-accent ring-offset-2' : 'opacity-60 hover:opacity-100'}`} aria-label={p.label}>
-                    {p.emoji}
-                  </button>
-                ))}
+                {warehouseReport?.repackPhotos?.length > 0
+                  ? (warehouseReport.repackPhotos as string[]).map((url: string, i: number) => (
+                    <button key={i} onClick={() => setPhotoIdx(i)} className={`aspect-square rounded-lg bg-muted overflow-hidden transition-all ${i === photoIdx ? 'ring-2 ring-accent ring-offset-2' : 'opacity-60 hover:opacity-100'}`} aria-label={`Photo ${i + 1}`}>
+                      <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                    </button>
+                  ))
+                  : repackPhotos.map((p, i) => (
+                    <button key={p.id} onClick={() => setPhotoIdx(i)} className={`aspect-square rounded-lg ${p.bg} flex items-center justify-center text-3xl transition-all ${i === photoIdx ? 'ring-2 ring-accent ring-offset-2' : 'opacity-60 hover:opacity-100'}`} aria-label={p.label}>
+                      {p.emoji}
+                    </button>
+                  ))
+                }
               </div>
 
               <div className="mt-5 flex flex-col sm:flex-row gap-2 pt-4 border-t border-border">
-                {approvalStatus === 'approved' ? (
+                {approvalStatus === 'approved' || warehouseReport?.clientApproved === true ? (
                   <div className="flex-1 py-2.5 text-sm text-center text-emerald-600 font-600 bg-emerald-50 rounded-lg border border-emerald-200">
                     <CheckCircle2 className="w-4 h-4 inline mr-1.5" />Approved for Shipping
+                  </div>
+                ) : warehouseReport?.clientApproved === false ? (
+                  <div className="flex-1 py-2.5 text-sm text-center text-amber-700 font-600 bg-amber-50 rounded-lg border border-amber-200">
+                    Issue flagged — our team will follow up
                   </div>
                 ) : (
                   <button onClick={handleApproveShipping} className="btn-primary flex-1 py-2.5 text-sm inline-flex items-center justify-center gap-2">
                     <CheckCircle2 className="w-4 h-4" /> Looks good — Approve for Shipping
                   </button>
                 )}
-                <button onClick={() => { setRepackOpen(false); setConcernOpen(true); }} className="btn-secondary flex-1 py-2.5 text-sm">
-                  Flag an issue
-                </button>
+                {!warehouseReport?.clientApproved && warehouseReport?.clientApproved !== false && (
+                  <button onClick={() => { setRepackOpen(false); setConcernOpen(true); }} className="btn-secondary flex-1 py-2.5 text-sm">
+                    Flag an issue
+                  </button>
+                )}
               </div>
               <p className="text-[11px] text-muted-foreground text-center mt-3">Photos are stored for 90 days after delivery as part of your order record.</p>
             </div>

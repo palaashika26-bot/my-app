@@ -4,6 +4,11 @@ import categoriesRouter from "./categories/categories.routes";
 import ordersRouter from "./orders/orders.routes";
 import suppliersRouter from "./suppliers/suppliers.routes";
 import authRouter from "./auth/auth.routes";
+import adminRouter from "./admin/admin.routes";
+import notificationsRouter from "./notifications/notifications.routes";
+import inquiriesRouter from "./inquiries/inquiries.routes";
+import requestsRouter from "./requests/requests.routes";
+import paymentsRouter from "./payments/payments.routes";
 
 const v1Router = Router();
 
@@ -12,5 +17,10 @@ v1Router.use("/products", productsRouter);
 v1Router.use("/categories", categoriesRouter);
 v1Router.use("/orders", ordersRouter);
 v1Router.use("/suppliers", suppliersRouter);
+v1Router.use("/admin", adminRouter);
+v1Router.use("/notifications", notificationsRouter);
+v1Router.use("/inquiries", inquiriesRouter);
+v1Router.use("/requests", requestsRouter);
+v1Router.use("/payments", paymentsRouter);
 
 export default v1Router;

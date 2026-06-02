@@ -1,70 +1,24 @@
 ﻿'use client';
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import AppLogo from '@/components/ui/AppLogo';
 import { Bell, Search, ChevronDown, User, Settings, LogOut, Package, HelpCircle, RefreshCw, BookOpen, Menu } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { notificationsApi, type ApiNotification } from '@/lib/api/notifications.api';
 
-interface Notification {
-  id: string;
-  title: string;
-  description: string;
-  time: string;
-  read: boolean;
-  type: 'order' | 'payment' | 'request' | 'alert';
-  href: string;
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hour${hrs > 1 ? 's' : ''} ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days} day${days > 1 ? 's' : ''} ago`;
 }
 
-const mockNotifications: Notification[] = [
-  {
-    id: 'notif-001',
-    title: 'Quotation Ready',
-    description: 'Quotation for BK-REQ-2024-0312 is ready for your review.',
-    time: '10 min ago',
-    read: false,
-    type: 'request',
-    href: '/client-dashboard/requests/req-001',
-  },
-  {
-    id: 'notif-002',
-    title: 'Payment Verified',
-    description: 'Your payment for order BK-ORD-2024-0287 has been verified.',
-    time: '2 hours ago',
-    read: false,
-    type: 'payment',
-    href: '/client-dashboard/orders/ord-001',
-  },
-  {
-    id: 'notif-003',
-    title: 'Shipment Update',
-    description: 'Order BK-ORD-2024-0268 has shipped from China.',
-    time: '1 day ago',
-    read: false,
-    type: 'order',
-    href: '/client-dashboard/orders/ord-004',
-  },
-  {
-    id: 'notif-004',
-    title: 'Exception Alert',
-    description: 'Item shortage on order BK-ORD-2024-0241. Admin will contact you.',
-    time: '2 days ago',
-    read: true,
-    type: 'alert',
-    href: '/client-dashboard/orders/ord-008',
-  },
-  {
-    id: 'notif-005',
-    title: 'Order Completed',
-    description: 'Order BK-ORD-2024-0248 has been delivered successfully.',
-    time: '3 days ago',
-    read: true,
-    type: 'order',
-    href: '/client-dashboard/orders/ord-007',
-  },
-];
-
-const typeColors: Record<Notification['type'], string> = {
+const typeColors: Record<string, string> = {
   order: 'bg-[#e4eeee] text-[#7a9e9f]',
   payment: 'bg-green-100 text-green-600',
   request: 'bg-[#f0eef8] text-[#5c5470]',
@@ -88,7 +42,8 @@ export default function ClientTopbar({ onMenuOpen }: ClientTopbarProps) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
+  const [notifications, setNotifications] = useState<ApiNotification[]>([]);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const notifRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
 
@@ -96,23 +51,24 @@ export default function ClientTopbar({ onMenuOpen }: ClientTopbarProps) {
   const displayEmail = user?.email ?? '';
   const displayInitials = initialsFromName(displayName);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const unreadCount = notifications.filter((n) => !readIds.has(n.id)).length;
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     if (searchQuery.trim()) router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
   }
 
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('notifications-client');
-      if (stored) {
-        setNotifications(JSON.parse(stored));
-      } else {
-        localStorage.setItem('notifications-client', JSON.stringify(mockNotifications));
-      }
-    } catch {}
+  const fetchNotifs = useCallback(() => {
+    notificationsApi.getNotifications({ limit: 10 })
+      .then(r => setNotifications(r.data.data))
+      .catch(() => {/* silently fail */});
   }, []);
+
+  useEffect(() => {
+    fetchNotifs();
+    const interval = setInterval(fetchNotifs, 30000);
+    return () => clearInterval(interval);
+  }, [fetchNotifs]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -128,15 +84,13 @@ export default function ClientTopbar({ onMenuOpen }: ClientTopbarProps) {
   }, []);
 
   function markAllRead() {
-    const updated = notifications.map((n) => ({ ...n, read: true }));
-    setNotifications(updated);
-    try { localStorage.setItem('notifications-client', JSON.stringify(updated)); } catch {}
+    setReadIds(new Set(notifications.map(n => n.id)));
+    notificationsApi.markAllAsRead().catch(() => {});
   }
 
   function markNotifRead(id: string) {
-    const updated = notifications.map((n) => n.id === id ? { ...n, read: true } : n);
-    setNotifications(updated);
-    try { localStorage.setItem('notifications-client', JSON.stringify(updated)); } catch {}
+    setReadIds(prev => new Set([...prev, id]));
+    notificationsApi.markAsRead(id).catch(() => {});
   }
 
   return (
@@ -203,9 +157,8 @@ export default function ClientTopbar({ onMenuOpen }: ClientTopbarProps) {
                 setNotifOpen(opening);
                 setProfileOpen(false);
                 if (opening) {
-                  const updated = notifications.map(n => ({ ...n, read: true }));
-                  setNotifications(updated);
-                  try { localStorage.setItem('notifications-client', JSON.stringify(updated)); } catch {}
+                  setReadIds(new Set(notifications.map(n => n.id)));
+                  notificationsApi.markAllAsRead().catch(() => {});
                 }
               }}
               className="relative w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
@@ -236,35 +189,41 @@ export default function ClientTopbar({ onMenuOpen }: ClientTopbarProps) {
                   )}
                 </div>
                 <div className="max-h-96 overflow-y-auto divide-y divide-border notification-scroll">
-                  {notifications.map((notif) => (
-                    <div
-                      key={notif.id}
-                      onClick={() => { markNotifRead(notif.id); setNotifOpen(false); router.push(notif.href); }}
-                      className={`px-4 py-3 flex gap-3 hover:bg-muted transition-colors cursor-pointer ${
-                        !notif.read ? 'bg-[#faf9f7]' : ''
-                      }`}
-                    >
+                  {notifications.length === 0 ? (
+                    <p className="px-4 py-4 text-sm text-muted-foreground">No notifications yet</p>
+                  ) : notifications.map((notif) => {
+                    const isUnread = !readIds.has(notif.id);
+                    const href = notif.relatedType === 'ORDER'
+                      ? `/client-dashboard/orders/${notif.relatedId}`
+                      : notif.relatedType === 'INQUIRY'
+                      ? `/client-dashboard/requests/${notif.relatedId}`
+                      : '/client-dashboard';
+                    return (
                       <div
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-xs font-700 ${typeColors[notif.type]}`}
+                        key={notif.id}
+                        onClick={() => { markNotifRead(notif.id); setNotifOpen(false); router.push(href); }}
+                        className={`px-4 py-3 flex gap-3 hover:bg-muted transition-colors cursor-pointer ${isUnread ? 'bg-[#faf9f7]' : ''}`}
                       >
-                        {notif.type === 'order' ? 'OR' : notif.type === 'payment' ? 'PM' : notif.type === 'alert' ? '!' : 'RQ'}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className={`text-sm ${!notif.read ? 'font-600 text-foreground' : 'font-500 text-foreground'}`}>
-                            {notif.title}
-                          </p>
-                          {!notif.read && (
-                            <span className="w-2 h-2 rounded-full bg-[#5c5470] flex-shrink-0 mt-1" aria-hidden="true" />
-                          )}
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-xs font-700 ${typeColors[notif.type] ?? typeColors.order}`}>
+                          {notif.type === 'order' ? 'OR' : notif.type === 'alert' ? '!' : 'RQ'}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed truncate">
-                          {notif.description}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-1">{notif.time}</p>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className={`text-sm ${isUnread ? 'font-600 text-foreground' : 'font-500 text-foreground'}`}>
+                              {notif.title}
+                            </p>
+                            {isUnread && (
+                              <span className="w-2 h-2 rounded-full bg-[#5c5470] flex-shrink-0 mt-1" aria-hidden="true" />
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed truncate">
+                            {notif.message}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground mt-1">{timeAgo(notif.createdAt)}</p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div className="px-4 py-2.5 border-t border-border">
                   <button

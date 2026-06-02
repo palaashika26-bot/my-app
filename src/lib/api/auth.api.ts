@@ -1,5 +1,12 @@
 import axiosClient from './axiosClient';
-import type { ApiResponse, ApiUser, AuthResponse, LoginPayload, RegisterPayload } from '../types/api.types';
+import type {
+  ApiResponse,
+  ApiUser,
+  AuthResponse,
+  LoginPayload,
+  RegisterPayload,
+  RegisterClientPayload,
+} from '../types/api.types';
 
 export const authApi = {
   login: (data: LoginPayload) =>
@@ -7,6 +14,12 @@ export const authApi = {
 
   register: (data: RegisterPayload) =>
     axiosClient.post<ApiResponse<{ user: ApiUser }>>('/auth/register', data),
+
+  registerClient: (data: RegisterClientPayload) =>
+    axiosClient.post<ApiResponse<null>>('/auth/register/client', data),
+
+  verifyEmail: (token: string) =>
+    axiosClient.get<ApiResponse<null>>(`/auth/verify-email?token=${token}`),
 
   logout: () =>
     axiosClient.post<ApiResponse<null>>('/auth/logout'),

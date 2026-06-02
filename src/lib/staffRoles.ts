@@ -129,8 +129,19 @@ export function getStaffAccessDeniedRedirect(
   perms: EffectivePermissions,
   staffRoleId?: StaffRoleId | null
 ): string | null {
-  if (perms.isFullAdmin || !pathname?.startsWith('/admin')) return null;
+  if (!pathname) return null;
+
+  // Cross-portal protection: wrong role trying to access a staff portal
+  if (pathname.startsWith('/staff/warehouse') && staffRoleId === 'sourcing-logistics') {
+    return '/staff/sourcing';
+  }
+  if (pathname.startsWith('/staff/sourcing') && staffRoleId === 'warehouse-qc') {
+    return '/staff/warehouse';
+  }
+
+  if (perms.isFullAdmin || !pathname.startsWith('/admin')) return null;
   if (staffRoleId === 'warehouse-qc') return '/staff/warehouse';
+  if (staffRoleId === 'sourcing-logistics') return '/staff/sourcing';
   if (pathname.startsWith('/admin/users')) return '/admin';
   if (pathname.startsWith('/admin/settings')) return '/admin';
   if (pathname.startsWith('/admin/staff')) return '/admin';

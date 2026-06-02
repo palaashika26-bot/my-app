@@ -1,16 +1,20 @@
 ﻿'use client';
 import React, { useState, use, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import AdminLayout from '@/components/AdminLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { mockRequests, mockClients } from '@/lib/adminMockData';
 import { useToast } from '@/components/ui/Toast';
 import { ArrowLeft, Camera, Check, X, MessageSquare, Send, Package, Pencil, Upload, ImageIcon } from 'lucide-react';
-import { notFound } from 'next/navigation';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import type { RequestLineItem, PerProductQuoteStatus } from '@/lib/mockData';
 import { defaultLineItemsFromRequest, loadRfqLineItems, persistRfqLineItems } from '@/lib/rfqLineItems';
 import { loadPaymentProof, savePaymentConfirmed, loadPaymentConfirmed } from '@/lib/paymentStore';
+import { requestsApi } from '@/lib/api/requests.api';
+import { paymentsApi } from '@/lib/api/payments.api';
 
 const CNY_TO_INR = 11.5;
 const DEFAULT_LOGISTICS_NOTE = 'This is an approx weight, exact will be given upon final repackaging. To be paid when in India.';
@@ -31,13 +35,37 @@ function StatusPill({ status, revisionRequested }: { status: PerProductQuoteStat
   return <span className={`${base} ${map[status]}`}>{statusLabel(status, revisionRequested)}</span>;
 }
 
+function ClientResponseBadge({ response }: { response: string }) {
+  const map: Record<string, string> = {
+    ACCEPTED: 'bg-emerald-100 text-emerald-800',
+    REJECTED: 'bg-red-100 text-red-800',
+    COUNTERED: 'bg-amber-100 text-amber-800',
+  };
+  const label: Record<string, string> = { ACCEPTED: 'Accepted', REJECTED: 'Rejected', COUNTERED: 'Countered' };
+  return (
+    <span className={`text-[10px] font-600 px-2 py-0.5 rounded ${map[response] ?? 'bg-muted text-muted-foreground'}`}>
+      {label[response] ?? response}
+    </span>
+  );
+}
+
+function mapItemStatus(apiStatus: string): PerProductQuoteStatus {
+  if (apiStatus === 'QUOTED') return 'Quoted';
+  if (apiStatus === 'ACCEPTED') return 'Accepted';
+  if (apiStatus === 'REJECTED') return 'Rejected';
+  return 'Pending';
+}
+
 export default function AdminRequestDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { addToast } = useToast();
+  const router = useRouter();
   const req = mockRequests.find(r => r.id === id);
   const perms = useAdminPermissions();
   const qs = perms.quotationScope;
 
+  const [apiRequest, setApiRequest] = useState<any>(null);
+  const [apiLoading, setApiLoading] = useState(true);
   const [lineItems, setLineItems] = useState<RequestLineItem[]>(() =>
     req ? defaultLineItemsFromRequest(req) : []
   );
@@ -46,10 +74,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
   const [draftRmb, setDraftRmb] = useState('');
   const [msg, setMsg] = useState('');
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  const [thread, setThread] = useState([
-    { by: 'client', text: 'Hi team, please source these items urgently. Sample required first.', t: '2 hours ago' },
-    { by: 'admin', text: 'On it — sample available in 5–7 days. We will share supplier shortlist shortly.', t: '1 hour ago' },
-  ]);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [paymentProof, setPaymentProof] = useState<string | null>(null);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [logisticsWeight, setLogisticsWeight] = useState('');
@@ -57,12 +82,132 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
   const [logisticsPricePerKg, setLogisticsPricePerKg] = useState('');
   const [logisticsNote, setLogisticsNote] = useState(DEFAULT_LOGISTICS_NOTE);
   const [logisticsSaved, setLogisticsSaved] = useState(false);
+  const [counterResponseInputs, setCounterResponseInputs] = useState<Record<string, string>>({});
+  const [actionLoading, setActionLoading] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [advanceAmountINR, setAdvanceAmountINR] = useState('');
+  const [quotationSent, setQuotationSent] = useState(false);
   const lastMsgSent = useRef(0);
+  // Chat state
+  const [chatMessages, setChatMessages] = useState<{ id: string; senderRole: string; text: string; createdAt: string }[]>([]);
+  const [lastMsgSeen, setLastMsgSeen] = useState(() => Date.now().toString());
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  // Payment verification state
+  const [requestPayments, setRequestPayments] = useState<any[]>([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [rejectPaymentId, setRejectPaymentId] = useState<string | null>(null);
+  const [paymentRejectReason, setPaymentRejectReason] = useState('');
+  const [lightboxProof, setLightboxProof] = useState<string | null>(null);
+
+  // Lock body scroll when lightbox is open
+  useEffect(() => {
+    if (lightboxUrl || lightboxProof) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [lightboxUrl, lightboxProof]);
+
+  function applyApiItems(apiReq: any) {
+    const apiLineItems: RequestLineItem[] = (apiReq.items ?? []).map((item: any) => ({
+      id: item.id,
+      name: item.productName,
+      specs: item.productDescription ?? '',
+      quantity: item.quantity,
+      rmbCostPerUnit: item.quotedRMB ? parseFloat(item.quotedRMB) : 0,
+      unitPriceCny: item.quotedRMB ? parseFloat(item.quotedRMB) : undefined,
+      unitPriceInr: item.quotedINR ? parseFloat(item.quotedINR) : undefined,
+      status: mapItemStatus(item.status),
+      revisionRequested: false,
+      imageUrl: item.imageUrl ?? undefined,
+      referenceImageUrls: item.referenceImageUrls ?? [],
+      targetPriceINR: item.targetPriceINR ? parseFloat(item.targetPriceINR) : undefined,
+      clientResponse: item.clientResponse ?? undefined,
+      counterPriceINR: item.counterPriceINR ? parseFloat(item.counterPriceINR) : undefined,
+      counterNote: item.counterNote ?? undefined,
+    }));
+    setLineItems(apiLineItems);
+  }
+
+  function fetchRequest() {
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Request timed out')), 15000));
+    Promise.race([
+      requestsApi.getRequestById(id),
+      timeout,
+    ])
+      .then((r: any) => {
+        const apiReq = r.data?.data;
+        if (apiReq) {
+          setApiRequest(apiReq);
+          applyApiItems(apiReq);
+          if (['ACCEPTED', 'PARTIALLY_ACCEPTED', 'CONVERTED'].includes(apiReq.status)) {
+            fetchRequestPayments();
+          }
+        } else {
+          const row = mockRequests.find(r => r.id === id);
+          if (row) setLineItems(loadRfqLineItems(row));
+        }
+      })
+      .catch(() => {
+        const row = mockRequests.find(r => r.id === id);
+        if (row) setLineItems(loadRfqLineItems(row));
+      })
+      .finally(() => setApiLoading(false));
+  }
+
+  function fetchRequestPayments() {
+    setPaymentsLoading(true);
+    paymentsApi.getRequestPayments(id)
+      .then(r => {
+        if (r.data?.data) setRequestPayments(r.data.data);
+      })
+      .catch(() => {})
+      .finally(() => setPaymentsLoading(false));
+  }
+
+  async function handleVerifyPayment(paymentId: string) {
+    setVerifyingId(paymentId);
+    try {
+      const result = await paymentsApi.verifyRequestPayment(paymentId, 'VERIFY');
+      const order = result?.data?.data?.order;
+      addToast({ type: 'success', title: 'Payment verified!', description: `Order ${order?.orderNumber ?? ''} created successfully.` });
+      if (order?.id) {
+        router.push(`/admin/orders/${order.id}`);
+      } else {
+        fetchRequest();
+      }
+    } catch (err: any) {
+      addToast({ type: 'error', title: 'Failed to verify', description: err?.response?.data?.message || 'Please try again.' });
+    } finally {
+      setVerifyingId(null);
+    }
+  }
+
+  async function handleRejectPayment() {
+    if (!rejectPaymentId) return;
+    if (!paymentRejectReason.trim()) {
+      addToast({ type: 'warning', title: 'Reason required', description: 'Please enter a rejection reason.' });
+      return;
+    }
+    setVerifyingId(rejectPaymentId);
+    try {
+      await paymentsApi.verifyRequestPayment(rejectPaymentId, 'REJECT', paymentRejectReason.trim());
+      addToast({ type: 'warning', title: 'Payment rejected', description: 'Client has been notified.' });
+      setRejectPaymentId(null);
+      setPaymentRejectReason('');
+      fetchRequestPayments();
+    } catch (err: any) {
+      addToast({ type: 'error', title: 'Failed to reject', description: err?.response?.data?.message || 'Please try again.' });
+    } finally {
+      setVerifyingId(null);
+    }
+  }
 
   useEffect(() => {
-    const row = mockRequests.find(r => r.id === id);
-    if (!row) return;
-    setLineItems(loadRfqLineItems(row));
+    fetchRequest();
     setPaymentProof(loadPaymentProof(id));
     setPaymentConfirmed(loadPaymentConfirmed(id));
     const savedLogistics = localStorage.getItem(`logistics-estimate-${id}`);
@@ -78,8 +223,10 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
     }
   }, [id]);
 
-  if (!req) return notFound();
-  const client = mockClients.find(c => c.name === req.client);
+  const client = mockClients.find(c => c.name === req?.client);
+  const displayBudget = apiRequest?.totalBudgetINR
+    ? `₹${Number(apiRequest.totalBudgetINR).toLocaleString('en-IN')}`
+    : (req?.totalBudget ?? '—');
 
   function beginEdit(line: RequestLineItem) {
     setEditingLineId(line.id);
@@ -127,18 +274,35 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
     });
   }
 
-  function sendQuotationsToClient() {
+  async function sendQuotationsToClient() {
     if (qs !== 'full') return;
     const quoted = lineItems.filter(l => l.status === 'Quoted');
     if (!quoted.length) {
       addToast({ type: 'warning', title: 'Nothing to send', description: 'Save a unit price in CNY for at least one product first.' });
       return;
     }
-    addToast({
-      type: 'success',
-      title: 'Quotations sent',
-      description: `Per-product quotes (${quoted.length} line${quoted.length === 1 ? '' : 's'}) shared with ${client?.email ?? 'the client'}.`,
-    });
+    if (apiRequest) {
+      setActionLoading(true);
+      try {
+        const advAmt = parseFloat(advanceAmountINR.replace(/,/g, ''));
+        await Promise.race([
+          requestsApi.sendQuotation(id, {
+            items: quoted.map(l => ({ id: l.id, quotedRMB: l.rmbCostPerUnit || (l.unitPriceCny ?? 0) })),
+            advanceAmountINR: Number.isFinite(advAmt) && advAmt > 0 ? advAmt : undefined,
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Server is not responding. Please try again.')), 25000)),
+        ]);
+        addToast({ type: 'success', title: 'Quotation sent', description: `${quoted.length} item${quoted.length === 1 ? '' : 's'} quoted to client.` });
+        setQuotationSent(true);
+        fetchRequest();
+      } catch (err: any) {
+        addToast({ type: 'error', title: 'Failed to send quotation', description: err?.message || err?.response?.data?.message || 'Please try again.' });
+      } finally {
+        setActionLoading(false);
+      }
+    } else {
+      addToast({ type: 'success', title: 'Quotations sent', description: `Per-product quotes (${quoted.length} line${quoted.length === 1 ? '' : 's'}) shared with ${client?.email ?? 'the client'}.` });
+    }
   }
 
   function handleImageUpload(lineId: string, e: React.ChangeEvent<HTMLInputElement>) {
@@ -168,11 +332,81 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
     e.target.value = '';
   }
 
-  function approve() {
-    addToast({ type: 'success', title: 'Request approved', description: 'Converted to order.' });
+  async function handleRespondToCounter(lineId: string) {
+    const raw = counterResponseInputs[lineId] ?? '';
+    const n = parseFloat(raw.replace(/,/g, ''));
+    if (!Number.isFinite(n) || n <= 0) {
+      addToast({ type: 'warning', title: 'Enter a valid price' });
+      return;
+    }
+    setActionLoading(true);
+    try {
+      await requestsApi.respondToCounter(id, [{ id: lineId, newQuotedRMB: n }]);
+      addToast({ type: 'success', title: 'Response sent', description: 'Client will be notified of the updated price.' });
+      setCounterResponseInputs(prev => { const next = { ...prev }; delete next[lineId]; return next; });
+      // Refresh
+      const r = await requestsApi.getRequestById(id);
+      const apiReq = r.data?.data;
+      if (apiReq) {
+        setApiRequest(apiReq);
+        applyApiItems(apiReq);
+      }
+    } catch (err: any) {
+      addToast({ type: 'error', title: 'Failed to respond', description: err?.response?.data?.message || 'Please try again.' });
+    } finally {
+      setActionLoading(false);
+    }
   }
-  function reject() {
-    addToast({ type: 'warning', title: 'Request rejected', description: 'Client has been notified.' });
+
+  async function handleAcceptCounter(lineId: string, counterPriceINR: number) {
+    const newRMB = counterPriceINR / CNY_TO_INR;
+    setActionLoading(true);
+    try {
+      await requestsApi.respondToCounter(id, [{ id: lineId, newQuotedRMB: newRMB }]);
+      addToast({ type: 'success', title: 'Counter accepted', description: 'Client will be notified of the accepted price.' });
+      fetchRequest();
+    } catch (err: any) {
+      addToast({ type: 'error', title: 'Failed to accept counter', description: err?.response?.data?.message || 'Please try again.' });
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function approve() {
+    if (!apiRequest) {
+      addToast({ type: 'success', title: 'Request approved', description: 'Converted to order.' });
+      return;
+    }
+    if (!window.confirm('Approve this request and create an order?')) return;
+    setActionLoading(true);
+    try {
+      await requestsApi.approveRequest(id);
+      addToast({ type: 'success', title: 'Request approved!', description: 'Order created automatically.' });
+      router.push('/admin/requests');
+    } catch (err: any) {
+      addToast({ type: 'error', title: 'Failed to approve', description: err?.response?.data?.message || 'Please try again.' });
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleReject() {
+    if (!apiRequest) {
+      addToast({ type: 'warning', title: 'Request rejected', description: 'Client has been notified.' });
+      setShowRejectModal(false);
+      return;
+    }
+    setActionLoading(true);
+    try {
+      await requestsApi.rejectRequest(id, rejectReason || undefined);
+      addToast({ type: 'warning', title: 'Request rejected', description: 'Client has been notified.' });
+      setShowRejectModal(false);
+      router.push('/admin/requests');
+    } catch (err: any) {
+      addToast({ type: 'error', title: 'Failed to reject', description: err?.response?.data?.message || 'Please try again.' });
+    } finally {
+      setActionLoading(false);
+    }
   }
   function moreInfo() {
     addToast({ type: 'info', title: 'Info requested from client' });
@@ -192,37 +426,188 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
     setPaymentConfirmed(true);
     addToast({ type: 'success', title: 'Payment confirmed', description: 'Order status updated to Payment Confirmed.' });
   }
-  function postMsg() {
+  // ── Chat functions ────────────────────────────────────────────────────────────
+  async function sendChatMsg() {
     const now = Date.now();
     if (now - lastMsgSent.current < 2000) { addToast({ type: 'warning', title: 'Please wait before sending again.' }); return; }
     const sanitized = msg.replace(/[<>"']/g, '').trim().slice(0, 2000);
-    if (!sanitized) return;
+    if (!sanitized || !apiRequest) return;
     lastMsgSent.current = now;
-    setThread(t => [...t, { by: 'admin', text: sanitized, t: 'just now' }]);
     setMsg('');
+    try {
+      await requestsApi.sendMessage(id, sanitized);
+      await fetchMessages();
+    } catch { addToast({ type: 'error', title: 'Failed to send' }); }
   }
 
+  async function fetchMessages() {
+    try {
+      const res = await requestsApi.getMessages(id, lastMsgSeen);
+      const newMsgs = res.data?.data ?? [];
+      if (newMsgs.length > 0) {
+        setChatMessages(prev => {
+          const existing = new Set(prev.map(m => m.id));
+          const unique = newMsgs.filter((m: any) => !existing.has(m.id));
+          if (unique.length > 0) {
+            // Notify on incoming client messages
+            const clientMsgs = unique.filter((m: any) => m.senderRole === 'CLIENT');
+            if (clientMsgs.length > 0 && prev.length > 0) {
+              addToast({ type: 'info', title: `New message${clientMsgs.length > 1 ? 's' : ''} from client`, description: clientMsgs[clientMsgs.length - 1].text.slice(0, 100) });
+            }
+          }
+          return unique.length > 0 ? [...prev, ...unique] : prev;
+        });
+        const last = newMsgs[newMsgs.length - 1];
+        setLastMsgSeen(last.createdAt);
+      }
+    } catch { /* silent — chat is non-critical */ }
+  }
+
+  // Scroll chat to bottom on new messages
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
+
+  // Poll messages every 5 seconds when the request is loaded
+  useEffect(() => {
+    if (!apiRequest) return;
+    fetchMessages();
+    const interval = setInterval(fetchMessages, 15000);
+    return () => clearInterval(interval);
+  }, [apiRequest, id]);
+
   const showFullQuoteCols = qs === 'full';
+  const displayStatus: string = apiRequest?.status ?? (req?.status as string) ?? 'SUBMITTED';
+  const counteredCount = lineItems.filter(l => l.clientResponse === 'COUNTERED').length;
+  const convertedOrderNumber: string | null = (() => {
+    if (displayStatus !== 'CONVERTED') return null;
+    const act = (apiRequest?.activities ?? []).find((a: any) =>
+      typeof a.action === 'string' && a.action.includes('Request approved — order')
+    );
+    if (!act) return null;
+    const match = (act.action as string).match(/order (\S+) created/);
+    return match ? match[1] : null;
+  })();
 
   return (
     <AdminLayout>
       {/* Page wrapper: full width, no horizontal overflow, no side gaps */}
       <div className="w-full max-w-full overflow-x-hidden pb-20">
 
+        {/* Lightbox — portal to body to avoid scroll jumps */}
+        {typeof window === 'object' && lightboxUrl && createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"
+            onClick={() => setLightboxUrl(null)}
+          >
+            <div className="relative max-w-[90vw] max-h-[90vh]"
+                 onClick={e => e.stopPropagation()}>
+              <button
+                onClick={() => setLightboxUrl(null)}
+                className="absolute top-2 right-2 z-10 bg-black/60 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold hover:bg-black/80"
+              >
+                ✕
+              </button>
+              <img
+                src={lightboxUrl}
+                alt="Enlarged image"
+                className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+              />
+            </div>
+          </div>,
+          document.body
+        )}
+
+        {/* Reject Request Modal */}
+        {showRejectModal && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+            <div className="bg-card rounded-xl border border-border shadow-xl p-6 w-full max-w-md">
+              <h3 className="font-700 text-lg mb-3">Reject Request</h3>
+              <textarea
+                value={rejectReason}
+                onChange={e => setRejectReason(e.target.value)}
+                className="input-field w-full mb-4"
+                rows={3}
+                placeholder="Reason for rejection (optional — will be sent to client)"
+              />
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setShowRejectModal(false)} className="btn-secondary px-4 py-2 text-sm">Cancel</button>
+                <button onClick={handleReject} disabled={actionLoading} className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-600 hover:bg-red-600 disabled:opacity-50">
+                  {actionLoading ? 'Rejecting...' : 'Confirm Reject'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Reject Payment Modal */}
+        {rejectPaymentId && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+            <div className="bg-card rounded-xl border border-border shadow-xl p-6 w-full max-w-md">
+              <h3 className="font-700 text-lg mb-3">Reject Payment Proof</h3>
+              <p className="text-sm text-muted-foreground mb-3">The client will be notified and asked to resubmit.</p>
+              <textarea
+                value={paymentRejectReason}
+                onChange={e => setPaymentRejectReason(e.target.value)}
+                className="input-field w-full mb-4"
+                rows={3}
+                placeholder="Reason (required — will be sent to client)"
+              />
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => { setRejectPaymentId(null); setPaymentRejectReason(''); }} className="btn-secondary px-4 py-2 text-sm">Cancel</button>
+                <button onClick={handleRejectPayment} disabled={!!verifyingId} className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-600 hover:bg-red-600 disabled:opacity-50">
+                  {verifyingId ? 'Rejecting...' : 'Confirm Reject'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Proof Image Lightbox — portal to body */}
+        {typeof window === 'object' && lightboxProof && createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"
+            onClick={() => setLightboxProof(null)}
+          >
+            <div className="relative max-w-[90vw] max-h-[90vh]"
+                 onClick={e => e.stopPropagation()}>
+              <button
+                onClick={() => setLightboxProof(null)}
+                className="absolute top-2 right-2 z-10 bg-black/60 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold hover:bg-black/80"
+              >
+                ✕
+              </button>
+              <img
+                src={lightboxProof}
+                alt="Payment Proof"
+                className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+              />
+            </div>
+          </div>,
+          document.body
+        )}
+
         <Link href="/admin/requests" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4">
           <ArrowLeft className="w-4 h-4" /> Back
         </Link>
 
+        {counteredCount > 0 && (
+          <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex items-center gap-3 mb-4">
+            <span className="text-xl">⚠️</span>
+            <p className="text-sm font-600 text-amber-800">
+              {counteredCount} item{counteredCount > 1 ? 's' : ''} have counter offer{counteredCount > 1 ? 's' : ''} from the client — please respond
+            </p>
+          </div>
+        )}
+
         {/* Request header card */}
         <div className="bg-card rounded-xl border border-border shadow-card p-4 mb-4">
           <div className="flex flex-wrap items-center gap-3 mb-2">
-            {req.source === 'photo_scan' && <Camera className="w-4 h-4 text-[#4A3B52]" />}
-            <span className="font-tabular font-700 text-lg">{req.requestId}</span>
-            <StatusBadge status={paymentConfirmed ? ('Payment Confirmed' as never) : (req.status as never)} />
+            {req?.source === 'photo_scan' && <Camera className="w-4 h-4 text-[#4A3B52]" />}
+            <span className="font-tabular font-700 text-lg">{apiRequest?.requestNumber ?? req?.requestId}</span>
+            <StatusBadge status={paymentConfirmed ? ('Payment Confirmed' as never) : ((apiRequest?.status ?? req?.status) as never)} />
           </div>
           <p className="text-xs text-muted-foreground break-words">
-            {req.client} • {client?.email} • {req.date}
-            {perms.canSeeRequestBudget ? ` • Budget ${req.totalBudget}` : ''}
+            {apiRequest?.client?.companyName ?? req?.client} • {apiRequest?.client?.user?.email ?? client?.email} • {apiRequest ? new Date(apiRequest.createdAt).toLocaleDateString('en-IN') : req?.date}
+            {perms.canSeeRequestBudget ? ` • Budget ${displayBudget}` : ''}
           </p>
         </div>
 
@@ -230,7 +615,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
           {/* Main column */}
           <div className="lg:col-span-2 space-y-4 min-w-0">
 
-            {req.imageAttached && (
+            {req?.imageAttached && (
               <div className="bg-card rounded-xl border border-border shadow-card p-4">
                 <h3 className="font-700 mb-3">Photo Submission</h3>
                 <div className="flex gap-3">
@@ -263,35 +648,52 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                     : null;
                   const editing = editingLineId === line.id;
                   return (
-                    <div key={line.id} className="border border-border rounded-xl p-3 space-y-3">
+                    <div key={line.id} className={`border rounded-xl p-3 space-y-3 ${line.clientResponse === 'COUNTERED' ? 'border-amber-400 bg-amber-50' : 'border-border'}`}>
                       {/* Product header */}
                       <div className="flex gap-3 items-start">
-                        <div className="flex-shrink-0 flex flex-col items-center gap-1">
-                          {line.imageUrl ? (
-                            <img src={line.imageUrl} alt={line.name} className="w-12 h-12 rounded-lg object-cover border border-border" />
-                          ) : (
-                            <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center border border-border">
-                              <ImageIcon className="w-5 h-5 text-muted-foreground" />
+                        <div className="flex-shrink-0 flex flex-col gap-2 min-w-[56px]">
+                          {/* Client reference images */}
+                          {line.referenceImageUrls && line.referenceImageUrls.length > 0 && (
+                            <div>
+                              <p className="text-[10px] text-muted-foreground font-500 mb-1">Client ref:</p>
+                              <div className="flex gap-1 flex-wrap">
+                                {line.referenceImageUrls.map((url, idx) => (
+                                  <img key={idx} src={url} alt={`ref-${idx}`} onClick={() => setLightboxUrl(url)}
+                                    className="w-10 h-10 rounded-lg object-cover border border-border cursor-pointer hover:opacity-80" />
+                                ))}
+                              </div>
                             </div>
                           )}
-                          {showFullQuoteCols && (
-                            <>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                ref={el => { fileInputRefs.current[line.id] = el; }}
-                                onChange={e => handleImageUpload(line.id, e)}
-                                className="hidden"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => fileInputRefs.current[line.id]?.click()}
-                                className="text-[10px] text-muted-foreground border border-border rounded px-1 py-0.5 flex items-center gap-0.5 w-full justify-center"
-                              >
-                                <Upload className="w-2.5 h-2.5" /> Upload
-                              </button>
-                            </>
-                          )}
+                          {/* Supplier image */}
+                          <div>
+                            <p className="text-[10px] text-muted-foreground font-500 mb-1">Supplier:</p>
+                            {line.imageUrl ? (
+                              <img src={line.imageUrl} alt={line.name} onClick={() => setLightboxUrl(line.imageUrl!)}
+                                className="w-10 h-10 rounded-lg object-cover border border-border cursor-pointer hover:opacity-80" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center border border-border">
+                                <ImageIcon className="w-5 h-5 text-muted-foreground" />
+                              </div>
+                            )}
+                            {showFullQuoteCols && (
+                              <>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  ref={el => { fileInputRefs.current[line.id] = el; }}
+                                  onChange={e => handleImageUpload(line.id, e)}
+                                  className="hidden"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => fileInputRefs.current[line.id]?.click()}
+                                  className="text-[10px] text-muted-foreground border border-border rounded px-1 py-0.5 flex items-center gap-0.5 w-full justify-center mt-1"
+                                >
+                                  <Upload className="w-2.5 h-2.5" /> Upload
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-500 text-sm break-words">{line.name}</p>
@@ -304,6 +706,45 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                             <p className="text-[10px] text-muted-foreground mt-0.5">
                               Client suggested ₹{line.clientProposedInr.toLocaleString('en-IN')}/unit
                             </p>
+                          )}
+                          {line.clientResponse && (
+                            <div className="mt-1.5 flex flex-col gap-1">
+                              {line.clientResponse === 'COUNTERED' && (
+                                <div className="border border-amber-300 rounded-lg p-2.5 bg-white space-y-2 mt-1">
+                                  <p className="text-xs font-700 text-amber-800">💬 Client Counter Offer</p>
+                                  {line.counterPriceINR != null && (
+                                    <p className="text-sm font-700 text-amber-700">₹{line.counterPriceINR.toLocaleString('en-IN')}/unit</p>
+                                  )}
+                                  {line.counterNote && <p className="text-[10px] text-muted-foreground">Note: {line.counterNote}</p>}
+                                  {line.rmbCostPerUnit > 0 && (
+                                    <p className="text-[10px] text-muted-foreground">Your quoted: ¥{line.rmbCostPerUnit}{line.unitPriceInr != null ? ` = ₹${line.unitPriceInr.toLocaleString('en-IN')}` : ''}</p>
+                                  )}
+                                  <div className="pt-1 border-t border-amber-200 space-y-1.5">
+                                    <p className="text-[10px] font-600 text-muted-foreground">Respond:</p>
+                                    {line.counterPriceINR != null && (
+                                      <button
+                                        onClick={() => handleAcceptCounter(line.id, line.counterPriceINR!)}
+                                        disabled={actionLoading}
+                                        className="w-full py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-600 hover:bg-emerald-600 disabled:opacity-50"
+                                      >
+                                        Accept Counter
+                                      </button>
+                                    )}
+                                    <div className="flex gap-1">
+                                      <input
+                                        type="number" min={0} placeholder="New ¥ price"
+                                        className="input-field py-1 text-xs flex-1"
+                                        value={counterResponseInputs[line.id] ?? ''}
+                                        onChange={e => setCounterResponseInputs(p => ({ ...p, [line.id]: e.target.value }))}
+                                      />
+                                      <button onClick={() => handleRespondToCounter(line.id)} disabled={actionLoading} className="btn-primary px-2 py-1 text-xs">
+                                        Offer New Price
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>
@@ -411,6 +852,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                       <th className="text-right font-600 w-16">Qty</th>
                       {showFullQuoteCols && (
                         <>
+                          <th className="text-right font-600 w-32 text-blue-700">Client Target</th>
                           <th className="text-right font-600 w-28">RMB / unit</th>
                           <th className="text-right font-600 w-36">Unit ¥ (CNY)</th>
                           <th className="text-right font-600 w-28 text-[#4A3B52]">BK Margin ₹</th>
@@ -427,44 +869,73 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                         line.unitPriceCny != null ? Math.round((line.unitPriceCny - line.rmbCostPerUnit) * CNY_TO_INR) : null;
                       const editing = editingLineId === line.id;
                       return (
-                        <tr key={line.id}>
-                          <td className="py-3 align-middle">
-                            <div className="flex flex-col items-center gap-1">
-                              {line.imageUrl ? (
-                                <img src={line.imageUrl} alt={line.name} className="w-10 h-10 rounded-lg object-cover border border-border" />
-                              ) : (
-                                <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center border border-border">
-                                  <ImageIcon className="w-5 h-5 text-muted-foreground" />
+                        <React.Fragment key={line.id}>
+                        <tr className={line.clientResponse === 'COUNTERED' ? 'bg-amber-50' : ''}>
+                          <td className="py-3 align-top w-28">
+                            <div className="flex flex-col gap-2.5">
+                              {/* Client reference images */}
+                              {line.referenceImageUrls && line.referenceImageUrls.length > 0 && (
+                                <div>
+                                  <p className="text-[10px] text-muted-foreground font-500 mb-1">Client reference:</p>
+                                  <div className="flex gap-1 flex-wrap">
+                                    {line.referenceImageUrls.map((url, idx) => (
+                                      <img key={idx} src={url} alt={`ref-${idx}`} onClick={() => setLightboxUrl(url)}
+                                        className="w-12 h-12 rounded-lg object-cover border border-border cursor-pointer hover:opacity-80" />
+                                    ))}
+                                  </div>
                                 </div>
                               )}
-                              {showFullQuoteCols && (
-                                <>
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    ref={el => { fileInputRefs.current[line.id] = el; }}
-                                    onChange={e => handleImageUpload(line.id, e)}
-                                    className="hidden"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => fileInputRefs.current[line.id]?.click()}
-                                    className="btn-secondary px-1.5 py-0.5 text-[10px] inline-flex items-center gap-0.5"
-                                    title="Upload product image"
-                                  >
-                                    <Upload className="w-2.5 h-2.5" /> Upload
-                                  </button>
-                                </>
-                              )}
+                              {/* Supplier image */}
+                              <div>
+                                <p className="text-[10px] text-muted-foreground font-500 mb-1">Supplier image:</p>
+                                {line.imageUrl ? (
+                                  <img src={line.imageUrl} alt={line.name} onClick={() => setLightboxUrl(line.imageUrl!)}
+                                    className="w-12 h-12 rounded-lg object-cover border border-border cursor-pointer hover:opacity-80" />
+                                ) : (
+                                  <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center border border-border">
+                                    <ImageIcon className="w-5 h-5 text-muted-foreground" />
+                                  </div>
+                                )}
+                                {showFullQuoteCols && (
+                                  <>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      ref={el => { fileInputRefs.current[line.id] = el; }}
+                                      onChange={e => handleImageUpload(line.id, e)}
+                                      className="hidden"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => fileInputRefs.current[line.id]?.click()}
+                                      className="btn-secondary px-1.5 py-0.5 text-[10px] inline-flex items-center gap-0.5 mt-1"
+                                      title="Upload supplier image"
+                                    >
+                                      <Upload className="w-2.5 h-2.5" /> Upload
+                                    </button>
+                                  </>
+                                )}
+                              </div>
                             </div>
                           </td>
-                          <td className="py-3">
+                          <td className="py-3 align-top">
                             <p className="font-500">{line.name}</p>
                             <p className="text-xs text-muted-foreground mt-0.5">{line.specs}</p>
+                            {/* Client response */}
+                            {line.clientResponse && (
+                              <div className="mt-1.5">
+                                <ClientResponseBadge response={line.clientResponse} />
+                              </div>
+                            )}
                           </td>
-                          <td className="text-right font-tabular">{line.quantity}</td>
+                          <td className="text-right font-tabular align-top py-3">{line.quantity}</td>
                           {showFullQuoteCols && (
                             <>
+                              <td className="text-right align-top py-3">
+                                {line.targetPriceINR != null ? (
+                                  <span className="font-tabular text-blue-700 font-500 text-xs">₹{line.targetPriceINR.toLocaleString('en-IN')}</span>
+                                ) : <span className="text-muted-foreground">—</span>}
+                              </td>
                               <td className="text-right align-middle">
                                 {editing ? (
                                   <div className="relative w-full max-w-[6rem] ml-auto">
@@ -517,8 +988,11 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                                 ) : '—'}
                               </td>
                               <td className="pl-3 align-middle">
-                                <div className="flex flex-col gap-0.5">
+                                <div className="flex flex-col gap-1">
                                   <StatusPill status={line.status} revisionRequested={line.revisionRequested} />
+                                  {line.clientResponse === 'COUNTERED' && (
+                                    <span className="text-[10px] font-700 px-2 py-0.5 rounded bg-amber-400 text-white w-fit">COUNTERED</span>
+                                  )}
                                   {line.clientProposedInr != null && (
                                     <span className="text-[10px] text-muted-foreground">
                                       Client suggested ₹{line.clientProposedInr.toLocaleString('en-IN')}/unit
@@ -550,20 +1024,98 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                           )}
                           {!showFullQuoteCols && <td className="pl-3 text-xs text-muted-foreground">{line.specs}</td>}
                         </tr>
+                        {line.clientResponse === 'COUNTERED' && line.counterPriceINR != null && (
+                          <tr className="bg-amber-50">
+                            <td colSpan={showFullQuoteCols ? 9 : 4} className="px-4 pb-4 pt-0">
+                              <div className="border border-amber-300 rounded-xl p-4 bg-white space-y-3">
+                                <p className="text-sm font-700 text-amber-800">💬 CLIENT COUNTER OFFER</p>
+                                <div className="grid sm:grid-cols-2 gap-3">
+                                  <div>
+                                    <p className="text-xs text-muted-foreground">Client's counter price</p>
+                                    <p className="text-base font-700 text-amber-700">₹{line.counterPriceINR.toLocaleString('en-IN')}/unit</p>
+                                    {line.counterNote && <p className="text-xs text-muted-foreground mt-0.5">Note: {line.counterNote}</p>}
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-muted-foreground">Your quoted price</p>
+                                    <p className="text-sm font-600">
+                                      {line.rmbCostPerUnit ? `¥${line.rmbCostPerUnit}` : '—'}
+                                      {line.unitPriceInr != null ? ` = ₹${line.unitPriceInr.toLocaleString('en-IN')}` : ''}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="border-t border-amber-200 pt-3">
+                                  <p className="text-xs font-600 text-muted-foreground mb-2">Respond:</p>
+                                  <div className="flex flex-wrap gap-2 items-center">
+                                    <button
+                                      onClick={() => handleAcceptCounter(line.id, line.counterPriceINR!)}
+                                      disabled={actionLoading}
+                                      className="px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-600 hover:bg-emerald-600 disabled:opacity-50"
+                                    >
+                                      Accept Counter
+                                    </button>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-xs text-muted-foreground">New price ¥</span>
+                                      <input
+                                        type="number" min={0} placeholder="RMB"
+                                        className="input-field py-1 text-xs w-24"
+                                        value={counterResponseInputs[line.id] ?? ''}
+                                        onChange={e => setCounterResponseInputs(p => ({ ...p, [line.id]: e.target.value }))}
+                                      />
+                                      <button
+                                        onClick={() => handleRespondToCounter(line.id)}
+                                        disabled={actionLoading}
+                                        className="px-3 py-1.5 rounded-lg bg-[#4A3B52] text-white text-xs font-600 hover:bg-[#3a2d40] disabled:opacity-50"
+                                      >
+                                        Offer New Price
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        </React.Fragment>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
 
-              {showFullQuoteCols && (
-                <button
-                  type="button"
-                  onClick={sendQuotationsToClient}
-                  className="btn-primary w-full mt-4 py-2.5 text-sm inline-flex items-center justify-center gap-2"
-                >
-                  <Send className="w-4 h-4" /> Send quotations to client
-                </button>
+              {showFullQuoteCols && displayStatus !== 'CONVERTED' && displayStatus !== 'REJECTED' && (
+                <div className="mt-4 space-y-3">
+                  <div>
+                    <label className="text-[10px] uppercase text-muted-foreground font-600 block mb-1">
+                      Advance Amount Required (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={advanceAmountINR}
+                      onChange={e => setAdvanceAmountINR(e.target.value)}
+                      placeholder="Leave blank for flexible payment"
+                      className="input-field w-full text-sm"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={sendQuotationsToClient}
+                    disabled={quotationSent || actionLoading}
+                    className={`w-full py-2.5 text-sm inline-flex items-center justify-center gap-2 rounded-lg transition-colors ${
+                      quotationSent
+                        ? 'bg-emerald-500 text-white'
+                        : 'btn-primary'
+                    } disabled:opacity-60`}
+                  >
+                    {quotationSent ? (
+                      <><Check className="w-4 h-4" /> Quotation Sent Successfully</>
+                    ) : actionLoading ? (
+                      <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Sending quotation...</>
+                    ) : (
+                      <><Send className="w-4 h-4" /> Send quotations to client</>
+                    )}
+                  </button>
+                </div>
               )}
 
               {/* Logistics Estimate */}
@@ -678,32 +1230,35 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
               </div>
             )}
 
-            {/* Conversation */}
+            {/* Conversation — real-time chat */}
             <div className="bg-card rounded-xl border border-border shadow-card p-4">
               <h3 className="font-700 mb-3">Conversation</h3>
               <div className="space-y-3 max-h-60 overflow-y-auto">
-                {thread.map((m, i) => (
-                  <div key={i} className={`flex gap-3 ${m.by === 'admin' ? 'flex-row-reverse' : ''}`}>
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-700 flex-shrink-0 ${m.by === 'admin' ? 'bg-[#5c5470]' : 'bg-[#c17b5c]'}`}
-                    >
-                      {m.by === 'admin' ? 'AS' : 'CL'}
+                {chatMessages.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">No messages yet. Start a conversation with the client.</p>
+                )}
+                {chatMessages.map((m) => (
+                  <div key={m.id} className={`flex gap-3 ${m.senderRole === 'ADMIN' || m.senderRole === 'STAFF' ? 'flex-row-reverse' : ''}`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-700 flex-shrink-0 ${m.senderRole === 'ADMIN' || m.senderRole === 'STAFF' ? 'bg-[#4f6f8f]' : 'bg-[#8f6b4f]'}`}>
+                      {m.senderRole === 'ADMIN' || m.senderRole === 'STAFF' ? 'AS' : 'CL'}
                     </div>
-                    <div className={`flex-1 max-w-[80%] p-3 rounded-lg text-sm break-words ${m.by === 'admin' ? 'bg-[#f0eef8]' : 'bg-muted/50'}`}>
+                    <div className={`flex-1 max-w-[80%] p-3 rounded-lg text-sm break-words ${m.senderRole === 'ADMIN' || m.senderRole === 'STAFF' ? 'bg-blue-50 border border-blue-100' : 'bg-amber-50 border border-amber-100'}`}>
                       <p>{m.text}</p>
-                      <p className="text-[10px] text-muted-foreground mt-1">{m.t}</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">{new Date(m.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
                     </div>
                   </div>
                 ))}
+                <div ref={chatEndRef} />
               </div>
               <div className="flex gap-2 mt-3">
                 <input
                   value={msg}
                   onChange={e => setMsg(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') sendChatMsg(); }}
                   className="input-field flex-1 min-w-0"
                   placeholder="Reply to client..."
                 />
-                <button onClick={postMsg} className="btn-primary px-3 inline-flex items-center gap-1.5 text-sm flex-shrink-0">
+                <button onClick={sendChatMsg} className="btn-primary px-3 inline-flex items-center gap-1.5 text-sm flex-shrink-0">
                   <MessageSquare className="w-3.5 h-3.5" /> Send
                 </button>
               </div>
@@ -718,7 +1273,8 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                 <img
                   src={paymentProof}
                   alt="Client payment proof"
-                  className="w-full rounded-lg border border-border object-contain max-h-48 bg-muted"
+                  onClick={() => setLightboxUrl(paymentProof)}
+                  className="w-full rounded-lg border border-border object-contain max-h-48 bg-muted cursor-pointer hover:opacity-80"
                 />
                 {paymentConfirmed ? (
                   <div className="mt-3 flex items-center gap-2 text-emerald-700 text-sm font-600">
@@ -735,22 +1291,125 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
               </div>
             )}
 
-            {perms.isFullAdmin && (
+            {/* ── Payment Verification Section ── */}
+            {['ACCEPTED', 'PARTIALLY_ACCEPTED'].includes(displayStatus) && perms.isFullAdmin && (
+              <div className="bg-card rounded-xl border border-border shadow-card p-4">
+                <h4 className="font-700 text-sm mb-3 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse inline-block" />
+                  Payment Verification
+                </h4>
+                {paymentsLoading ? (
+                  <p className="text-xs text-muted-foreground">Loading payments…</p>
+                ) : requestPayments.length === 0 ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <p className="text-xs text-amber-800 font-600">Awaiting client payment</p>
+                    <p className="text-xs text-amber-700 mt-0.5">Client has accepted the quotation. Waiting for them to submit payment proof.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {requestPayments.map((pmt: any) => {
+                      const amount = parseFloat(pmt.amountINR || '0');
+                      const isVerifying = verifyingId === pmt.id;
+                      return (
+                        <div key={pmt.id} className="border border-border rounded-lg p-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <p className="text-xs font-600">₹{amount.toLocaleString('en-IN')} — {pmt.type === 'FULL' ? 'Full Payment' : 'Advance'}</p>
+                              <p className="text-[10px] text-muted-foreground">{pmt.submittedAt ? new Date(pmt.submittedAt).toLocaleString('en-IN') : ''}</p>
+                            </div>
+                            <span className={`text-[10px] font-700 px-2 py-0.5 rounded-full ${
+                              pmt.status === 'VERIFIED' ? 'bg-emerald-100 text-emerald-700' :
+                              pmt.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
+                              'bg-amber-100 text-amber-700'
+                            }`}>
+                              {pmt.status}
+                            </span>
+                          </div>
+                          {pmt.proofImageBase64 && (
+                            <button
+                              onClick={() => setLightboxProof(pmt.proofImageBase64)}
+                              className="w-full"
+                            >
+                              <img
+                                src={pmt.proofImageBase64}
+                                alt="Payment proof"
+                                className="w-full max-h-32 object-contain rounded-lg border border-border bg-muted hover:opacity-80 cursor-pointer"
+                              />
+                              <p className="text-[10px] text-muted-foreground mt-1">Click to enlarge</p>
+                            </button>
+                          )}
+                          {pmt.status === 'SUBMITTED' && perms.isFullAdmin && (
+                            <div className="flex gap-2 pt-1">
+                              <button
+                                onClick={() => handleVerifyPayment(pmt.id)}
+                                disabled={!!verifyingId}
+                                className="flex-1 py-2 rounded-lg bg-emerald-500 text-white text-xs font-600 hover:bg-emerald-600 inline-flex items-center justify-center gap-1 disabled:opacity-50"
+                              >
+                                {isVerifying ? <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />Verifying…</> : <><Check className="w-3.5 h-3.5" /> Verify</>}
+                              </button>
+                              <button
+                                onClick={() => { setRejectPaymentId(pmt.id); setPaymentRejectReason(''); }}
+                                disabled={!!verifyingId}
+                                className="flex-1 py-2 rounded-lg bg-red-100 text-red-700 text-xs font-600 hover:bg-red-200 inline-flex items-center justify-center gap-1 disabled:opacity-50"
+                              >
+                                <X className="w-3.5 h-3.5" /> Reject
+                              </button>
+                            </div>
+                          )}
+                          {pmt.status === 'REJECTED' && pmt.rejectionReason && (
+                            <p className="text-[10px] text-red-700 bg-red-50 rounded p-2">Rejected: {pmt.rejectionReason}</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {displayStatus === 'CONVERTED' ? (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                <p className="text-sm font-600 text-emerald-800 flex items-start gap-2">
+                  <Check className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>
+                    This request has been converted to order{' '}
+                    <Link href="/admin/all-orders" className="font-700 underline hover:no-underline">
+                      {convertedOrderNumber ?? 'an order'}
+                    </Link>
+                  </span>
+                </p>
+              </div>
+            ) : displayStatus === 'REJECTED' ? (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                <p className="text-sm font-600 text-red-800">This request was rejected</p>
+              </div>
+            ) : !['ACCEPTED', 'PARTIALLY_ACCEPTED'].includes(displayStatus) && perms.isFullAdmin ? (
               <>
                 <button
                   onClick={approve}
-                  className="w-full px-4 py-2.5 rounded-lg bg-emerald-500 text-white text-sm font-600 hover:bg-emerald-600 inline-flex items-center justify-center gap-2"
+                  disabled={actionLoading}
+                  title="Order is usually created after payment verification. Use this only if needed."
+                  className="w-full px-4 py-2.5 rounded-lg border border-emerald-500 text-emerald-700 text-sm font-600 hover:bg-emerald-50 inline-flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  <Check className="w-4 h-4" /> Approve & Convert to Order
+                  <Check className="w-4 h-4" /> Manually Convert to Order
                 </button>
                 <button
-                  onClick={reject}
-                  className="w-full px-4 py-2.5 rounded-lg bg-red-100 text-red-700 text-sm font-600 hover:bg-red-200 inline-flex items-center justify-center gap-2"
+                  onClick={() => setShowRejectModal(true)}
+                  disabled={actionLoading}
+                  className="w-full px-4 py-2.5 rounded-lg bg-red-100 text-red-700 text-sm font-600 hover:bg-red-200 inline-flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   <X className="w-4 h-4" /> Reject Request
                 </button>
               </>
-            )}
+            ) : displayStatus !== 'CONVERTED' && displayStatus !== 'REJECTED' && perms.isFullAdmin ? (
+              <button
+                onClick={() => setShowRejectModal(true)}
+                disabled={actionLoading}
+                className="w-full px-4 py-2.5 rounded-lg bg-red-100 text-red-700 text-sm font-600 hover:bg-red-200 inline-flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                <X className="w-4 h-4" /> Reject Request
+              </button>
+            ) : null}
             <button onClick={moreInfo} className="btn-secondary w-full py-2.5 text-sm">
               Request More Info
             </button>
@@ -758,21 +1417,46 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
               <h4 className="font-700 text-sm mb-2">Client Snapshot</h4>
               <div className="text-xs space-y-1">
                 <p>
-                  <span className="text-muted-foreground">Company:</span> <span className="font-500">{client?.company}</span>
+                  <span className="text-muted-foreground">Company:</span> <span className="font-500">{apiRequest?.client?.companyName ?? client?.company}</span>
                 </p>
                 <p>
-                  <span className="text-muted-foreground">GSTIN:</span> <span className="font-tabular">{client?.gstin}</span>
+                  <span className="text-muted-foreground">GSTIN:</span> <span className="font-tabular">{client?.gstin ?? '—'}</span>
                 </p>
                 <p>
-                  <span className="text-muted-foreground">Total Orders:</span> <span className="font-500">{client?.totalOrders}</span>
+                  <span className="text-muted-foreground">Total Orders:</span> <span className="font-500">{client?.totalOrders ?? '—'}</span>
                 </p>
                 {perms.canSeeClientSpendInSnapshot && (
                   <p>
-                    <span className="text-muted-foreground">Spend:</span> <span className="font-500">{client?.totalSpend}</span>
+                    <span className="text-muted-foreground">Spend:</span> <span className="font-500">{client?.totalSpend ?? '—'}</span>
                   </p>
+                )}
+                {apiRequest?.totalBudgetINR && (
+                  <p>
+                    <span className="text-muted-foreground">Total Budget:</span>{' '}
+                    <span className="font-tabular font-500 text-[#4A3B52]">₹{Number(apiRequest.totalBudgetINR).toLocaleString('en-IN')}</span>
+                  </p>
+                )}
+                {apiRequest?.referenceNote && (
+                  <div className="mt-2 pt-2 border-t border-border">
+                    <p className="text-muted-foreground mb-0.5">Reference Note:</p>
+                    <p className="text-foreground italic">{apiRequest.referenceNote}</p>
+                  </div>
                 )}
               </div>
             </div>
+            {apiRequest?.activities?.length > 0 && (
+              <div className="bg-card rounded-xl border border-border shadow-card p-4">
+                <h4 className="font-700 text-sm mb-2">Activity Log</h4>
+                <div className="space-y-2">
+                  {apiRequest.activities.slice(0, 5).map((act: any) => (
+                    <div key={act.id} className="text-xs">
+                      <p className="font-500 text-foreground">{act.action}</p>
+                      <p className="text-muted-foreground">{new Date(act.createdAt).toLocaleDateString('en-IN')}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

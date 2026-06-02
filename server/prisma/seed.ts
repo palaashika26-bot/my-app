@@ -5,6 +5,8 @@ import {
   InquiryStatus,
   QCStatus,
   ShipmentStatus,
+  RequestStatus,
+  RequestItemType,
 } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
@@ -354,17 +356,141 @@ async function main() {
 
     // ── Inquiry ────────────────────────────────────────────────────────────
     const existingInquiry = await tx.inquiry.findFirst({
-      where: { clientId: client2.id, productId: prod1.id },
+      where: { clientId: client2.id },
     });
     if (!existingInquiry) {
       await tx.inquiry.create({
         data: {
+          inquiryNumber: `INQ-${new Date().getFullYear()}-001`,
           clientId: client2.id,
-          productId: prod1.id,
-          quantity: 1000,
-          targetPricePerUnit: 12.5,
           status: InquiryStatus.QUOTED,
           staffNotes: "Quoted at ₹13/unit for 1000 pcs MOQ",
+          items: {
+            create: {
+              type: "CATALOG",
+              productId: prod1.id,
+              productName: "USB-C Charger",
+              quantity: 1000,
+              unit: "PCS",
+              targetPricePerUnit: 12.5,
+              quotedPrice: 13.0,
+            },
+          },
+        },
+      });
+    }
+
+    // ── Sourcing Requests ──────────────────────────────────────────────────
+
+    // Find bubble wrap product
+    const prod4 = await tx.product.findFirst({
+      where: { slug: "bubble-wrap-roll-50m" },
+    });
+
+    // Request 1 — QUOTED
+    const existingReq1 = await tx.sourcingRequest.findFirst({
+      where: { requestNumber: "BK-REQ-2024-0312" },
+    });
+    if (!existingReq1) {
+      await tx.sourcingRequest.create({
+        data: {
+          requestNumber: "BK-REQ-2024-0312",
+          clientId: client1.id,
+          status: RequestStatus.QUOTED,
+          quotedAt: thirtyDaysAgo,
+          staffNotes: "Sourced from Shenzhen supplier — competitive pricing",
+          items: {
+            create: [
+              {
+                type: RequestItemType.CATALOG,
+                productId: prod1.id,
+                productName: "USB-C Fast Charger 65W",
+                quantity: 50,
+                unit: "PCS",
+                quotedRMB: 45,
+                quotedINR: 517.5,
+                status: "QUOTED",
+              },
+              {
+                type: RequestItemType.CATALOG,
+                productId: prod2.id,
+                productName: "LED Strip Light 5m RGB",
+                quantity: 75,
+                unit: "PCS",
+                quotedRMB: 28,
+                quotedINR: 322,
+                status: "QUOTED",
+              },
+              {
+                type: RequestItemType.CUSTOM,
+                productName: "USB Hubs 4-port",
+                productDescription: "4-port USB 3.0 hub, white/black colour options",
+                quantity: 100,
+                unit: "PCS",
+                quotedRMB: 35,
+                quotedINR: 402.5,
+                status: "QUOTED",
+              },
+            ],
+          },
+        },
+      });
+    }
+
+    // Request 2 — SUBMITTED
+    const existingReq2 = await tx.sourcingRequest.findFirst({
+      where: { requestNumber: "BK-REQ-2024-0308" },
+    });
+    if (!existingReq2) {
+      await tx.sourcingRequest.create({
+        data: {
+          requestNumber: "BK-REQ-2024-0308",
+          clientId: client1.id,
+          status: RequestStatus.SUBMITTED,
+          notes: "Need these urgently for festive season",
+          items: {
+            create: [
+              {
+                type: RequestItemType.CUSTOM,
+                productName: "Silicone Phone Cases iPhone 15",
+                productDescription: "Clear silicone protective cases, bulk pack of 10",
+                quantity: 200,
+                unit: "PCS",
+                targetPriceINR: 150,
+                status: "PENDING",
+              },
+            ],
+          },
+        },
+      });
+    }
+
+    // Request 3 — CONVERTED (became an order)
+    const existingReq3 = await tx.sourcingRequest.findFirst({
+      where: { requestNumber: "BK-REQ-2024-0295" },
+    });
+    if (!existingReq3 && prod4) {
+      await tx.sourcingRequest.create({
+        data: {
+          requestNumber: "BK-REQ-2024-0295",
+          clientId: client1.id,
+          status: RequestStatus.CONVERTED,
+          quotedAt: thirtyDaysAgo,
+          approvedAt: tenDaysAgo,
+          items: {
+            create: [
+              {
+                type: RequestItemType.CATALOG,
+                productId: prod4.id,
+                productName: "Bubble Wrap Roll 50m",
+                quantity: 20,
+                unit: "PCS",
+                quotedRMB: 95,
+                quotedINR: 1092.5,
+                status: "ACCEPTED",
+              },
+            ],
+          },
         },
       });
     }
