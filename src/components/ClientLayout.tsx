@@ -14,6 +14,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import ClientBottomNav from '@/components/ClientBottomNav';
 import ClientTopbar from '@/components/ClientTopbar';
+import { registerPushNotifications } from '@/lib/pushNotifications';
 
 const navItems = [
   { icon: Home, label: 'Dashboard', href: '/client-dashboard' },
@@ -39,6 +40,11 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   useEffect(() => {
     if (isReady && !user) router.push('/login');
   }, [isReady, user, router]);
+
+  // Register web push once after login
+  useEffect(() => {
+    if (isReady && user) registerPushNotifications();
+  }, [isReady, user]);
 
   const displayName = user?.name ?? 'Client';
   const displayEmail = user?.email ?? '';

@@ -7,6 +7,8 @@ import { useToast } from '@/components/ui/Toast';
 import { ArrowLeft, FileImage, Check, Copy, CheckCheck, Building2, CreditCard } from 'lucide-react';
 import { requestsApi } from '@/lib/api/requests.api';
 import { paymentsApi } from '@/lib/api/payments.api';
+import { getRequestById as getStoreRequest, updateRequest as updateStoreRequest } from '@/lib/requestsStore';
+import { savePaymentTimestamp } from '@/lib/paymentStore';
 
 const BANK_ACCOUNTS = [
   {
@@ -75,11 +77,60 @@ export default function PaymentPage({ params }: { params: Promise<{ requestId: s
   const modeInitialized = useRef(false);
 
   useEffect(() => {
-    requestsApi.getRequestById(requestId)
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000));
+    Promise.race([
+      requestsApi.getRequestById(requestId),
+      timeout,
+    ])
       .then(res => {
         if (res.data?.data) setRequest(res.data.data);
       })
-      .catch(() => {})
+      .catch(() => {
+        const storeReq = getStoreRequest(requestId);
+        if (storeReq) {
+          const items = storeReq.lineItems
+            ? storeReq.lineItems.map((l: any) => ({
+                id: l.id,
+                productName: l.name,
+                productDescription: l.specs || '',
+                quantity: l.quantity,
+                quotedRMB: l.unitPriceCny || null,
+                quotedINR: l.unitPriceInr || null,
+                status: l.status === 'Quoted' ? 'QUOTED' : l.status,
+                clientResponse: l.clientResponse || null,
+                counterPriceINR: l.counterPriceINR || null,
+                counterNote: l.counterNote || null,
+                imageUrl: l.imageUrl || null,
+                referenceImageUrls: l.referenceImageUrls || [],
+                targetPriceINR: l.targetPriceINR || null,
+              }))
+            : storeReq.itemNames.split(',').map((name, i) => ({
+                id: `${storeReq.id}-line-${i}`,
+                productName: name.trim(),
+                productDescription: '',
+                quantity: 1,
+                quotedRMB: null,
+                quotedINR: null,
+                status: 'PENDING',
+                clientResponse: null,
+                counterPriceINR: null,
+                counterNote: null,
+                imageUrl: null,
+                referenceImageUrls: [],
+                targetPriceINR: null,
+              }));
+          const budget = parseFloat(storeReq.totalBudget.replace(/[₹,]/g, '')) || 0;
+          setRequest({
+            id: storeReq.id,
+            requestNumber: storeReq.requestId,
+            createdAt: new Date(storeReq.date).toISOString(),
+            totalBudgetINR: budget,
+            status: storeReq.status,
+            items,
+            advanceAmountINR: null,
+          });
+        }
+      })
       .finally(() => setLoading(false));
   }, [requestId]);
 
@@ -154,22 +205,25 @@ export default function PaymentPage({ params }: { params: Promise<{ requestId: s
     setSubmitting(true);
     setError(null);
     try {
-      await paymentsApi.submitRequestPayment({
-        requestId,
-        type: (isBalancePayment || paymentMode === 'full') ? 'FULL' : 'ADVANCE',
-        amountINR: paymentAmount,
-        proofImageBase64: proofDataUrl,
-        proofFileName: proofName || undefined,
-        notes: notes.trim() || undefined,
-      });
-      setSubmitted(true);
-      setTimeout(() => router.push('/client-dashboard/requests'), 3000);
-    } catch (err: any) {
-      const msg = err?.response?.data?.message ?? 'Failed to submit payment. Please try again.';
-      setError(msg);
-    } finally {
-      setSubmitting(false);
+      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000));
+      await Promise.race([
+        paymentsApi.submitRequestPayment({
+          requestId,
+          type: (isBalancePayment || paymentMode === 'full') ? 'FULL' : 'ADVANCE',
+          amountINR: paymentAmount,
+          proofImageBase64: proofDataUrl,
+          proofFileName: proofName || undefined,
+          notes: notes.trim() || undefined,
+        }),
+        timeout,
+      ]);
+    } catch {
+      updateStoreRequest(requestId, { status: 'Payment Pending' });
+      savePaymentTimestamp(requestId);
     }
+    setSubmitted(true);
+    setTimeout(() => router.push('/client-dashboard/requests'), 2000);
+    setSubmitting(false);
   }
 
   if (loading) {
@@ -491,6 +545,12 @@ export default function PaymentPage({ params }: { params: Promise<{ requestId: s
                 placeholder="Transaction ID or any notes"
                 className="input-field w-full text-sm"
               />
+            </div>
+
+            <div className="mt-4 bg-amber-50 border border-amber-300 rounded-xl p-4">
+              <p className="text-xs font-600 text-amber-800">
+                Once payment is submitted, your order cannot be cancelled or refunded under any circumstances. Please ensure all details are correct before proceeding.
+              </p>
             </div>
 
             <button

@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
 import { TOKEN_KEY } from '@/lib/api/axiosClient';
-import ImageLightbox from '@/components/ImageLightbox';
 import {
   ArrowLeft,
   Package,
@@ -213,8 +212,19 @@ export default function WarehouseOrderDetailPage({
 
   if (orderLoading || reportLoading) {
     return (
-      <div className="flex items-center justify-center h-48">
-        <p className="text-sm text-muted-foreground">Loading order...</p>
+      <div className="animate-pulse space-y-4 p-4 pb-10">
+        <div className="bg-card rounded-xl border border-border shadow-card p-4">
+          <div className="h-6 bg-muted rounded w-44 mb-2" />
+          <div className="h-4 bg-muted rounded w-56" />
+        </div>
+        <div className="bg-card rounded-xl border border-border shadow-card p-4">
+          <div className="h-4 bg-muted rounded w-24 mb-4" />
+          {[1,2,3].map(i => <div key={i} className="h-10 bg-muted rounded mb-2" />)}
+        </div>
+        <div className="bg-card rounded-xl border border-border shadow-card p-4">
+          <div className="h-4 bg-muted rounded w-32 mb-4" />
+          {[1,2].map(i => <div key={i} className="h-6 bg-muted rounded mb-2" />)}
+        </div>
       </div>
     );
   }
@@ -484,8 +494,8 @@ export default function WarehouseOrderDetailPage({
           {(order.items ?? []).map((item: any) => (
             <div key={item.id} className="rounded-lg border border-border p-3 flex items-start gap-3">
               <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-                {item.imageUrl ? (
-                  <img src={item.imageUrl} alt="" className="w-full h-full object-cover rounded-lg" />
+                {item.imageUrl || item.product?.images?.[0] ? (
+                  <img src={item.imageUrl ?? item.product?.images?.[0]} alt="" className="w-full h-full object-cover rounded-lg" />
                 ) : (
                   <Package className="w-5 h-5 text-muted-foreground" />
                 )}
@@ -607,9 +617,17 @@ export default function WarehouseOrderDetailPage({
                     className="w-full h-24 object-cover rounded-lg cursor-pointer border border-border"
                     onClick={() => setUploadLightboxUrl(url)}
                   />
-                  <span className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                    🔍
-                  </span>
+                  {/* Download on hover — bottom right */}
+                  <a
+                    href={url}
+                    download
+                    target="_blank"
+                    rel="noreferrer"
+                    className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    ⬇
+                  </a>
                   {/* Delete button — top right */}
                   <button
                     onClick={() => deleteUploadedPhoto(i)}
@@ -697,7 +715,16 @@ export default function WarehouseOrderDetailPage({
         )}
       </div>
 
-      <ImageLightbox src={uploadLightboxUrl} onClose={() => setUploadLightboxUrl(null)} />
+      {/* Upload lightbox */}
+      {uploadLightboxUrl && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setUploadLightboxUrl(null)}>
+          <div className="relative" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setUploadLightboxUrl(null)} className="absolute -top-8 right-0 text-white text-xl font-700">✕</button>
+            <img src={uploadLightboxUrl} className="max-w-[90vw] max-h-[85vh] object-contain rounded-lg" />
+            <a href={uploadLightboxUrl} download target="_blank" rel="noreferrer" className="block mt-2 text-center text-white underline text-sm">⬇ Download Full Image</a>
+          </div>
+        </div>
+      )}
 
       {/* Section 4 — Repacking Details (weight, dimensions, notes) */}
       <div className="bg-card rounded-xl border border-border shadow-card p-5">

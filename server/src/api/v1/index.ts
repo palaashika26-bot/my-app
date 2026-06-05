@@ -9,6 +9,9 @@ import notificationsRouter from "./notifications/notifications.routes";
 import inquiriesRouter from "./inquiries/inquiries.routes";
 import requestsRouter from "./requests/requests.routes";
 import paymentsRouter from "./payments/payments.routes";
+import pushRouter from "./push/push.routes";
+import disputesRouter from "./disputes/disputes.routes";
+import trackingRouter from "./tracking/tracking.routes";
 
 const v1Router = Router();
 
@@ -22,5 +25,8 @@ v1Router.use("/notifications", notificationsRouter);
 v1Router.use("/inquiries", inquiriesRouter);
 v1Router.use("/requests", requestsRouter);
 v1Router.use("/payments", paymentsRouter);
+v1Router.use("/push", pushRouter);
+v1Router.use("/disputes", disputesRouter);
+v1Router.use("/tracking", trackingRouter);
 
 export default v1Router;

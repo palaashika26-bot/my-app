@@ -2,6 +2,12 @@ import { Request, Response } from "express";
 import { ordersService } from "./orders.service";
 import { ApiResponse } from "../../../utils/ApiResponse";
 import { ApiError } from "../../../utils/ApiError";
+import prisma from "../../../config/prisma";
+import { disputesRepository } from "../disputes/disputes.repository";
+import {
+  createNotificationsForAdminAndStaff,
+  createNotificationForClient,
+} from "../disputes/disputes.controller";
 
 export const getOrders = async (req: Request, res: Response) => {
   const { page, limit } = req.query as Record<string, string>;
@@ -136,6 +142,14 @@ export const updateOrderStages = async (req: Request, res: Response) => {
     const dbStatus = STAGE_TO_DB_STATUS[lastStage];
     if (dbStatus) {
       await ordersService.updateStatus(id, dbStatus);
+      // Stamp Shipment.deliveredAt when the "Completed" stage is reached
+      if (dbStatus === "DELIVERED") {
+        await prisma.shipment.upsert({
+          where: { orderId: id },
+          update: { deliveredAt: new Date(), status: "DELIVERED" },
+          create: { orderId: id, deliveredAt: new Date(), status: "DELIVERED" },
+        });
+      }
     }
   }
 
@@ -155,6 +169,7 @@ const DISPLAY_TO_DB_STATUS: Record<string, string> = {
   "Return from China":            "QC_FAILED",
   "Exception":                    "CANCELLED",
   "Shipped from China":           "SHIPPED",
+  "In Transit":                   "SHIPPED",
   "Arrived India Warehouse":      "SHIPPED",
   "Out for Delivery":             "SHIPPED",
   "Completed":                    "DELIVERED",
@@ -231,6 +246,31 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
   if (autoStages !== undefined) {
     await ordersService.updateCompletedStages(id, autoStages);
   }
+
+  // When marking as DELIVERED, stamp Shipment.deliveredAt so dispute windows work correctly.
+  if (dbStatus === "DELIVERED") {
+    await prisma.shipment.upsert({
+      where: { orderId: id },
+      update: { deliveredAt: new Date(), status: "DELIVERED" },
+      create: { orderId: id, deliveredAt: new Date(), status: "DELIVERED" },
+    });
+  }
+
+  // Notify client about the status change (fire-and-forget, non-blocking)
+  prisma.order.findUnique({
+    where: { id },
+    select: { orderNumber: true, client: { select: { userId: true } } },
+  }).then((o) => {
+    if (!o?.client?.userId) return;
+    const displayLabel = status; // already a display string
+    createNotificationForClient(o.client.userId, {
+      type: "order",
+      title: `🔄 Order Status Updated — ${o.orderNumber}`,
+      message: `Your order status has been updated to: ${displayLabel}`,
+      relatedType: "ORDER",
+      relatedId: id,
+    }).catch(() => {});
+  }).catch(() => {});
 
   return ApiResponse.success(res, { status: order.status }, "Status updated");
 };
@@ -416,6 +456,227 @@ export const updateRepackApproval = async (req: Request, res: Response) => {
   });
 
   return ApiResponse.success(res, { clientApproved: (report as any).clientApproved, clientConcern: (report as any).clientConcern }, "Approval recorded");
+};
+
+// GET /api/v1/orders/:id/contact — returns admin + assigned staff contact for client
+export const getOrderContact = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  const [order, admin] = await Promise.all([
+    prisma.order.findUnique({
+      where: { id },
+      select: { staffContactId: true },
+    }),
+    prisma.user.findFirst({
+      where: { role: "ADMIN", isActive: true },
+      select: { firstName: true, lastName: true, email: true, phone: true },
+      orderBy: { createdAt: "asc" },
+    }),
+  ]);
+
+  // Show the admin-assigned staff contact, or fall back to no staff contact
+  let staff: { id: string; firstName: string; lastName: string; email: string; phone: string | null; staffRole: string | null } | null = null;
+  if (order?.staffContactId) {
+    staff = await prisma.user.findUnique({
+      where: { id: order.staffContactId },
+      select: { id: true, firstName: true, lastName: true, email: true, phone: true, staffRole: true },
+    });
+  }
+
+  return ApiResponse.success(res, { admin, staff }, "Contact details fetched");
+};
+
+// PATCH /api/v1/orders/:id/staff-contact — admin assigns which staff member client sees
+export const assignStaffContact = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { staffUserId } = req.body; // null to remove, userId string to assign
+
+  if (req.user?.role === "CLIENT") throw ApiError.forbidden("Clients cannot update this");
+
+  await prisma.order.update({
+    where: { id },
+    data: { staffContactId: staffUserId ?? null },
+  });
+
+  return ApiResponse.success(res, null, "Staff contact assigned");
+};
+
+// PATCH /api/v1/orders/:id/cancel
+export const cancelOrder = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  if (req.user?.role !== "CLIENT") {
+    throw ApiError.forbidden("Only clients can cancel orders");
+  }
+
+  const cid = await ordersService.getClientIdByUserId(req.user.userId);
+  if (!cid) throw ApiError.forbidden("No client profile linked to this account");
+
+  const order = await prisma.order.findFirst({
+    where: { id, clientId: cid, deletedAt: null },
+    select: { id: true, orderNumber: true, status: true },
+  });
+  if (!order) throw ApiError.notFound("Order not found");
+
+  // Only allow cancel before payment is submitted (CONFIRMED = no payment yet)
+  const PRE_PAYMENT_STATUSES = ["CONFIRMED"];
+  if (!PRE_PAYMENT_STATUSES.includes(order.status)) {
+    throw ApiError.badRequest(
+      "Order cannot be cancelled after payment is submitted"
+    );
+  }
+
+  const { cancelReason } = req.body;
+
+  const updated = await prisma.order.update({
+    where: { id },
+    data: {
+      status: "CANCELLED",
+      cancelledAt: new Date(),
+      cancelReason: cancelReason ?? null,
+    },
+  });
+
+  // Notify all admin and staff
+  await createNotificationsForAdminAndStaff({
+    type: "ORDER_CANCELLED",
+    title: "Order Cancelled",
+    message: `Order #${order.orderNumber} has been cancelled by client.`,
+    relatedType: "ORDER",
+    relatedId: id,
+  });
+
+  return ApiResponse.success(res, updated, "Order cancelled successfully");
+};
+
+// GET /api/v1/orders/:id/disputes
+export const getOrderDisputes = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  let clientId: string | undefined;
+  if (req.user?.role === "CLIENT") {
+    const cid = await ordersService.getClientIdByUserId(req.user.userId);
+    if (!cid) throw ApiError.forbidden("No client profile linked to this account");
+    clientId = cid;
+  }
+
+  const disputes = await prisma.dispute.findMany({
+    where: { orderId: id, ...(clientId ? { clientId } : {}) },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      type: true,
+      reason: true,
+      videoProofUrl: true,
+      status: true,
+      adminNote: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  return ApiResponse.success(res, disputes, "Order disputes fetched");
+};
+
+// POST /api/v1/orders/:id/disputes
+export const createDispute = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  if (req.user?.role !== "CLIENT") {
+    throw ApiError.forbidden("Only clients can raise disputes");
+  }
+
+  const cid = await ordersService.getClientIdByUserId(req.user.userId);
+  if (!cid) throw ApiError.forbidden("No client profile linked to this account");
+
+  const order = await prisma.order.findFirst({
+    where: { id, clientId: cid, deletedAt: null },
+    select: {
+      id: true,
+      orderNumber: true,
+      status: true,
+      updatedAt: true,
+      shipment: { select: { deliveredAt: true } },
+    },
+  });
+  if (!order) throw ApiError.notFound("Order not found");
+
+  if (order.status !== "DELIVERED") {
+    throw ApiError.badRequest("Disputes can only be raised on delivered orders");
+  }
+
+  // Use shipment.deliveredAt if recorded; otherwise fall back to order.updatedAt
+  // (which was stamped when admin last changed status to DELIVERED).
+  const effectiveDeliveredAt: Date =
+    order.shipment?.deliveredAt ?? order.updatedAt;
+
+  const daysSinceDelivery =
+    (Date.now() - effectiveDeliveredAt.getTime()) / (1000 * 60 * 60 * 24);
+  if (daysSinceDelivery > 5) {
+    throw ApiError.badRequest("Dispute window of 5 days has passed");
+  }
+
+  const { type, reason, videoProofUrl } = req.body;
+
+  if (!type || !["REPLACEMENT", "ISSUE"].includes(type)) {
+    throw ApiError.badRequest("type must be REPLACEMENT or ISSUE");
+  }
+  if (!reason || typeof reason !== "string" || !reason.trim()) {
+    throw ApiError.badRequest("reason is required");
+  }
+
+  // Video proof is optional — client attaches files via UI but is not required to
+
+  const dispute = await disputesRepository.create({
+    orderId: id,
+    clientId: cid,
+    type,
+    reason: reason.trim(),
+    videoProofUrl: videoProofUrl ?? undefined,
+  });
+
+  const notifType =
+    type === "REPLACEMENT" ? "REPLACEMENT_REQUESTED" : "ISSUE_REPORTED";
+  const notifTitle =
+    type === "REPLACEMENT" ? "Replacement Request" : "Issue Reported";
+  const notifMsg = `Client raised a ${type === "REPLACEMENT" ? "Replacement" : "Issue"} request on Order #${order.orderNumber}`;
+
+  await createNotificationsForAdminAndStaff({
+    type: notifType,
+    title: notifTitle,
+    message: notifMsg,
+    relatedType: "DISPUTE",
+    relatedId: dispute.id,
+  });
+
+  return ApiResponse.success(res, dispute, "Dispute created successfully", 201);
+};
+
+// POST /api/v1/orders/:id/dispute-video
+export const uploadDisputeVideo = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  if (req.user?.role !== "CLIENT") {
+    throw ApiError.forbidden("Only clients can upload dispute videos");
+  }
+
+  const cid = await ordersService.getClientIdByUserId(req.user.userId);
+  if (!cid) throw ApiError.forbidden("No client profile linked to this account");
+
+  const order = await prisma.order.findFirst({
+    where: { id, clientId: cid, deletedAt: null },
+    select: { id: true },
+  });
+  if (!order) throw ApiError.notFound("Order not found");
+
+  const { video } = req.body;
+  if (!video || typeof video !== "string") {
+    throw ApiError.badRequest("video (base64 data URL) is required");
+  }
+
+  const videoUrl = video.startsWith("data:") ? video : `data:video/mp4;base64,${video}`;
+
+  return ApiResponse.success(res, { videoUrl }, "Video uploaded");
 };
 
 // POST /api/v1/orders/:id/warehouse-reply

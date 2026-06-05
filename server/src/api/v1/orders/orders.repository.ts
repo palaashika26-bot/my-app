@@ -53,10 +53,11 @@ export const ordersRepository = {
               unitPriceINR: true,
               totalINR: true,
               notes: true,
-              product: { select: { name: true } },
+              imageUrl: true,
+              product: { select: { name: true, images: true } },
             },
           },
-          shipment: { select: { estimatedDelivery: true, carrier: true, trackingNumber: true } },
+          shipment: { select: { estimatedDelivery: true, deliveredAt: true, carrier: true, trackingNumber: true } },
           warehouseReport: {
             select: {
               isReadByAdmin: true,
@@ -112,11 +113,12 @@ export const ordersRepository = {
               unitPriceINR: true,
               totalINR: true,
               notes: true,
-              product: { select: { name: true } },
+              imageUrl: true,
+              product: { select: { name: true, images: true } },
               qcCheck: true,
             },
           },
-          shipment: { select: { estimatedDelivery: true, carrier: true, trackingNumber: true } },
+          shipment: { select: { estimatedDelivery: true, deliveredAt: true, carrier: true, trackingNumber: true } },
         },
       }),
       prisma.sourcingRequest.findFirst({

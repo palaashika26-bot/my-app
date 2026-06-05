@@ -8,7 +8,7 @@ import AdminLayout from '@/components/AdminLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { mockRequests, mockClients } from '@/lib/adminMockData';
 import { useToast } from '@/components/ui/Toast';
-import { ArrowLeft, Camera, Check, X, MessageSquare, Send, Package, Pencil, Upload, ImageIcon } from 'lucide-react';
+import { ArrowLeft, Camera, Check, X, MessageSquare, Send, Package, Pencil, Upload, ImageIcon, Ban } from 'lucide-react';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import type { RequestLineItem, PerProductQuoteStatus } from '@/lib/mockData';
 import { defaultLineItemsFromRequest, loadRfqLineItems, persistRfqLineItems } from '@/lib/rfqLineItems';
@@ -475,6 +475,38 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
   }, [apiRequest, id]);
 
   const showFullQuoteCols = qs === 'full';
+  // ── Skeleton while loading real data (no mock fallback available) ──────────
+  if (apiLoading && !req) {
+    return (
+      <AdminLayout>
+        <Link href="/admin/requests" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4">
+          <ArrowLeft className="w-4 h-4" /> Back to Requests
+        </Link>
+        <div className="animate-pulse space-y-4 w-full max-w-full">
+          <div className="bg-card rounded-xl border border-border shadow-card p-4">
+            <div className="h-6 bg-muted rounded w-48 mb-2" />
+            <div className="h-4 bg-muted rounded w-64" />
+          </div>
+          <div className="grid lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2 space-y-4">
+              <div className="bg-card rounded-xl border border-border shadow-card p-4">
+                <div className="h-4 bg-muted rounded w-40 mb-4" />
+                {[1,2,3].map(i => <div key={i} className="h-12 bg-muted rounded mb-2" />)}
+              </div>
+              <div className="bg-card rounded-xl border border-border shadow-card p-4">
+                <div className="h-4 bg-muted rounded w-28 mb-4" />
+                {[1,2].map(i => <div key={i} className="h-8 bg-muted rounded mb-2" />)}
+              </div>
+            </div>
+            <div className="space-y-3">
+              {[1,2,3,4,5].map(i => <div key={i} className="h-8 bg-muted rounded" />)}
+            </div>
+          </div>
+        </div>
+      </AdminLayout>
+    );
+  }
+
   const displayStatus: string = apiRequest?.status ?? (req?.status as string) ?? 'SUBMITTED';
   const counteredCount = lineItems.filter(l => l.clientResponse === 'COUNTERED').length;
   const convertedOrderNumber: string | null = (() => {
@@ -610,6 +642,32 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
             {perms.canSeeRequestBudget ? ` • Budget ${displayBudget}` : ''}
           </p>
         </div>
+
+        {/* Cancellation banner — shown when request was cancelled by client */}
+        {displayStatus === 'CANCELLED' && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4 flex gap-3">
+            <Ban className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-sm font-600 text-red-700">Request Cancelled</p>
+              <p className="text-sm text-red-600 mt-0.5">This request was cancelled by the client.</p>
+              {apiRequest?.cancelledAt && (
+                <p className="text-xs text-red-500 mt-1">
+                  Cancelled on:{' '}
+                  {new Date(apiRequest.cancelledAt).toLocaleDateString('en-IN', {
+                    day: '2-digit', month: 'short', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit',
+                  })}
+                </p>
+              )}
+              <p className="text-xs text-red-500 mt-0.5">
+                Reason:{' '}
+                <span className="font-500">
+                  {apiRequest?.cancelReason?.trim() || 'No reason provided by client'}
+                </span>
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="grid lg:grid-cols-3 gap-4">
           {/* Main column */}
@@ -1082,7 +1140,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                 </table>
               </div>
 
-              {showFullQuoteCols && displayStatus !== 'CONVERTED' && displayStatus !== 'REJECTED' && (
+              {showFullQuoteCols && displayStatus !== 'CONVERTED' && displayStatus !== 'REJECTED' && displayStatus !== 'CANCELLED' && (
                 <div className="mt-4 space-y-3">
                   <div>
                     <label className="text-[10px] uppercase text-muted-foreground font-600 block mb-1">
@@ -1367,7 +1425,11 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
               </div>
             )}
 
-            {displayStatus === 'CONVERTED' ? (
+            {displayStatus === 'CANCELLED' ? (
+              <div className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg bg-muted text-muted-foreground text-sm font-600 cursor-default select-none">
+                <Ban className="w-4 h-4" /> Request Cancelled
+              </div>
+            ) : displayStatus === 'CONVERTED' ? (
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
                 <p className="text-sm font-600 text-emerald-800 flex items-start gap-2">
                   <Check className="w-4 h-4 flex-shrink-0 mt-0.5" />

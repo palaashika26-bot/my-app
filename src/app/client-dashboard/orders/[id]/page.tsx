@@ -1,8 +1,9 @@
 ﻿'use client';
 import React, { useState, use, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import ClientLayout from '@/components/ClientLayout';
-import ImageLightbox from '@/components/ImageLightbox';
+import { useToast } from '@/components/ui/Toast';
 import { ordersApi } from '@/lib/api/orders.api';
 import { TOKEN_KEY } from '@/lib/api/axiosClient';
 import type { ApiOrder } from '@/lib/types/api.types';
@@ -56,11 +57,13 @@ async function getTrackingUpdates(orderId: string) {
   return raw ? JSON.parse(raw) : [];
 }
 import StatusBadge from '@/components/ui/StatusBadge';
-import ShipmentMapModal from '@/components/ShipmentMapModal';
+import dynamic from 'next/dynamic';
+
+const ShipmentTimeline = dynamic(() => import('@/components/ShipmentTimeline'), { ssr: false });
 import ExceptionChat from '@/components/ExceptionChat';
 import { mockOrders, statusToLocation } from '@/lib/mockData';
 import { getEffectiveOrderStatus, getOrderQcBundle } from '@/lib/orderQcStore';
-import { ArrowLeft, Download, AlertTriangle, MapPin, CheckCircle2, Circle, FileText, Info, Camera, X, ChevronLeft, ChevronRight, ZoomIn, MessageCircle, MessageSquare, Paperclip, Play, Package, Truck, Home, CreditCard } from 'lucide-react';
+import { ArrowLeft, Download, AlertTriangle, MapPin, CheckCircle2, XCircle, Circle, FileText, Info, Camera, X, ChevronLeft, ChevronRight, ZoomIn, MessageCircle, MessageSquare, Paperclip, Play, Package, Truck, Home, CreditCard, RefreshCw, Flag } from 'lucide-react';
 import { generateInvoice } from '@/lib/generateInvoice';
 import { generateGSTInvoice } from '@/lib/generateGSTInvoice';
 import { generateCommercialInvoice } from '@/lib/generateCommercialInvoice';
@@ -98,15 +101,18 @@ const ADVANCE_PAID = 15000;
 
 // ── Map backend status enums to frontend display strings ──────────────────────
 const ORDER_STATUS_MAP: Record<string, string> = {
-  CONFIRMED:  'Order Confirmed',
-  SOURCING:   'Sourcing',
-  QC_PENDING: 'At China Warehouse',
-  QC_PASSED:  'At China Warehouse',
-  QC_FAILED:  'Exception',
-  REPACKING:  'China Consolidation Warehouse',
-  SHIPPED:    'Shipped from China',
-  DELIVERED:  'Completed',
-  CANCELLED:  'Exception',
+  PAYMENT_PENDING: 'Payment Pending',
+  CONFIRMED:       'Order Confirmed',
+  ADVANCE_PAID:    'Payment Confirmed',
+  FULLY_PAID:      'Payment Confirmed',
+  SOURCING:        'Sourcing',
+  QC_PENDING:      'At China Warehouse',
+  QC_PASSED:       'At China Warehouse',
+  QC_FAILED:       'Exception',
+  REPACKING:       'Repacking Warehouse',
+  SHIPPED:         'Shipped from China',
+  DELIVERED:       'Completed',
+  CANCELLED:       'Exception',
 };
 
 function mapApiOrderToRow(o: ApiOrder) {
@@ -123,6 +129,9 @@ function mapApiOrderToRow(o: ApiOrder) {
       ? new Date(o.shipment.estimatedDelivery).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
       : '—',
     status: (ORDER_STATUS_MAP[o.status] ?? o.status) as any,
+    // Keep raw DB status for business logic (cancel, dispute window)
+    status_raw: o.status,
+    deliveredAt: (o.shipment as any)?.deliveredAt ?? null,
     client: o.client?.companyName,
     lineItems: o.items?.map((i) => ({
       id: i.id,
@@ -130,18 +139,91 @@ function mapApiOrderToRow(o: ApiOrder) {
       qty: i.quantity,
       unitPriceInr: parseFloat(i.unitPriceINR || '0'),
       totalInr: parseFloat(i.totalINR || '0'),
-      imageUrl: i.imageUrl ?? null,
+      imageUrl: i.imageUrl ?? i.product?.images?.[0] ?? null,
     })),
   };
 }
 
+// ── Contact Card ──────────────────────────────────────────────────────────────
+function ContactCard({ orderId }: { orderId: string }) {
+  const [contact, setContact] = useState<{
+    admin: { firstName: string; lastName: string; email: string; phone: string | null } | null;
+    staff: { firstName: string; lastName: string; email: string; phone: string | null; staffRole: string | null }[];
+  } | null>(null);
+
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null;
+    if (!token) return;
+    fetch(`/api/orders/${orderId}/contact`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((d) => { if (d?.success) setContact(d.data); })
+      .catch(() => {});
+  }, [orderId]);
+
+  if (!contact) return null;
+  const { admin, staff } = contact;
+  // staff is a single object (or null) from the backend — not an array
+  const staffList = staff ? [staff] : [];
+  const contacts = [
+    ...(admin ? [{ name: `${admin.firstName} ${admin.lastName}`, role: 'Account Manager', email: admin.email, phone: admin.phone }] : []),
+    ...staffList.map((s) => ({
+      name: `${s.firstName} ${s.lastName}`,
+      role: s.staffRole ?? 'Support Staff',
+      email: s.email,
+      phone: s.phone,
+    })),
+  ];
+  if (!contacts.length) return null;
+
+  return (
+    <div className="bg-card rounded-xl border border-border shadow-card p-5">
+      <h3 className="text-sm font-700 mb-3">Your Account Team</h3>
+      <p className="text-xs text-muted-foreground mb-4">Reach out to us directly for any questions about your order.</p>
+      <div className="space-y-3">
+        {contacts.map((c, i) => (
+          <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 border border-border">
+            <div className="w-9 h-9 rounded-full bg-[#4A3B52] text-white flex items-center justify-center text-sm font-700 flex-shrink-0">
+              {c.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-600 text-foreground">{c.name}</p>
+              <p className="text-[11px] text-muted-foreground">{c.role}</p>
+              <div className="flex flex-wrap gap-3 mt-2">
+                {c.phone && (
+                  <a
+                    href={`tel:${c.phone}`}
+                    className="inline-flex items-center gap-1.5 text-xs font-600 text-[#4A3B52] hover:underline"
+                  >
+                    📞 {c.phone}
+                  </a>
+                )}
+                <a
+                  href={`mailto:${c.email}`}
+                  className="inline-flex items-center gap-1.5 text-xs font-600 text-[#4A3B52] hover:underline"
+                >
+                  ✉️ {c.email}
+                </a>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const { addToast } = useToast();
   const mockOrder = mockOrders.find(o => o.id === id);
+
+  // Always fetch fresh — never use stale in-memory cache for the detail page
   const [liveOrder, setLiveOrder] = useState<ReturnType<typeof mapApiOrderToRow> | null>(null);
   const [apiLoading, setApiLoading] = useState(!mockOrder);
 
-  // completedStages must be declared before the useEffect that calls setCompletedStages
+  // completedStages — driven by live API fetch only
   const [completedStages, setCompletedStages] = useState<string[]>([]);
 
   useEffect(() => {
@@ -185,6 +267,15 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       } catch {}
     }
 
+    async function fetchOrderDisputes() {
+      if (!token) return;
+      try {
+        const res = await apiFetch(`/api/orders/${id}/disputes`);
+        const data = await res.json();
+        if (data.success) setOrderDisputes(data.data ?? []);
+      } catch {}
+    }
+
     async function fetchOrder() {
       if (!token) { setApiLoading(false); return; }
       try {
@@ -219,16 +310,16 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     }
 
     fetchOrder();
+    fetchOrderDisputes();
     fetchGSTData();
     fetchWarehouseStatus();
-    // Poll order + GST every 30s; warehouse status every 60s (it's cheap now — no photos)
-    const orderInterval = setInterval(() => { fetchOrder(); fetchGSTData(); }, 30000);
+    // Poll order + GST + disputes every 30s; warehouse status every 60s
+    const orderInterval = setInterval(() => { fetchOrder(); fetchOrderDisputes(); fetchGSTData(); }, 30000);
     const whInterval   = setInterval(fetchWarehouseStatus, 60000);
     return () => { clearInterval(orderInterval); clearInterval(whInterval); };
   }, [id]);
 
   const order = mockOrder ?? liveOrder;
-  const [mapOpen, setMapOpen] = useState(false);
   const [repackOpen, setRepackOpen] = useState(false);
   const [photoIdx, setPhotoIdx] = useState(0);
 
@@ -280,6 +371,28 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     }
   }, [id]);
 
+  // Disputes fetched for this order (for replacement status display)
+  const [orderDisputes, setOrderDisputes] = useState<any[]>([]);
+
+  // Dispute modals state
+  interface DisputeFile { name: string; dataUrl: string; mimeType: string; }
+
+  const [replacementOpen, setReplacementOpen] = useState(false);
+  const [replacementReason, setReplacementReason] = useState('');
+  const [replacementFiles, setReplacementFiles] = useState<DisputeFile[]>([]);
+  const [replacementSubmitting, setReplacementSubmitting] = useState(false);
+  const [replacementToast, setReplacementToast] = useState('');
+
+  const [issueOpen, setIssueOpen] = useState(false);
+  const [issueType, setIssueType] = useState('');
+  const [issueDescription, setIssueDescription] = useState('');
+  const [issueFiles, setIssueFiles] = useState<DisputeFile[]>([]);
+  const [issueSubmitting, setIssueSubmitting] = useState(false);
+  const [issueToast, setIssueToast] = useState('');
+
+  const replacementFileRef = useRef<HTMLInputElement>(null);
+  const issueFileRef = useRef<HTMLInputElement>(null);
+
   interface ChatMessage { id: string; sender: 'admin' | 'client'; text: string; time: string; }
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -327,7 +440,29 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   if (apiLoading) {
     return (
       <ClientLayout>
-        <div className="flex items-center justify-center py-24 text-sm text-muted-foreground">Loading order…</div>
+        <div className="animate-pulse space-y-4 pb-10">
+          <div className="bg-card rounded-xl border border-border shadow-card p-5">
+            <div className="h-6 bg-muted rounded w-48 mb-2" />
+            <div className="h-4 bg-muted rounded w-72" />
+          </div>
+          <div className="grid lg:grid-cols-3 gap-5">
+            <div className="lg:col-span-2 space-y-4">
+              <div className="bg-card rounded-xl border border-border shadow-card p-5">
+                <div className="h-4 bg-muted rounded w-16 mb-4" />
+                {[1,2,3].map(i => <div key={i} className="h-10 bg-muted rounded mb-2" />)}
+              </div>
+              <div className="bg-card rounded-xl border border-border shadow-card p-5">
+                <div className="h-4 bg-muted rounded w-36 mb-4" />
+                {[1,2,3,4,5].map(i => <div key={i} className="h-6 bg-muted rounded mb-2" />)}
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="bg-card rounded-xl border border-border shadow-card p-5">
+                {[1,2,3,4].map(i => <div key={i} className="h-4 bg-muted rounded mb-3" />)}
+              </div>
+            </div>
+          </div>
+        </div>
       </ClientLayout>
     );
   }
@@ -335,12 +470,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const qcBundle = getOrderQcBundle(order.id);
   const displayStatus = getEffectiveOrderStatus(order.id, order.status as any);
   const currentStage = stageMap[order.status] ?? -1;
-  const hasMap = !!statusToLocation[order.status];
 
-  // Highest stage index marked complete — handles both cumulative and legacy non-cumulative arrays
-  const maxCompletedIdx = completedStages.length > 0
-    ? stages.reduce((max, stage, idx) => (completedStages.includes(stage) ? idx : max), -1)
-    : currentStage;
   const repackingDone = completedStages.length > 0
     ? completedStages.includes('Repacking Warehouse')
     : currentStage >= 5;
@@ -490,6 +620,116 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     }
   }
 
+  // Raw DB status — used by post-delivery dispute logic
+  const rawStatus = (liveOrder as any)?.status_raw ?? (liveOrder as any)?.status ?? order?.status ?? '';
+
+  // ── Post-delivery dispute helpers ─────────────────────────────────────────────
+  const isDelivered = rawStatus === 'DELIVERED';
+  const deliveredAt: string | null = (liveOrder as any)?.deliveredAt ?? null;
+
+  const daysSinceDelivery = deliveredAt
+    ? (Date.now() - new Date(deliveredAt).getTime()) / (1000 * 60 * 60 * 24)
+    : null;
+  // If deliveredAt is not recorded in DB, allow the window whenever order is DELIVERED.
+  // Shipment.deliveredAt is only set via direct shipment update; most orders are marked
+  // DELIVERED through the status endpoint which doesn't touch the Shipment row.
+  const withinDisputeWindow = isDelivered && (deliveredAt === null || (daysSinceDelivery !== null && daysSinceDelivery <= 5));
+
+  // Read any file (image or video) to a base64 data URL
+  function readFileAsBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Serialize all selected files into a single JSON string for videoProofUrl
+  function serializeFiles(files: { name: string; dataUrl: string }[]): string {
+    if (files.length === 0) return '';
+    if (files.length === 1) return files[0].dataUrl;
+    return JSON.stringify(files.map(f => ({ name: f.name, data: f.dataUrl })));
+  }
+
+  async function handleReplacementFilesChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files ?? []);
+    if (!picked.length) return;
+    const results: { name: string; dataUrl: string; mimeType: string }[] = [];
+    for (const file of picked) {
+      const dataUrl = await readFileAsBase64(file);
+      results.push({ name: file.name, dataUrl, mimeType: file.type });
+    }
+    setReplacementFiles(prev => [...prev, ...results]);
+    e.target.value = '';
+  }
+
+  async function handleIssueFilesChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files ?? []);
+    if (!picked.length) return;
+    const results: { name: string; dataUrl: string; mimeType: string }[] = [];
+    for (const file of picked) {
+      const dataUrl = await readFileAsBase64(file);
+      results.push({ name: file.name, dataUrl, mimeType: file.type });
+    }
+    setIssueFiles(prev => [...prev, ...results]);
+    e.target.value = '';
+  }
+
+  async function handleSubmitReplacement() {
+    if (replacementSubmitting || !replacementReason.trim()) return;
+    setReplacementSubmitting(true);
+    try {
+      const videoProofUrl = replacementFiles.length > 0 ? serializeFiles(replacementFiles) : undefined;
+      const res = await apiFetch(`/api/orders/${id}/disputes`, {
+        method: 'POST',
+        body: JSON.stringify({ type: 'REPLACEMENT', reason: replacementReason.trim(), videoProofUrl }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setReplacementOpen(false);
+        setReplacementReason('');
+        setReplacementFiles([]);
+        addToast({ type: 'success', title: 'Request submitted', description: 'Your replacement request has been submitted. Admin will review it.' });
+      } else {
+        const msg = data.message ?? '';
+        addToast({ type: 'error', title: 'Could not submit', description: msg.includes('window') ? 'The 5-day window to raise a dispute has passed.' : 'Unable to process request. Please contact support.' });
+      }
+    } catch {
+      addToast({ type: 'error', title: 'Network error', description: 'Please check your connection and try again.' });
+    } finally {
+      setReplacementSubmitting(false);
+    }
+  }
+
+  async function handleSubmitIssue() {
+    if (issueSubmitting || !issueType || !issueDescription.trim()) return;
+    setIssueSubmitting(true);
+    try {
+      const videoProofUrl = issueFiles.length > 0 ? serializeFiles(issueFiles) : undefined;
+      const reason = `${issueType}: ${issueDescription.trim()}`;
+      const res = await apiFetch(`/api/orders/${id}/disputes`, {
+        method: 'POST',
+        body: JSON.stringify({ type: 'ISSUE', reason, videoProofUrl }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIssueOpen(false);
+        setIssueType('');
+        setIssueDescription('');
+        setIssueFiles([]);
+        addToast({ type: 'success', title: 'Issue reported', description: 'Your issue report has been submitted. Admin will review it.' });
+      } else {
+        const msg = data.message ?? '';
+        addToast({ type: 'error', title: 'Could not submit', description: msg.includes('window') ? 'The 5-day window to raise a dispute has passed.' : 'Unable to process request. Please contact support.' });
+      }
+    } catch {
+      addToast({ type: 'error', title: 'Network error', description: 'Please check your connection and try again.' });
+    } finally {
+      setIssueSubmitting(false);
+    }
+  }
+
   return (
     <ClientLayout>
       <Link href="/client-dashboard/orders" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4"><ArrowLeft className="w-4 h-4" /> Back to Orders</Link>
@@ -498,7 +738,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         <div>
           <div className="flex items-center gap-2">
             <span className="font-tabular font-700 text-foreground">{order.orderId}</span>
-            <StatusBadge status={displayStatus as any} />
+            <StatusBadge status={order.status as any} />
           </div>
           <p className="text-xs text-muted-foreground mt-1">Placed: {order.date} • ETA: {order.estimatedDelivery}</p>
         </div>
@@ -520,11 +760,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               className="btn-secondary px-4 py-2 text-sm inline-flex items-center gap-2"
             >
               <MessageCircle className="w-4 h-4" /> Raise a Concern
-            </button>
-          )}
-          {hasMap && (
-            <button onClick={() => setMapOpen(true)} className="btn-primary px-4 py-2 text-sm inline-flex items-center gap-2">
-              <MapPin className="w-4 h-4" /> View Live Location
             </button>
           )}
           {(payments.some((p: any) => p.status === 'VERIFIED') || order?.status === 'Payment Confirmed' || order?.status === 'Completed') && (
@@ -582,45 +817,101 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             </div>
           </div>
 
-          {/* 2. Timeline */}
-          <div className="bg-card rounded-xl border border-border shadow-card p-5">
-            <h3 className="text-sm font-700 mb-4">Shipment Timeline</h3>
-            <ol className="space-y-3">
-              {stages.map((s, i) => {
-                const done = i <= maxCompletedIdx;
-                const current = i === maxCompletedIdx && maxCompletedIdx >= 0;
-                const isRepack = s === 'Repacking Warehouse';
-                const showRepackBtn = isRepack && done;
-                return (
-                  <li key={s} className="flex items-start gap-3">
-                    <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${done ? 'bg-emerald-500 text-white' : current ? 'bg-[#4A3B52] text-white animate-pulse' : 'bg-muted text-muted-foreground'}`}>
-                      {done ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Circle className="w-3 h-3" />}
-                    </div>
-                    <div className="flex-1">
-                      <p className={`text-sm ${current ? 'font-700 text-[#4A3B52]' : done ? 'font-500 text-foreground' : 'font-500 text-muted-foreground'}`}>{s}</p>
-                      <div className="flex flex-wrap items-center gap-2 mt-1">
-                        {current && hasMap && (
-                          <button onClick={() => setMapOpen(true)} className="inline-flex items-center gap-1 text-[11px] text-[#4A3B52] font-600 hover:underline">
-                            <MapPin className="w-3 h-3" /> View on Map
+          {/* Shipment Timeline */}
+          <div className="mt-2">
+            <ShipmentTimeline orderId={id} isAdminOrStaff={false} orderStatus={order.status as string} />
+          </div>
+
+          {/* Post-Delivery Actions */}
+          {isDelivered && liveOrder && (
+            <div className="bg-card rounded-xl border border-border shadow-card p-5">
+              <p className="text-sm font-700 mb-1 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Post-Delivery Actions
+              </p>
+              {withinDisputeWindow ? (
+                (() => {
+                  const hasReplacement = orderDisputes.some((d: any) => d.type === 'REPLACEMENT');
+                  const hasIssue = orderDisputes.some((d: any) => d.type === 'ISSUE');
+                  if (hasReplacement && hasIssue) return (
+                    <p className="text-xs text-muted-foreground mt-1">You have already submitted a replacement request and an issue report for this order.</p>
+                  );
+                  return (
+                    <>
+                      <p className="text-xs text-muted-foreground mb-3 mt-1">
+                        Your order has been delivered. You can request a replacement or report an issue within 5 days of delivery.
+                      </p>
+                      <div className="flex flex-wrap gap-3">
+                        {!hasReplacement && (
+                          <button
+                            onClick={() => setReplacementOpen(true)}
+                            className="px-4 py-2.5 text-sm font-600 rounded-lg border-2 border-amber-400 text-amber-700 hover:bg-amber-50 inline-flex items-center gap-2"
+                          >
+                            <RefreshCw className="w-4 h-4" /> Request Replacement
                           </button>
                         )}
-                        {showRepackBtn && (
-                          <button onClick={() => openPhoto(0)} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-600 bg-[#4A3B52]/10 text-[#4A3B52] border border-[#4A3B52]/30 hover:bg-[#4A3B52]/20 transition-colors">
-                            <Camera className="w-3 h-3" /> View Repackaged Product
+                        {!hasIssue && (
+                          <button
+                            onClick={() => setIssueOpen(true)}
+                            className="px-4 py-2.5 text-sm font-600 rounded-lg border-2 border-orange-400 text-orange-700 hover:bg-orange-50 inline-flex items-center gap-2"
+                          >
+                            <Flag className="w-4 h-4" /> Report an Issue
                           </button>
                         )}
                       </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-            {repackingDone && (
-              <p className="text-[11px] text-muted-foreground mt-4 pt-3 border-t border-border italic">
-                Tip: Once your goods are repackaged and cleared at the China warehouse, you can review photos here before they ship to India.
-              </p>
-            )}
-          </div>
+                    </>
+                  );
+                })()
+              ) : (
+                <p className="text-xs text-muted-foreground mt-1">
+                  The 5-day window to request replacement or report an issue has passed.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Replacement & Issue Dispute Status cards (right under timeline) */}
+          {orderDisputes.filter((d: any) => d.type === 'REPLACEMENT' || d.type === 'ISSUE').map((dispute: any) => {
+            const st = dispute.status;
+            const isResolved = st === 'RESOLVED';
+            const isRejected = st === 'REJECTED';
+            const isUnderReview = st === 'UNDER_REVIEW';
+            const isReplacement = dispute.type === 'REPLACEMENT';
+            const label = isReplacement ? 'Replacement' : 'Issue';
+            return (
+              <div key={dispute.id} className={`rounded-xl border p-5 ${
+                isResolved ? 'bg-emerald-50 border-emerald-300'
+                : isRejected ? 'bg-red-50 border-red-300'
+                : 'bg-amber-50 border-amber-300'
+              }`}>
+                <div className="flex items-start gap-3">
+                  {isResolved
+                    ? <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                    : isRejected
+                    ? <XCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    : isReplacement
+                    ? <RefreshCw className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    : <Flag className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />}
+                  <div className="flex-1">
+                    <p className={`text-sm font-700 ${isResolved ? 'text-emerald-800' : isRejected ? 'text-red-800' : 'text-amber-800'}`}>
+                      {label} {isResolved ? 'Approved' : isRejected ? 'Rejected' : isUnderReview ? 'Under Review' : 'Requested'}
+                    </p>
+                    <p className={`text-xs mt-0.5 ${isResolved ? 'text-emerald-700' : isRejected ? 'text-red-700' : 'text-amber-700'}`}>
+                      {isResolved
+                        ? `Your ${label.toLowerCase()} request has been approved.`
+                        : isRejected
+                        ? `Your ${label.toLowerCase()} request was rejected.${dispute.adminNote ? ` Note: ${dispute.adminNote}` : ''}`
+                        : isUnderReview
+                        ? `Your ${label.toLowerCase()} request is under review by our team.`
+                        : `Your ${label.toLowerCase()} request is pending review.`}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Submitted: {new Date(dispute.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
 
           {/* Repacking Warehouse Approval — inline card */}
           {repackingDone && ((warehouseReport?.repackPhotos?.length ?? 0) > 0 || (warehouseReport?.photoCount ?? 0) > 0) && (() => {
@@ -654,12 +945,17 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                         <img
                           key={i}
                           src={url}
-                          className="w-full h-40 object-cover rounded-lg cursor-pointer border-2 border-orange-200 hover:border-[#4A3B52] transition-all"
-                          onClick={() => setClientLightboxUrl(url)}
+                          className={`w-full h-40 object-cover rounded-lg cursor-pointer border-2 transition-all ${clientLightboxUrl === url ? 'border-[#4A3B52]' : 'border-orange-200'}`}
+                          onClick={() => setClientLightboxUrl(clientLightboxUrl === url ? null : url)}
                         />
                       ))}
                     </div>
-                    <ImageLightbox src={clientLightboxUrl} onClose={() => setClientLightboxUrl(null)} />
+                    {clientLightboxUrl && (
+                      <div className="mb-4 relative rounded-lg overflow-hidden border border-orange-200">
+                        <button onClick={() => setClientLightboxUrl(null)} className="absolute top-2 right-2 z-10 bg-black/60 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold">✕</button>
+                        <img src={clientLightboxUrl} className="w-full max-h-72 object-contain bg-black/5" />
+                      </div>
+                    )}
                   </>
                 ) : (
                   <button
@@ -811,55 +1107,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             </div>
           )}
 
-          {/* Live Shipment Tracking */}
-          {maxCompletedIdx >= 6 && (
-            <div className="bg-card rounded-xl border border-border shadow-card p-5">
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <h3 className="text-sm font-700 flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-[#c17b5c]" /> Live Shipment Tracking
-                </h3>
-                {trackingUpdates.length > 0 && (
-                  <span className="text-[11px] text-muted-foreground">
-                    Last updated: {(() => {
-                      const diff = Date.now() - new Date(trackingUpdates[0].timestamp).getTime();
-                      const mins = Math.floor(diff / 60000);
-                      const hrs = Math.floor(mins / 60);
-                      const days = Math.floor(hrs / 24);
-                      if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
-                      if (hrs > 0) return `${hrs} hour${hrs > 1 ? 's' : ''} ago`;
-                      if (mins > 0) return `${mins} minute${mins > 1 ? 's' : ''} ago`;
-                      return 'just now';
-                    })()}
-                  </span>
-                )}
-              </div>
-              {trackingUpdates.length === 0 ? (
-                <p className="text-sm text-muted-foreground mt-3">Tracking updates will appear here once your shipment is on the way.</p>
-              ) : (
-                <ol className="relative space-y-0 mt-4">
-                  {trackingUpdates.map((upd, i) => (
-                    <li key={upd.id} className={`flex gap-4 pb-6 last:pb-0 ${i === 0 ? 'border-l-2 border-[#c17b5c] pl-3 -ml-3' : ''}`}>
-                      <div className="flex flex-col items-center flex-shrink-0">
-                        <div className={`w-3 h-3 rounded-full border-2 mt-1 ${i === 0 ? 'bg-[#c17b5c] border-[#c17b5c]' : 'bg-card border-muted-foreground/40'}`} />
-                        {i < trackingUpdates.length - 1 && <div className="w-px flex-1 bg-border mt-1" />}
-                      </div>
-                      <div className="flex-1 min-w-0 pb-1">
-                        <p className="font-700 text-sm">{upd.location}</p>
-                        {upd.stage && (
-                          <span className="inline-block text-[10px] font-600 px-2 py-0.5 rounded-full bg-[#e8e4f0] text-[#5c5470] mt-0.5 mb-1">{upd.stage}</span>
-                        )}
-                        <p className="text-sm text-foreground mt-0.5">{upd.message}</p>
-                        <p className="text-[11px] text-muted-foreground mt-1">
-                          {new Date(upd.timestamp).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </p>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </div>
-          )}
-
           {/* 3. Payment / Payment Gateway — only for live API orders */}
           {liveOrder && (
             <div className="bg-card rounded-xl border border-border shadow-card p-5">
@@ -983,7 +1230,22 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             </div>
           </div>
 
-          {/* 5. Documents — moved after Payment Summary */}
+          {/* Toast notifications */}
+          {replacementToast && (
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-emerald-700 text-white px-5 py-3 rounded-xl shadow-lg text-sm font-600 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4" /> {replacementToast}
+            </div>
+          )}
+          {issueToast && (
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-emerald-700 text-white px-5 py-3 rounded-xl shadow-lg text-sm font-600 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4" /> {issueToast}
+            </div>
+          )}
+
+          {/* Contact */}
+          <ContactCard orderId={id} />
+
+          {/* 5. Documents */}
           <div className="bg-card rounded-xl border border-border shadow-card p-5">
             <h3 className="text-sm font-700 mb-3">Documents</h3>
             <ul className="space-y-2">
@@ -1087,9 +1349,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         </div>
       </div>
 
-      <ShipmentMapModal isOpen={mapOpen} onClose={() => setMapOpen(false)} order={{ orderId: order.orderId, status: order.status as string, estimatedDelivery: order.estimatedDelivery }} />
-
-
       {/* Repackaged Product Photo Gallery Modal */}
       {repackOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto pt-4 md:pt-8 fade-in" onClick={() => setRepackOpen(false)} role="dialog" aria-modal="true">
@@ -1187,6 +1446,202 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             </div>
           </div>
         </div>
+      )}
+
+      {/* Request Replacement Modal */}
+      {replacementOpen && typeof window !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          role="dialog" aria-modal="true"
+          onClick={() => setReplacementOpen(false)}
+        >
+          <div className="bg-white dark:bg-card rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
+              <div className="flex items-center gap-2 text-amber-700">
+                <RefreshCw className="w-5 h-5" />
+                <h3 className="font-700">Request Replacement</h3>
+              </div>
+              <button onClick={() => setReplacementOpen(false)} className="w-9 h-9 rounded-lg hover:bg-muted flex items-center justify-center"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <div>
+                <label className="text-xs font-600 text-foreground mb-1.5 block">Reason <span className="text-red-500">*</span></label>
+                <textarea
+                  value={replacementReason}
+                  onChange={e => setReplacementReason(e.target.value.slice(0, 1000))}
+                  placeholder="Describe the issue..."
+                  rows={4}
+                  className="input-field w-full resize-none text-sm"
+                />
+              </div>
+              {/* Multi-file upload — images and videos, no limit shown */}
+              <div>
+                <label className="text-xs font-600 text-foreground mb-1.5 block">
+                  Attach photos / videos <span className="text-muted-foreground font-400">(optional)</span>
+                </label>
+                <input
+                  ref={replacementFileRef}
+                  type="file"
+                  accept="image/*,video/*"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handleReplacementFilesChange}
+                />
+                {replacementFiles.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {replacementFiles.map((f, i) => (
+                      <div key={i} className="relative group">
+                        {f.mimeType.startsWith('image/') ? (
+                          <img src={f.dataUrl} alt={f.name} className="w-16 h-16 object-cover rounded-lg border border-border" />
+                        ) : (
+                          <div className="w-16 h-16 rounded-lg border border-border bg-amber-50 flex flex-col items-center justify-center gap-1">
+                            <Play className="w-5 h-5 text-amber-600" />
+                            <span className="text-[9px] text-amber-700 text-center px-1 truncate w-full">{f.name.slice(0, 8)}</span>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setReplacementFiles(prev => prev.filter((_, j) => j !== i))}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => replacementFileRef.current?.click()}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed border-amber-400 hover:bg-amber-50 text-sm text-amber-700 w-full justify-center"
+                >
+                  <Paperclip className="w-4 h-4" /> Add photos or videos
+                </button>
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => { setReplacementOpen(false); setReplacementReason(''); setReplacementFiles([]); }} className="btn-secondary flex-1 py-2.5 text-sm">Cancel</button>
+                <button
+                  onClick={handleSubmitReplacement}
+                  disabled={replacementSubmitting || !replacementReason.trim()}
+                  className="btn-primary flex-1 py-2.5 text-sm disabled:opacity-40"
+                >
+                  {replacementSubmitting ? 'Submitting...' : 'Submit Request'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Report Issue Modal */}
+      {/* Report Issue Modal */}
+      {issueOpen && typeof window !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          role="dialog" aria-modal="true"
+          onClick={() => setIssueOpen(false)}
+        >
+          <div className="bg-white dark:bg-card rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
+              <div className="flex items-center gap-2 text-orange-700">
+                <Flag className="w-5 h-5" />
+                <h3 className="font-700">Report an Issue</h3>
+              </div>
+              <button onClick={() => setIssueOpen(false)} className="w-9 h-9 rounded-lg hover:bg-muted flex items-center justify-center"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <div>
+                <label className="text-xs font-600 text-foreground mb-1.5 block">Issue type <span className="text-red-500">*</span></label>
+                <select
+                  value={issueType}
+                  onChange={e => setIssueType(e.target.value)}
+                  className="input-field w-full text-sm"
+                >
+                  <option value="">Select issue type...</option>
+                  <option>Wrong Item Received</option>
+                  <option>Missing Item(s)</option>
+                  <option>Damaged Item</option>
+                  <option>Defective Product</option>
+                  <option>Product Not As Described</option>
+                  <option>Expired Product</option>
+                  <option>Fake/Counterfeit Product</option>
+                  <option>Delivery Delayed</option>
+                  <option>Package Tampered/Open</option>
+                  <option>Size/Fit Issue</option>
+                  <option>Billing Issue</option>
+                  <option>Refund Issue</option>
+                  <option>Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-600 text-foreground mb-1.5 block">Description <span className="text-red-500">*</span></label>
+                <textarea
+                  value={issueDescription}
+                  onChange={e => setIssueDescription(e.target.value.slice(0, 1000))}
+                  placeholder="Describe the issue in detail..."
+                  rows={4}
+                  className="input-field w-full resize-none text-sm"
+                />
+              </div>
+              {/* Multi-file upload — images and videos, no limit shown */}
+              <div>
+                <label className="text-xs font-600 text-foreground mb-1.5 block">
+                  Attach photos / videos <span className="text-muted-foreground font-400">(optional)</span>
+                </label>
+                <input
+                  ref={issueFileRef}
+                  type="file"
+                  accept="image/*,video/*"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handleIssueFilesChange}
+                />
+                {issueFiles.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {issueFiles.map((f, i) => (
+                      <div key={i} className="relative group">
+                        {f.mimeType.startsWith('image/') ? (
+                          <img src={f.dataUrl} alt={f.name} className="w-16 h-16 object-cover rounded-lg border border-border" />
+                        ) : (
+                          <div className="w-16 h-16 rounded-lg border border-border bg-orange-50 flex flex-col items-center justify-center gap-1">
+                            <Play className="w-5 h-5 text-orange-600" />
+                            <span className="text-[9px] text-orange-700 text-center px-1 truncate w-full">{f.name.slice(0, 8)}</span>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setIssueFiles(prev => prev.filter((_, j) => j !== i))}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => issueFileRef.current?.click()}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed border-orange-400 hover:bg-orange-50 text-sm text-orange-700 w-full justify-center"
+                >
+                  <Paperclip className="w-4 h-4" /> Add photos or videos
+                </button>
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => { setIssueOpen(false); setIssueType(''); setIssueDescription(''); setIssueFiles([]); }} className="btn-secondary flex-1 py-2.5 text-sm">Cancel</button>
+                <button
+                  onClick={handleSubmitIssue}
+                  disabled={issueSubmitting || !issueType || !issueDescription.trim()}
+                  className="btn-primary flex-1 py-2.5 text-sm disabled:opacity-40"
+                >
+                  {issueSubmitting ? 'Submitting...' : 'Submit Issue Report'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* Raise a Concern — top sheet */}

@@ -193,11 +193,14 @@ export default function ClientTopbar({ onMenuOpen }: ClientTopbarProps) {
                     <p className="px-4 py-4 text-sm text-muted-foreground">No notifications yet</p>
                   ) : notifications.map((notif) => {
                     const isUnread = !readIds.has(notif.id);
-                    const href = notif.relatedType === 'ORDER'
-                      ? `/client-dashboard/orders/${notif.relatedId}`
-                      : notif.relatedType === 'INQUIRY'
-                      ? `/client-dashboard/requests/${notif.relatedId}`
-                      : '/client-dashboard';
+                    const href =
+                      notif.relatedType === 'ORDER'
+                        ? `/client-dashboard/orders/${notif.relatedId}`
+                        : notif.relatedType === 'REQUEST' || notif.type === 'message'
+                        ? `/client-dashboard/requests/${notif.relatedId}`
+                        : notif.relatedType === 'INQUIRY'
+                        ? `/client-dashboard/inquiries/${notif.relatedId}`
+                        : '/client-dashboard';
                     return (
                       <div
                         key={notif.id}

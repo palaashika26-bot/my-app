@@ -29,4 +29,7 @@ export const authApi = {
 
   refresh: () =>
     axiosClient.post<ApiResponse<{ accessToken: string }>>('/auth/refresh'),
+
+  acceptInvite: (data: { token: string; password: string }) =>
+    axiosClient.post<ApiResponse<null>>('/auth/accept-invite', data),
 };

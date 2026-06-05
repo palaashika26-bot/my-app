@@ -29,11 +29,7 @@ export const authenticate = async (
     if (decoded.role === "CLIENT") {
       const user = await prisma.user.findUnique({
         where: { id: decoded.userId },
-        select: {
-          isEmailVerified: true,
-          isApproved: true,
-          client: { select: { id: true } },
-        },
+        select: { isEmailVerified: true, isApproved: true },
       });
       if (!user || !user.isEmailVerified) {
         return next(new ApiError(401, "Please verify your email first"));
@@ -41,14 +37,6 @@ export const authenticate = async (
       if (!user.isApproved) {
         return next(new ApiError(401, "Your account is not yet active"));
       }
-
-      req.user = {
-        userId: decoded.userId,
-        role: decoded.role,
-        clientId: user.client?.id,
-      };
-      next();
-      return;
     }
 
     req.user = { userId: decoded.userId, role: decoded.role };

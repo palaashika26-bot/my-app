@@ -7,6 +7,7 @@ import {
   logout,
   me,
   refresh,
+  acceptInvite,
 } from "./auth.controller";
 import { loginSchema, registerSchema, registerClientSchema } from "./auth.schema";
 import { validate } from "../../../middleware/validate";
@@ -43,5 +44,8 @@ router.get("/me", authenticate, asyncHandler(me));
 
 // POST /api/v1/auth/refresh
 router.post("/refresh", asyncHandler(refresh));
+
+// POST /api/v1/auth/accept-invite  (staff sets their password from invite link)
+router.post("/accept-invite", asyncHandler(acceptInvite));
 
 export default router;

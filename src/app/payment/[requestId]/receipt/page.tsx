@@ -3,6 +3,7 @@ import React, { useState, useEffect, use } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { mockRequests } from '@/lib/mockData';
+import { getRequestById as getStoreRequest } from '@/lib/requestsStore';
 import { loadRfqLineItems } from '@/lib/rfqLineItems';
 import {
   loadPaymentTimestamp,
@@ -19,7 +20,7 @@ function fmt(iso: string | null): string {
 
 export default function ReceiptPage({ params }: { params: Promise<{ requestId: string }> }) {
   const { requestId } = use(params);
-  const req = mockRequests.find(r => r.id === requestId);
+  const req = mockRequests.find(r => r.id === requestId) || getStoreRequest(requestId);
   if (!req) return notFound();
 
   const [lineItems, setLineItems] = useState<RequestLineItem[]>([]);

@@ -56,6 +56,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <ToastProvider>{children}</ToastProvider>
           </ApiAuthProvider>
         </AuthProvider>
+        {/* Strip browser-extension-injected attributes before React hydrates */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              'document.querySelectorAll("[fdprocessedid]").forEach(function(e){e.removeAttribute("fdprocessedid")})',
+          }}
+        />
       </body>
     </html>
   );

@@ -76,3 +76,12 @@ export const refresh = async (req: Request, res: Response) => {
 
   return ApiResponse.success(res, { accessToken: result.accessToken }, "Token refreshed");
 };
+
+export const acceptInvite = async (req: Request, res: Response) => {
+  const { token, password } = req.body as { token?: string; password?: string };
+  if (!token?.trim()) throw new ApiError(400, "Invite token is required");
+  if (!password || password.length < 8) throw new ApiError(400, "Password must be at least 8 characters");
+
+  const result = await authService.acceptInvite(token.trim(), password);
+  return ApiResponse.success(res, null, result.message);
+};

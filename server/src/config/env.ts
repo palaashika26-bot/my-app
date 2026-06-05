@@ -34,6 +34,11 @@ const config = {
   EMAIL_USER: process.env.EMAIL_USER || "",
   EMAIL_PASS: process.env.EMAIL_PASS || "",
   EMAIL_FROM: process.env.EMAIL_FROM || "Elios <noreply@elioswholesale.in>",
+
+  // Web Push (VAPID)
+  VAPID_PUBLIC_KEY:  process.env.VAPID_PUBLIC_KEY  || "",
+  VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY || "",
+  VAPID_EMAIL:       process.env.VAPID_EMAIL        || "mailto:noreply@elioswholesale.in",
 };
 
 export default config;

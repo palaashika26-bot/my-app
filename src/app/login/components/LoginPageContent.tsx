@@ -115,11 +115,13 @@ function LoginForm() {
       });
 
       window.location.href = getRedirectPath(apiUser.role, staffRoleId);
-    } catch (apiErr) {
-      console.log('[login] Backend API failed:', apiErr);
+    } catch (apiErr: unknown) {
+      const errMsg =
+        (apiErr as { response?: { data?: { message?: string } } })?.response?.data?.message
+        || 'Invalid credentials. Please try again.';
+      console.log('[login] Backend API failed:', errMsg);
       // 2. Backend failed — try local staffStore (demo staff accounts)
       const staffMember = authenticateStaff(data.email, data.password);
-      console.log('[login] staffStore result:', staffMember);
       if (staffMember) {
         touchStaffLastLogin(staffMember.id);
         login('staff', {
@@ -130,7 +132,6 @@ function LoginForm() {
           staffRoleId: staffMember.role,
         });
         const redirectPath = getRedirectPath('STAFF', staffMember.role);
-        console.log('[login] redirecting to:', redirectPath);
         addToast({
           type: 'success',
           title: `Welcome back, ${staffMember.name.split(' ')[0]}!`,
@@ -142,7 +143,7 @@ function LoginForm() {
       addToast({
         type: 'error',
         title: 'Login failed',
-        description: 'Invalid credentials. Please try again.',
+        description: errMsg,
       });
     } finally {
       setIsLoading(false);

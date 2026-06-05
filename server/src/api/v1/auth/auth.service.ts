@@ -233,4 +233,15 @@ export const authService = {
     if (!user) throw ApiError.notFound("User not found");
     return user;
   },
+
+  async acceptInvite(token: string, password: string) {
+    const { adminRepository } = await import("../admin/admin.repository");
+    const user = await adminRepository.findUserByInviteToken(token);
+    if (!user) throw new ApiError(400, "Invalid or expired invite link");
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    await adminRepository.activateStaffAccount(user.id, passwordHash);
+
+    return { message: "Account activated. You can now log in." };
+  },
 };

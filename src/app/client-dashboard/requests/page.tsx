@@ -6,7 +6,6 @@ import ClientLayout from '@/components/ClientLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { requestsApi } from '@/lib/api/requests.api';
 import { requestsCache } from '@/lib/api/requestsCache';
-import { SkeletonTable } from '@/components/SkeletonLoader';
 import { Plus, Eye, Camera } from 'lucide-react';
 
 const tabs = ['All', 'Pending', 'Quotation Ready', 'In Progress', 'Completed'];
@@ -54,13 +53,9 @@ function AllRequestsContent() {
 
   useEffect(() => {
     const abortController = new AbortController();
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000));
-    // clear previous results and show loader while fetching
-    setRequests([]);
-    setLoading(true);
-
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000));
     Promise.race([
-      requestsApi.getRequests({ limit: 100 }, abortController.signal),
+      requestsApi.getRequests({ limit: 50 }, abortController.signal),
       timeout,
     ])
       .then((r: any) => {
@@ -79,7 +74,10 @@ function AllRequestsContent() {
         }));
         setRequests(mapped);
       })
-      .catch(() => { if (!abortController.signal.aborted) setRequests([]); })
+      .catch(() => {
+        // API failed — show empty list, never fall back to mock data
+        setRequests([]);
+      })
       .finally(() => { if (!abortController.signal.aborted) setLoading(false); });
     return () => abortController.abort();
   }, []);
@@ -113,9 +111,7 @@ function AllRequestsContent() {
               {['Request ID', 'Date', 'Items', 'Status', 'Budget', 'Action'].map(h => <th key={h} className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{h}</th>)}
             </tr></thead>
             <tbody className="divide-y divide-border">
-              {loading ? (
-                <SkeletonTable rows={5} cols={6} />
-              ) : filtered.length === 0 ? (
+              {filtered.length === 0 ? (
                 <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">No requests in this filter.</td></tr>
               ) : filtered.map(r => (
                 <tr key={r.id} className="table-row-hover">

@@ -24,6 +24,7 @@ import {
   UserCog,
   AlertTriangle,
   X,
+  Flag,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { dismissAdminQcAlert, readAdminQcAlerts, subscribeOrderQc } from '@/lib/orderQcStore';
@@ -33,6 +34,8 @@ import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import AdminRouteGuard from '@/components/AdminRouteGuard';
 import AdminBottomNav from '@/components/AdminBottomNav';
 import { notificationsApi, type ApiNotification } from '@/lib/api/notifications.api';
+import { TOKEN_KEY } from '@/lib/api/axiosClient';
+import { registerPushNotifications } from '@/lib/pushNotifications';
 
 import type { EffectivePermissions } from '@/lib/staffRoles';
 
@@ -46,6 +49,7 @@ const navBlueprint: NavItem[] = [
   { icon: Building2, label: 'Suppliers', href: '/admin/suppliers', show: (p) => p.navSuppliers },
   { icon: BookOpen, label: 'Product Catalog', href: '/admin/catalog', show: () => true },
   { icon: Truck, label: 'Logistics', href: '/admin/logistics', show: () => true },
+  { icon: Flag, label: 'Disputes', href: '/admin/disputes', show: () => true },
   { icon: MessageCircle, label: 'Support Tickets', href: '/admin/support-tickets', show: () => true },
   { icon: UserCog, label: 'Staff', href: '/admin/staff', show: (p) => p.navStaff },
   { icon: SettingsIcon, label: 'Settings', href: '/admin/settings', show: (p) => p.navSettings },
@@ -63,9 +67,24 @@ function timeAgo(iso: string): string {
 }
 
 function notifHref(n: ApiNotification, role: string): string {
-  if (n.relatedType === 'ORDER') return `/admin/orders/${n.relatedId}`;
-  if (n.relatedType === 'INQUIRY') return `/admin/requests/${n.relatedId}`;
-  return role === 'staff' ? '/staff/warehouse' : '/admin';
+  const isWarehouse = role === 'staff';
+  if (n.relatedType === 'DISPUTE') {
+    return isWarehouse ? '/staff/warehouse' : '/admin/disputes';
+  }
+  if (n.relatedType === 'ORDER') {
+    return isWarehouse
+      ? `/staff/warehouse/orders/${n.relatedId}`
+      : `/admin/orders/${n.relatedId}`;
+  }
+  if (n.relatedType === 'REQUEST' || n.type === 'message') {
+    return isWarehouse
+      ? `/staff/warehouse`
+      : `/admin/requests/${n.relatedId}`;
+  }
+  if (n.relatedType === 'INQUIRY') {
+    return isWarehouse ? `/staff/warehouse` : `/admin/requests/${n.relatedId}`;
+  }
+  return isWarehouse ? '/staff/warehouse' : '/admin';
 }
 
 function initialsFromName(name: string) {
@@ -102,6 +121,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const notifRef = useRef<HTMLDivElement>(null);
   const [adminNotifs, setAdminNotifs] = useState<ApiNotification[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
+  const [openDisputeCount, setOpenDisputeCount] = useState(0);
+
+  // Register web push once after login
+  useEffect(() => { registerPushNotifications(); }, []);
 
   const fetchNotifs = useCallback(() => {
     notificationsApi.getNotifications({ limit: 10 })
@@ -114,6 +137,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const interval = setInterval(fetchNotifs, 30000);
     return () => clearInterval(interval);
   }, [fetchNotifs]);
+
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null;
+    if (!token) return;
+    function fetchOpenDisputes() {
+      fetch('/api/disputes/count/open', {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      })
+        .then(r => r.json())
+        .then(d => { if (d.success) setOpenDisputeCount(d.data?.count ?? 0); })
+        .catch(() => {});
+    }
+    fetchOpenDisputes();
+    const iv = setInterval(fetchOpenDisputes, 60000);
+    return () => clearInterval(iv);
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -168,10 +208,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto sidebar-scroll">
         {items.map((it) => {
           const active = it.href === '/admin' ? pathname === '/admin' : pathname?.startsWith(it.href);
+          const isDisputes = it.href === '/admin/disputes';
           return (
             <Link key={it.href} href={it.href} onClick={() => setOpen(false)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-500 transition-colors ${active ? 'bg-[#4A3B52] text-white shadow-orange-glow' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>
-              <it.icon className="w-4 h-4" /> {it.label}
+              <it.icon className="w-4 h-4 flex-shrink-0" />
+              <span className="flex-1">{it.label}</span>
+              {isDisputes && openDisputeCount > 0 && (
+                <span className="ml-auto text-[10px] font-700 bg-yellow-400 text-yellow-900 rounded-full px-1.5 py-0.5 leading-none">
+                  {openDisputeCount}
+                </span>
+              )}
             </Link>
           );
         })}

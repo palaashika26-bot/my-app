@@ -3,8 +3,9 @@ import React, { useState } from 'react';
 import { Eye, ChevronUp, ChevronDown, ChevronsUpDown, Plus, AlertTriangle } from 'lucide-react';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
-import { TableSkeleton } from '@/components/ui/LoadingSkeleton';
-import { mockRequests, type RequestRow } from '@/lib/mockData';
+
+import { getRequests } from '@/lib/requestsStore';
+import type { RequestRow } from '@/lib/mockData';
 import Link from 'next/link';
 import type { OrderStatus } from '@/components/ui/StatusBadge';
 
@@ -14,7 +15,7 @@ type SortDir = 'asc' | 'desc' | null;
 export default function RecentRequestsTable() {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
-  const [isLoading] = useState(false);
+  const requests = getRequests();
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -26,7 +27,7 @@ export default function RecentRequestsTable() {
     }
   }
 
-  const sorted = [...mockRequests].sort((a, b) => {
+  const sorted = [...requests].sort((a, b) => {
     if (!sortKey || !sortDir) return 0;
     const av = a[sortKey];
     const bv = b[sortKey];
@@ -49,7 +50,7 @@ export default function RecentRequestsTable() {
         <div>
           <h2 className="text-sm font-600 text-foreground">Recent Requests</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {mockRequests.length} total requests
+            {requests.length} total requests
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -64,7 +65,7 @@ export default function RecentRequestsTable() {
       </div>
 
       {/* Exception alert */}
-      {mockRequests.some((r) => r.status === 'Exception') && (
+      {requests.some((r) => r.status === 'Exception') && (
         <div className="flex items-center gap-2.5 px-5 py-2.5 bg-red-50 border-b border-red-100">
           <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" aria-hidden="true" />
           <p className="text-xs text-red-700 font-500">
@@ -123,9 +124,7 @@ export default function RecentRequestsTable() {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {isLoading ? (
-              <TableSkeleton rows={6} cols={6} />
-            ) : sorted.length === 0 ? (
+            {sorted.length === 0 ? (
               <tr>
                 <td colSpan={6}>
                   <EmptyState

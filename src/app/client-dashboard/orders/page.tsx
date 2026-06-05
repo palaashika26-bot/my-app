@@ -5,8 +5,9 @@ import { useSearchParams } from 'next/navigation';
 import ClientLayout from '@/components/ClientLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
 import type { OrderRow } from '@/lib/ordersStore';
+import { getOrders } from '@/lib/ordersStore';
 import { ordersApi } from '@/lib/api/orders.api';
-import { TOKEN_KEY } from '@/lib/api/axiosClient';
+import { ordersCache } from '@/lib/api/ordersCache';
 import type { ApiOrder } from '@/lib/types/api.types';
 import { Search, Eye, ChevronDown, ChevronUp, Package, Warehouse, MapPin, CheckCircle2, Clock, FileText, Truck, AlertCircle, DollarSign, ShoppingCart, List } from 'lucide-react';
 import { SkeletonTable } from '@/components/SkeletonLoader';
@@ -15,16 +16,40 @@ const statusFilters = ['All', 'Active', 'Completed', 'Exception'];
 
 // ── Map backend order to the frontend OrderRow shape ─────────────────────────
 const ORDER_STATUS_MAP: Record<string, string> = {
-  CONFIRMED:  'Order Confirmed',
-  SOURCING:   'Sourcing',
-  QC_PENDING: 'At China Warehouse',
-  QC_PASSED:  'At China Warehouse',
-  QC_FAILED:  'Exception',
-  REPACKING:  'China Consolidation Warehouse',
-  SHIPPED:    'Shipped from China',
-  DELIVERED:  'Completed',
-  CANCELLED:  'Exception',
+  PAYMENT_PENDING: 'Payment Pending',
+  CONFIRMED:       'Order Confirmed',
+  ADVANCE_PAID:    'Payment Confirmed',
+  FULLY_PAID:      'Payment Confirmed',
+  SOURCING:        'Sourcing',
+  QC_PENDING:      'At China Warehouse',
+  QC_PASSED:       'At China Warehouse',
+  QC_FAILED:       'Exception',
+  REPACKING:       'Repacking Warehouse',
+  SHIPPED:         'Shipped from China',
+  DELIVERED:       'Completed',
+  CANCELLED:       'Exception',
 };
+
+// Ordered list of display stages — used to find the most granular status from completedStages.
+// Matches the admin all-orders page logic exactly so both panels show the same status.
+const STAGE_ORDER = [
+  'Order Placed', 'Payment Confirmed', 'Sourcing', 'At China Warehouse',
+  'China Consolidation Warehouse', 'Repacking Warehouse', 'Shipped from China',
+  'In Transit', 'Arrived India Warehouse', 'Out for Delivery', 'Completed',
+];
+
+function deriveDisplayStatus(o: ApiOrder): string {
+  // Use completedStages when available — gives sub-stage granularity for SHIPPED, etc.
+  const cs = (o as any).completedStages as string[] | undefined;
+  if (cs && cs.length > 0) {
+    let maxIdx = -1;
+    for (let i = 0; i < STAGE_ORDER.length; i++) {
+      if (cs.includes(STAGE_ORDER[i])) maxIdx = i;
+    }
+    if (maxIdx >= 0) return STAGE_ORDER[maxIdx];
+  }
+  return ORDER_STATUS_MAP[o.status] ?? o.status;
+}
 
 function mapApiOrder(o: ApiOrder): OrderRow {
   const totalINR = parseFloat(o.totalINR || '0');
@@ -38,7 +63,7 @@ function mapApiOrder(o: ApiOrder): OrderRow {
     estimatedDelivery: o.shipment?.estimatedDelivery
       ? new Date(o.shipment.estimatedDelivery).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
       : '—',
-    status: ORDER_STATUS_MAP[o.status] ?? o.status,
+    status: deriveDisplayStatus(o),
     client: o.client?.companyName,
   } as OrderRow;
 }
@@ -58,19 +83,22 @@ const ALL_STAGES = [
   { id: 'exception',          label: 'Exception',                   statuses: ['Exception'],                                 icon: AlertCircle,   color: 'text-red-600',      bg: 'bg-red-50'    },
 ];
 
-function PipelineView({ orders }: { orders: OrderRow[] }) {
+function PipelineView() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [orders, setOrders] = useState<OrderRow[]>([]);
 
   useEffect(() => {
+    const loaded = getOrders();
+    setOrders(loaded);
     // Auto-expand stages that have orders
     const initExpanded: Record<string, boolean> = {};
     ALL_STAGES.forEach(stage => {
-      if (orders.some(o => stage.statuses.includes(o.status as string))) {
+      if (loaded.some(o => stage.statuses.includes(o.status as string))) {
         initExpanded[stage.id] = true;
       }
     });
     setExpanded(initExpanded);
-  }, [orders]);
+  }, []);
 
   return (
     <div className="space-y-3">
@@ -152,26 +180,33 @@ function AllOrdersContent() {
   // ── Live orders from the backend (shown when a JWT is present) ─────────────
   const [liveOrders, setLiveOrders] = useState<OrderRow[]>([]);
 
-  useEffect(() => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null;
-    if (!token) {
-      setTimeout(() => setIsLoading(false), 300);
-      return;
-    }
-
-    const ac = new AbortController();
-    setIsLoading(true);
-    setLiveOrders([]);
-
-    ordersApi.getOrders({ limit: 100 }, ac.signal)
+  function fetchLiveOrders(signal?: AbortSignal) {
+    ordersApi
+      .getOrders({ limit: 50 }, signal)
       .then((res) => {
-        if (ac.signal.aborted) return;
-        setLiveOrders((res.data.data ?? []).map(mapApiOrder));
+        const raw = res.data.data ?? [];
+        ordersCache.setList(raw);
+        setLiveOrders(raw.map(mapApiOrder));
       })
-      .catch(() => { if (!ac.signal.aborted) setLiveOrders([]); })
-      .finally(() => { if (!ac.signal.aborted) setIsLoading(false); });
+      .catch((e) => { if (e?.code !== 'ERR_CANCELED') setLiveOrders([]); })
+      .finally(() => setIsLoading(false));
+  }
 
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchLiveOrders(ac.signal);
     return () => ac.abort();
+  }, []);
+
+  // Re-fetch when user returns to this tab — only if a token exists (prevents 401 redirect loop)
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.visibilityState === 'visible' && localStorage.getItem('elios_access_token')) {
+        fetchLiveOrders();
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
 
   const allOrders = liveOrders;
@@ -256,13 +291,7 @@ function AllOrdersContent() {
           </div>
         </>
       ) : (
-        isLoading ? (
-          <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden p-6">
-            <SkeletonTable rows={6} cols={3} />
-          </div>
-        ) : (
-          <PipelineView orders={liveOrders} />
-        )
+        <PipelineView />
       )}
     </ClientLayout>
   );

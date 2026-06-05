@@ -8,7 +8,8 @@ import type { RequestLineItem, PerProductQuoteStatus } from '@/lib/mockData';
 import { requestsApi } from '@/lib/api/requests.api';
 import { requestsCache } from '@/lib/api/requestsCache';
 import { paymentsApi } from '@/lib/api/payments.api';
-import { ArrowLeft, Check, MessageSquare, CheckCircle2, Circle, X, ImageIcon } from 'lucide-react';
+import { getRequestById as getStoreRequest } from '@/lib/requestsStore';
+import { ArrowLeft, Check, MessageSquare, CheckCircle2, Circle, X, ImageIcon, Ban } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 
 const CNY_TO_INR = 11.5;
@@ -77,6 +78,12 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
   const [logistics, setLogistics] = useState<null | { weight: string; mode: string; pricePerKg: string; note: string }>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
+  // Cancel request state
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
+  const [cancelledLocally, setCancelledLocally] = useState(false);
+
   const [reqChatInput, setReqChatInput] = useState('');
   const lastReqSent = React.useRef(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -115,7 +122,7 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
   }
 
   function fetchRequestData(signal?: AbortSignal) {
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000));
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000));
     return Promise.race([
       requestsApi.getRequestById(id, signal),
       timeout,
@@ -128,7 +135,55 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
           applyApiRequest(req);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (signal?.aborted) return;
+        const storeReq = getStoreRequest(id);
+        if (storeReq) {
+          const items = storeReq.lineItems
+            ? storeReq.lineItems.map((l: any) => ({
+                id: l.id,
+                productName: l.name,
+                productDescription: l.specs || '',
+                quantity: l.quantity,
+                quotedRMB: l.unitPriceCny || null,
+                quotedINR: l.unitPriceInr || null,
+                status: l.status === 'Quoted' ? 'QUOTED' : l.status === 'Accepted' ? 'ACCEPTED' : l.status === 'Rejected' ? 'REJECTED' : 'PENDING',
+                clientResponse: l.clientResponse || null,
+                counterPriceINR: l.counterPriceINR || null,
+                counterNote: l.counterNote || null,
+                imageUrl: l.imageUrl || null,
+                referenceImageUrls: l.referenceImageUrls || [],
+                targetPriceINR: l.targetPriceINR || null,
+              }))
+            : storeReq.itemNames.split(',').map((name, i) => ({
+                id: `${storeReq.id}-line-${i}`,
+                productName: name.trim(),
+                productDescription: '',
+                quantity: 1,
+                quotedRMB: null,
+                quotedINR: null,
+                status: 'PENDING',
+                clientResponse: null,
+                counterPriceINR: null,
+                counterNote: null,
+                imageUrl: null,
+                referenceImageUrls: [],
+                targetPriceINR: null,
+              }));
+          const budget = parseFloat(storeReq.totalBudget.replace(/[₹,]/g, '')) || 0;
+          const synthetic = {
+            id: storeReq.id,
+            requestNumber: storeReq.requestId,
+            createdAt: new Date(storeReq.date).toISOString(),
+            totalBudgetINR: budget,
+            status: storeReq.status,
+            items,
+            advanceAmountINR: null,
+          };
+          requestsCache.set(id, synthetic);
+          applyApiRequest(synthetic);
+        }
+      });
   }
 
   function fetchPayments(signal?: AbortSignal) {
@@ -233,7 +288,7 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
     return () => clearInterval(interval);
   }, [apiRequest, id]);
 
-  const displayStatus = apiRequest?.status ?? 'SUBMITTED';
+  const displayStatus = cancelledLocally ? 'CANCELLED' : (apiRequest?.status ?? 'SUBMITTED');
   const displayRequestId = apiRequest?.requestNumber ?? id;
   const displayDate = apiRequest
     ? new Date(apiRequest.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -331,6 +386,33 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
     }
   }
 
+  // Cancel request handler
+  async function handleCancelRequest() {
+    if (cancelSubmitting) return;
+    setCancelSubmitting(true);
+    const token = typeof window !== 'undefined' ? localStorage.getItem('elios_access_token') ?? '' : '';
+    try {
+      const res = await fetch(`/api/requests/${id}/cancel`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ cancelReason: cancelReason.trim() || undefined }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCancelOpen(false);
+        setCancelReason('');
+        setCancelledLocally(true);
+        addToast({ type: 'success', title: 'Request cancelled', description: 'Your request has been cancelled.' });
+      } else {
+        addToast({ type: 'error', title: 'Could not cancel', description: data.message ?? 'Please try again.' });
+      }
+    } catch {
+      addToast({ type: 'error', title: 'Network error', description: 'Please check your connection and try again.' });
+    } finally {
+      setCancelSubmitting(false);
+    }
+  }
+
   // Check if a line item already has a server-side response
   function getItemServerResponse(line: RequestLineItem): string | undefined {
     return line.clientResponse;
@@ -340,6 +422,30 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
   const acceptedTotal = quotedItems
     .filter(l => itemResponses[l.id] === 'ACCEPTED' || getItemServerResponse(l) === 'ACCEPTED')
     .reduce((sum, l) => sum + (l.unitPriceInr ?? 0) * l.quantity, 0);
+
+  if (apiLoading && !apiRequest) {
+    return (
+      <ClientLayout>
+        <div className="animate-pulse space-y-4 pb-10">
+          <div className="bg-card rounded-xl border border-border shadow-card p-4">
+            <div className="h-5 bg-muted rounded w-44 mb-2" />
+            <div className="h-4 bg-muted rounded w-60" />
+          </div>
+          <div className="grid lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2 space-y-4">
+              <div className="bg-card rounded-xl border border-border shadow-card p-4">
+                <div className="h-4 bg-muted rounded w-32 mb-4" />
+                {[1,2,3].map(i => <div key={i} className="h-12 bg-muted rounded mb-2" />)}
+              </div>
+            </div>
+            <div className="space-y-3">
+              {[1,2,3,4,5].map(i => <div key={i} className="h-8 bg-muted rounded" />)}
+            </div>
+          </div>
+        </div>
+      </ClientLayout>
+    );
+  }
 
   return (
     <ClientLayout>
@@ -631,6 +737,12 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
                         >
                           Proceed to Payment →
                         </button>
+                        <button
+                          onClick={() => setCancelOpen(true)}
+                          className="mt-2 w-full py-2 rounded-lg border border-red-400 text-red-500 bg-white hover:bg-red-50 text-sm font-500 inline-flex items-center justify-center gap-1.5"
+                        >
+                          <Ban className="w-3.5 h-3.5" /> Cancel Order
+                        </button>
                       </>
                     )}
                   </div>
@@ -797,6 +909,57 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
         </div>
       </div>
       </div>
+
+      {/* Cancel Request Modal */}
+      {cancelOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" role="dialog" aria-modal="true">
+          <div className="bg-card rounded-2xl w-full max-w-md shadow-xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <div className="flex items-center gap-2 text-red-600">
+                <Ban className="w-5 h-5" />
+                <h3 className="font-700">Cancel Order</h3>
+              </div>
+              <button onClick={() => setCancelOpen(false)} className="w-9 h-9 rounded-lg hover:bg-muted flex items-center justify-center">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                <p className="text-sm font-600 text-red-800">Are you sure you want to cancel this request?</p>
+                <p className="text-xs text-red-700 mt-1">This action cannot be undone.</p>
+              </div>
+
+              <div>
+                <label className="text-xs font-600 text-foreground mb-1.5 block">
+                  Reason for cancellation <span className="text-muted-foreground font-400">(optional)</span>
+                </label>
+                <textarea
+                  value={cancelReason}
+                  onChange={e => setCancelReason(e.target.value.slice(0, 500))}
+                  placeholder="Tell us why you're cancelling..."
+                  rows={3}
+                  className="input-field w-full resize-none text-sm"
+                />
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={() => { setCancelOpen(false); setCancelReason(''); }}
+                  className="btn-secondary flex-1 py-2.5 text-sm"
+                >
+                  Keep Request
+                </button>
+                <button
+                  onClick={handleCancelRequest}
+                  disabled={cancelSubmitting}
+                  className="flex-1 py-2.5 text-sm font-600 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-40"
+                >
+                  {cancelSubmitting ? 'Cancelling...' : 'Yes, Cancel'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </ClientLayout>
   );
 }

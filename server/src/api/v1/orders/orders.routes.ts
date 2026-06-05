@@ -13,6 +13,12 @@ import {
   deleteWarehousePhoto,
   updateRepackApproval,
   addWarehouseReply,
+  cancelOrder,
+  createDispute,
+  getOrderDisputes,
+  uploadDisputeVideo,
+  getOrderContact,
+  assignStaffContact,
 } from "./orders.controller";
 import { asyncHandler } from "../../../utils/asyncHandler";
 import { validateQueryParams } from "../../../middleware/validate";
@@ -25,6 +31,12 @@ router.get("/", authenticate, validateQueryParams, asyncHandler(getOrders));
 
 // GET /api/v1/orders/:id — requires auth; ownership enforced for CLIENTs
 router.get("/:id", authenticate, asyncHandler(getOrderById));
+
+// GET /api/v1/orders/:id/contact — returns admin/staff contact details
+router.get("/:id/contact", authenticate, asyncHandler(getOrderContact));
+
+// PATCH /api/v1/orders/:id/staff-contact — admin assigns staff contact shown to client
+router.patch("/:id/staff-contact", authenticate, asyncHandler(assignStaffContact));
 
 // GET /api/v1/orders/:id/gst — fetch saved GST invoice data
 router.get("/:id/gst", authenticate, asyncHandler(getOrderGST));
@@ -58,5 +70,17 @@ router.patch("/:id/repack-approval", authenticate, asyncHandler(updateRepackAppr
 
 // POST /api/v1/orders/:id/warehouse-reply — admin/staff only
 router.post("/:id/warehouse-reply", authenticate, asyncHandler(addWarehouseReply));
+
+// PATCH /api/v1/orders/:id/cancel — client only
+router.patch("/:id/cancel", authenticate, asyncHandler(cancelOrder));
+
+// GET /api/v1/orders/:id/disputes — all roles (clients scoped to own orders)
+router.get("/:id/disputes", authenticate, asyncHandler(getOrderDisputes));
+
+// POST /api/v1/orders/:id/disputes — client only
+router.post("/:id/disputes", authenticate, asyncHandler(createDispute));
+
+// POST /api/v1/orders/:id/dispute-video — client only
+router.post("/:id/dispute-video", authenticate, asyncHandler(uploadDisputeVideo));
 
 export default router;

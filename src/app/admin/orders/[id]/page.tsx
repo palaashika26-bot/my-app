@@ -8,7 +8,7 @@ import { mockAdminOrders, mockClients, orderNotesLog, carrierForOrder, statusToL
 import { ordersApi } from '@/lib/api/orders.api';
 import { ordersCache } from '@/lib/api/ordersCache';
 import { useToast } from '@/components/ui/Toast';
-import { ArrowLeft, CheckCircle2, Circle, MapPin, Upload, Download, FileText, AlertTriangle, Mail, Edit3, MessageSquare, Camera, UserCheck, CreditCard, Eye, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, Circle, MapPin, Upload, Download, FileText, AlertTriangle, Mail, Edit3, MessageSquare, Camera, UserCheck, CreditCard, Eye, X, RefreshCw } from 'lucide-react';
 import { generateInvoice } from '@/lib/generateInvoice';
 import { generateGSTInvoice } from '@/lib/generateGSTInvoice';
 import { generateCommercialInvoice } from '@/lib/generateCommercialInvoice';
@@ -19,13 +19,15 @@ import type { GSTData } from '@/components/GSTInvoicePopover';
 import { paymentsApi } from '@/lib/api/payments.api';
 import ProductImage from '@/components/ProductImage';
 import ExceptionChat from '@/components/ExceptionChat';
-import ImageLightbox from '@/components/ImageLightbox';
 import { useAuth } from '@/context/AuthContext';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import { notFound } from 'next/navigation';
 import { getEffectiveOrderStatus } from '@/lib/orderQcStore';
 import { getStaffRegistry } from '@/lib/staffStore';
 import { STAFF_ROLE_LABELS } from '@/lib/staffRoles';
+import dynamic from 'next/dynamic';
+
+const ShipmentTimeline = dynamic(() => import('@/components/ShipmentTimeline'), { ssr: false });
 
 const DEMO_SEED_UPDATES = [
   { id: '3', location: 'Mumbai JNPT Port', message: 'Shipment arrived at Mumbai port. Customs clearance initiated.', stage: 'Arrived Destination Port', addedBy: 'Meera Nair', addedByRole: 'Sourcing & Logistics Staff', timestamp: '2026-05-20T09:30:00.000Z' },
@@ -219,6 +221,14 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
       .catch(() => setPaymentsLoadError(true));
   }
 
+  async function fetchOrderDisputes() {
+    try {
+      const res = await apiFetch(`/api/orders/${id}/disputes`);
+      const data = await res.json();
+      if (data.success) setOrderDisputes(data.data ?? []);
+    } catch {}
+  }
+
   async function fetchOrder() {
     try {
       const r = await ordersApi.getOrderById(id);
@@ -281,6 +291,12 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
   const [assignment, setAssignment] = useState<StaffAssignment | null>(null);
   const [selectedStaffId, setSelectedStaffId] = useState('');
 
+  // Staff contact card (client-facing) — loaded from DB
+  const [staffUsers, setStaffUsers] = useState<{ id: string; firstName: string; lastName: string; staffRole: string | null }[]>([]);
+  const [staffUsersLoading, setStaffUsersLoading] = useState(true);
+  const [assignedStaffContactId, setAssignedStaffContactId] = useState<string>('');
+  const [staffContactSaving, setStaffContactSaving] = useState(false);
+
   // Warehouse report state — loaded from API
   const [apiWarehouseReport, setApiWarehouseReport] = useState<any>(null);
   const [warehouseReplies, setWarehouseReplies] = useState<any[]>([]);
@@ -291,6 +307,9 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
 
   // completedStages — synced from API order
   const [completedStages, setCompletedStages] = useState<string[]>([]);
+
+  // Disputes for this order (replacement status)
+  const [orderDisputes, setOrderDisputes] = useState<any[]>([]);
 
   interface ChatMessage { id: string; sender: 'admin' | 'client'; text: string; time: string; }
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -308,6 +327,23 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
   });
   const [supplierForm, setSupplierForm] = useState<string | null>(null);
   const [formData, setFormData] = useState<SupplierInfo>({ supplierName: '', platform: '1688', productUrl: '', contact: '', priceCny: '', notes: '' });
+
+  // ── Load real staff users + current staff contact assignment ─────────────────
+  useEffect(() => {
+    setStaffUsersLoading(true);
+    Promise.allSettled([
+      apiFetch('/api/staff-users').then(r => r.json()),
+      apiFetch(`/api/orders/${id}/contact`).then(r => r.json()),
+    ]).then(([staffRes, contactRes]) => {
+      if (staffRes.status === 'fulfilled' && staffRes.value?.success) {
+        setStaffUsers(staffRes.value.data ?? []);
+      }
+      if (contactRes.status === 'fulfilled' && contactRes.value?.success && contactRes.value.data?.staff?.id) {
+        setAssignedStaffContactId(contactRes.value.data.staff.id);
+      }
+      setStaffUsersLoading(false);
+    });
+  }, [id]);
 
   // ── Effects: cache-first for instant render, background refresh ────────────
   useEffect(() => {
@@ -330,6 +366,7 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
     Promise.allSettled([
       ordersApi.getOrderById(id, abortController.signal),
       fetchWarehouseReportFull().catch(() => {}),
+      fetchOrderDisputes(),
     ]).then(([orderResult]) => {
       if (abortController.signal.aborted) return;
       if (orderResult.status === 'fulfilled') {
@@ -347,7 +384,10 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
       if (!abortController.signal.aborted && !cached) setApiLoading(false);
     });
 
-    return () => abortController.abort();
+    // Poll disputes every 30s
+    const disputeInterval = setInterval(fetchOrderDisputes, 30000);
+
+    return () => { abortController.abort(); clearInterval(disputeInterval); };
   }, [id]);
 
   // Lightweight poll every 60 s — checks for new updates without re-downloading photos
@@ -406,6 +446,40 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
 
   // ── Guard: 404 only after API resolves ────────────────────────────────────
   if (!apiLoading && !apiOrder && !mockOrder) return notFound();
+
+  // ── Skeleton while loading real data (no mock fallback available) ──────────
+  if (apiLoading && !mockOrder) {
+    return (
+      <AdminLayout>
+        <Link href="/admin/all-orders" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4">
+          <ArrowLeft className="w-4 h-4" /> Back to Orders
+        </Link>
+        <div className="animate-pulse space-y-4">
+          <div className="bg-card rounded-xl border border-border shadow-card p-5">
+            <div className="h-6 bg-muted rounded w-48 mb-2" />
+            <div className="h-4 bg-muted rounded w-64" />
+          </div>
+          <div className="grid lg:grid-cols-3 gap-5">
+            <div className="lg:col-span-2 space-y-4">
+              <div className="bg-card rounded-xl border border-border shadow-card p-5">
+                <div className="h-4 bg-muted rounded w-24 mb-4" />
+                {[1,2,3].map(i => <div key={i} className="h-10 bg-muted rounded mb-2" />)}
+              </div>
+              <div className="bg-card rounded-xl border border-border shadow-card p-5">
+                <div className="h-4 bg-muted rounded w-32 mb-4" />
+                {[1,2,3,4,5].map(i => <div key={i} className="h-6 bg-muted rounded mb-2" />)}
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="bg-card rounded-xl border border-border shadow-card p-5">
+                {[1,2,3,4].map(i => <div key={i} className="h-4 bg-muted rounded mb-3" />)}
+              </div>
+            </div>
+          </div>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   // ── Derived display values ─────────────────────────────────────────────────
   const displayOrderId = apiOrder?.orderNumber || mockOrder?.orderId || id;
@@ -487,6 +561,8 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
         addToast({ type: 'error', title: 'Failed to save status to server' });
         return;
       }
+      // Bust cache so client orders list picks up new status on next fetch
+      ordersCache.clear();
     }
 
     addToast({ type: 'success', title: 'Status updated', description: `Order is now "${s}".` });
@@ -666,7 +742,7 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
                           qty: Number(item.quantity ?? 1),
                           unitPriceInr: parseFloat(item.unitPriceINR || '0'),
                           totalInr: parseFloat(item.totalINR || '0'),
-                          imageUrl: item.imageUrl ?? item.product?.imageUrl ?? null,
+        imageUrl: item.imageUrl ?? item.product?.images?.[0] ?? null,
                         }))
                       : displayItems.map((item: any) => ({
                           name: item.name,
@@ -754,7 +830,7 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
                     qty:          Number(item.quantity ?? 1),
                     unitPriceInr: parseFloat(item.unitPriceINR || '0'),
                     totalInr:     parseFloat(item.totalINR    || '0'),
-                    imageUrl:     item.imageUrl ?? item.product?.imageUrl ?? null,
+                    imageUrl:     item.imageUrl ?? item.product?.images?.[0] ?? null,
                   }))
                 : displayItems.map((item: any) => ({
                     name:         item.name,
@@ -867,97 +943,64 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
             </table></div>
           </div>
 
-          {/* Timeline */}
-          <div className="bg-card rounded-xl border border-border shadow-card p-5">
-            <h3 className="font-700 mb-3">Shipment Timeline</h3>
-            <p className="text-xs text-muted-foreground mb-3">Click a stage circle to toggle it as completed.</p>
-            <ol className="space-y-2.5">
-              {stages.map((s, i) => {
-                // All stages at or before the highest completed index get a green tick
-                const done = i <= maxCompletedIdx;
-                // Pulse on the last completed stage (the "current" active one)
-                const current = i === maxCompletedIdx && maxCompletedIdx >= 0;
-                return (
-                  <li key={s} className="flex items-start gap-3">
-                    <button
-                      className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${done ? 'bg-emerald-500 text-white hover:bg-emerald-600' : current ? 'bg-[#4A3B52] text-white animate-pulse' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}
-                      onClick={async () => {
-                        if (!apiOrder) return;
-                        // Cumulative toggle:
-                        //   clicking a completed stage → roll back to just before it
-                        //   clicking an incomplete stage → mark all up to and including it
-                        const updated = done ? stages.slice(0, i) : stages.slice(0, i + 1);
-                        setCompletedStages(updated);
-                        try {
-                          await apiFetch(`/api/orders/${id}/stages`, {
-                            method: 'PATCH',
-                            body: JSON.stringify({ completedStages: updated }),
-                          });
-                        } catch {
-                          addToast({ type: 'error', title: 'Failed to update stage' });
-                          // Roll back local state on failure
-                          setCompletedStages(completedStages);
-                        }
-                      }}
-                      title={done ? `Roll back to before "${s}"` : `Mark all stages up to "${s}" as complete`}
-                    >
-                      {done ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Circle className="w-3 h-3" />}
-                    </button>
-                    <p className={`text-sm ${current ? 'font-700 text-[#4A3B52]' : done ? 'font-500' : 'font-500 text-muted-foreground'}`}>{s}</p>
-                  </li>
-                );
-              })}
-            </ol>
-          </div>
-
-          {maxCompletedIdx >= 6 && (
-            <>
-              <div className="bg-card rounded-xl border border-border shadow-card p-5">
-                <h3 className="font-700 mb-4 flex items-center gap-2"><MapPin className="w-4 h-4 text-[#c17b5c]" /> Add Tracking Update</h3>
-                {trackingSuccess && (
-                  <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-4">
-                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> Update added. Client notified.
+          {/* Replacement & Issue Dispute Status cards (right under timeline) */}
+          {orderDisputes.filter((d: any) => d.type === 'REPLACEMENT' || d.type === 'ISSUE').map((dispute: any) => {
+            const st = dispute.status;
+            const isResolved = st === 'RESOLVED';
+            const isRejected = st === 'REJECTED';
+            const isUnderReview = st === 'UNDER_REVIEW';
+            const isReplacement = dispute.type === 'REPLACEMENT';
+            const label = isReplacement ? 'Replacement' : 'Issue';
+            const cName = apiOrder?.client ? `${apiOrder.client.user.firstName} ${apiOrder.client.user.lastName}` : '—';
+            return (
+              <div key={dispute.id} className={`rounded-xl border p-5 ${
+                isResolved ? 'bg-emerald-50 border-emerald-300'
+                : isRejected ? 'bg-red-50 border-red-300'
+                : 'bg-amber-50 border-amber-300'
+              }`}>
+                <div className="flex items-start gap-3">
+                  {isResolved
+                    ? <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                    : isRejected
+                    ? <XCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    : <RefreshCw className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />}
+                  <div className="flex-1">
+                    <p className={`text-sm font-700 ${isResolved ? 'text-emerald-800' : isRejected ? 'text-red-800' : 'text-amber-800'}`}>
+                      {label} {isResolved ? 'Approved' : isRejected ? 'Rejected' : isUnderReview ? 'Under Review' : 'Requested'}
+                    </p>
+                    <p className={`text-xs mt-0.5 ${isResolved ? 'text-emerald-700' : isRejected ? 'text-red-700' : 'text-amber-700'}`}>
+                      {isResolved
+                        ? `${cName}'s ${label.toLowerCase()} request has been approved.`
+                        : isRejected
+                        ? `${cName}'s ${label.toLowerCase()} request was rejected.${dispute.adminNote ? ` Note: ${dispute.adminNote}` : ''}`
+                        : isUnderReview
+                        ? `${cName}'s ${label.toLowerCase()} request is under review.`
+                        : `${cName}'s ${label.toLowerCase()} request is pending review.`}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Submitted: {new Date(dispute.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} •{' '}
+                      <Link href="/admin/disputes" className="underline hover:no-underline">View in Disputes</Link>
+                    </p>
                   </div>
-                )}
-                <div className="space-y-3">
-                  <div><label className="text-[10px] uppercase text-muted-foreground font-600 block mb-1">Current Location <span className="text-red-500">*</span></label><input className="input-field w-full text-sm" value={trackingLocation} onChange={e => setTrackingLocation(e.target.value)} placeholder="e.g. Shanghai Port, China" /></div>
-                  <div><label className="text-[10px] uppercase text-muted-foreground font-600 block mb-1">Status Message <span className="text-red-500">*</span></label><textarea className="input-field w-full text-sm resize-none" rows={2} value={trackingMessage} onChange={e => setTrackingMessage(e.target.value)} placeholder="e.g. Cargo has cleared customs and is awaiting loading" /></div>
-                  <div>
-                    <label className="text-[10px] uppercase text-muted-foreground font-600 block mb-1">Stage (optional)</label>
-                    <select className="input-field w-full text-sm" value={trackingStage} onChange={e => setTrackingStage(e.target.value)}>
-                      <option value="">— Select shipment stage —</option>
-                      {['At Origin Warehouse','Departed Origin','In Transit — Sea/Air','Customs Clearance','Arrived Destination Port','Out for Delivery','Delivered'].map(s => <option key={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  <button onClick={handleAddTrackingUpdate} disabled={trackingSubmitting} className="px-4 py-2 rounded-lg bg-[#c17b5c] text-white text-sm font-600 hover:bg-[#a66344] transition-colors disabled:opacity-60">{trackingSubmitting ? 'Adding…' : 'Add Update'}</button>
                 </div>
               </div>
+            );
+          })}
 
-              <div className="bg-card rounded-xl border border-border shadow-card p-5">
-                <h3 className="font-700 mb-4">🗺️ Tracking History</h3>
-                {trackingUpdates.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No tracking updates added yet. Add the first update above.</p>
-                ) : (
-                  <ol className="relative space-y-0">
-                    {trackingUpdates.map((upd, i) => (
-                      <li key={upd.id} className="flex gap-4 pb-6 last:pb-0">
-                        <div className="flex flex-col items-center flex-shrink-0">
-                          <div className={`w-3 h-3 rounded-full border-2 mt-1 ${i === 0 ? 'bg-[#c17b5c] border-[#c17b5c]' : 'bg-card border-muted-foreground/40'}`} />
-                          {i < trackingUpdates.length - 1 && <div className="w-px flex-1 bg-border mt-1" />}
-                        </div>
-                        <div className="flex-1 min-w-0 pb-1">
-                          <p className="font-700 text-sm">{upd.location}</p>
-                          {upd.stage && <span className="inline-block text-[10px] font-600 px-2 py-0.5 rounded-full bg-[#e8e4f0] text-[#5c5470] mt-0.5 mb-1">{upd.stage}</span>}
-                          <p className="text-sm text-foreground mt-0.5">{upd.message}</p>
-                          <p className="text-[11px] text-muted-foreground mt-1">Added by: {upd.addedBy} ({upd.addedByRole}) · {new Date(upd.timestamp).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                        </div>
-                      </li>
-                    ))}
-                  </ol>
-                )}
-              </div>
-            </>
-          )}
+          <div className="mt-6">
+            <ShipmentTimeline
+              orderId={id}
+              isAdminOrStaff={true}
+              orderStatus={status}
+              onStatusChange={(newStatus) => {
+                setStatus(newStatus);
+                // Also update completedStages to keep the order consistent
+                const autoStages = STATUS_TO_STAGES[newStatus];
+                if (autoStages) setCompletedStages(autoStages);
+                addToast({ type: 'success', title: 'Status updated', description: `Order is now "${newStatus}".` });
+              }}
+            />
+          </div>
 
           <div className="bg-card rounded-xl border border-border shadow-card p-5">
             <h3 className="font-700 mb-3">Documents</h3>
@@ -1207,6 +1250,56 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
             <button onClick={assignStaff} disabled={!selectedStaffId} className="btn-primary w-full py-2 text-sm disabled:opacity-50">{assignment ? 'Reassign' : 'Assign'}</button>
           </div>
 
+          {/* Client-Facing Staff Contact */}
+          <div className="bg-card rounded-xl border border-border shadow-card p-5">
+            <h3 className="font-700 mb-1 flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-[#c17b5c]" /> Client Contact Staff
+            </h3>
+            <p className="text-[11px] text-muted-foreground mb-3">
+              Choose which staff member the client can see and contact for this order. Admin is always shown.
+            </p>
+            <select
+              className="input-field text-sm mb-2"
+              value={assignedStaffContactId}
+              onChange={e => setAssignedStaffContactId(e.target.value)}
+              disabled={staffUsersLoading}
+            >
+              <option value="">
+                {staffUsersLoading ? 'Loading staff…' : '— None (admin only) —'}
+              </option>
+              {staffUsers.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.firstName} {s.lastName}{s.staffRole ? ` (${s.staffRole})` : ''}
+                </option>
+              ))}
+            </select>
+            <button
+              disabled={staffContactSaving}
+              onClick={async () => {
+                setStaffContactSaving(true);
+                try {
+                  const res = await apiFetch(`/api/orders/${id}/staff-contact`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ staffUserId: assignedStaffContactId || null }),
+                  });
+                  const data = await res.json();
+                  if (data.success) {
+                    addToast({ type: 'success', title: 'Staff contact saved', description: 'Client will now see this staff member.' });
+                  } else {
+                    addToast({ type: 'error', title: 'Failed to save' });
+                  }
+                } catch {
+                  addToast({ type: 'error', title: 'Failed to save' });
+                } finally {
+                  setStaffContactSaving(false);
+                }
+              }}
+              className="btn-primary w-full py-2 text-sm disabled:opacity-50"
+            >
+              {staffContactSaving ? 'Saving…' : 'Save Contact'}
+            </button>
+          </div>
+
           <div className="bg-card rounded-xl border border-border shadow-card p-5">
             <h3 className="font-700 mb-3">Logistics</h3>
             <div className="space-y-2 text-sm">
@@ -1352,13 +1445,23 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
                       <div key={i} className="relative group">
                         <img
                           src={url}
-                          className="w-full h-28 object-cover rounded-lg cursor-pointer border-2 border-transparent hover:border-[#4A3B52] transition-all"
-                          onClick={() => setLightboxUrl(url)}
+                          className={`w-full h-28 object-cover rounded-lg cursor-pointer border-2 transition-all ${lightboxUrl === url ? 'border-[#4A3B52]' : 'border-transparent'}`}
+                          onClick={() => setLightboxUrl(lightboxUrl === url ? null : url)}
                         />
+                        <a href={url} download target="_blank" rel="noreferrer"
+                          className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                          ⬇ Download
+                        </a>
                       </div>
                     ))}
                   </div>
-                  <ImageLightbox src={lightboxUrl} onClose={() => setLightboxUrl(null)} />
+                  {lightboxUrl && (
+                    <div className="mt-3 relative rounded-lg overflow-hidden border border-border">
+                      <button onClick={() => setLightboxUrl(null)} className="absolute top-2 right-2 z-10 bg-black/60 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold">✕</button>
+                      <img src={lightboxUrl} className="w-full max-h-80 object-contain bg-black/5" />
+                      <a href={lightboxUrl} download target="_blank" rel="noreferrer" className="block py-1.5 text-center text-xs text-[#4A3B52] underline border-t border-border">Download Full Image</a>
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -6,11 +6,12 @@ import AdminLayout from '@/components/AdminLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { mockClients } from '@/lib/adminMockData';
 import { requestsApi } from '@/lib/api/requests.api';
+import { getRequests as getStoreRequests } from '@/lib/requestsStore';
 import { useToast } from '@/components/ui/Toast';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import { Search, Download, Camera, Eye, Send, AlertTriangle } from 'lucide-react';
 
-const tabs = ['All Requests','Pending Quotations','Awaiting Approval','Approved','Rejected','Exception'];
+const tabs = ['All Requests','Pending Quotations','Awaiting Approval','Approved','Rejected','Cancelled','Exception'];
 
 interface DisplayRequest {
   id: string;
@@ -34,7 +35,8 @@ function matchesTab(status: string, tab: string): boolean {
   if (tab === 'Pending Quotations') return ['SUBMITTED', 'REVIEWING', 'Quotation in Progress'].includes(status);
   if (tab === 'Awaiting Approval') return ['QUOTED', 'Awaiting Approval'].includes(status);
   if (tab === 'Approved') return ['ACCEPTED', 'CONVERTED', 'Sourcing', 'At China Warehouse', 'Payment Pending', 'Completed'].includes(status);
-  if (tab === 'Rejected') return ['REJECTED', 'CANCELLED', 'Cancelled'].includes(status);
+  if (tab === 'Rejected') return ['REJECTED'].includes(status);
+  if (tab === 'Cancelled') return ['CANCELLED', 'Cancelled'].includes(status);
   if (tab === 'Exception') return status === 'Exception';
   return true;
 }
@@ -56,8 +58,9 @@ function AdminRequestsContent() {
   }, [searchParams]);
 
   useEffect(() => {
+    const ac = new AbortController();
     setLoading(true);
-    requestsApi.getRequests({ limit: 100 })
+    requestsApi.getRequests({ limit: 50 }, ac.signal)
       .then((r) => {
         const apiData = r.data?.data ?? [];
         const mapped: DisplayRequest[] = apiData.map((req: any) => ({
@@ -74,8 +77,26 @@ function AdminRequestsContent() {
         }));
         setRequests(mapped);
       })
-      .catch(() => setRequests([]))
+      .catch((e) => {
+        if (e?.code !== 'ERR_CANCELED') {
+          const storeData = getStoreRequests();
+          const mapped: DisplayRequest[] = storeData.map((req) => ({
+            id: req.id,
+            requestId: req.requestId,
+            client: req.client ?? '—',
+            clientEmail: '',
+            items: req.items,
+            itemNames: req.itemNames,
+            totalBudget: req.totalBudget,
+            date: req.date,
+            status: req.status,
+            source: req.source,
+          }));
+          setRequests(mapped);
+        }
+      })
       .finally(() => setLoading(false));
+    return () => ac.abort();
   }, []);
 
   const filtered = useMemo(() => requests.filter(r => {
@@ -134,7 +155,7 @@ function AdminRequestsContent() {
               </tr>
             ) : (
               filtered.map((r) => (
-                <tr key={r.id} className={`table-row-hover ${r.status === 'Exception' ? 'bg-red-50/40' : ''}`}>
+                <tr key={r.id} className={`table-row-hover ${r.status === 'Exception' ? 'bg-red-50/40' : r.status === 'CANCELLED' ? 'bg-red-50/20' : ''}`}>
                   <td className="px-3 py-3"><input type="checkbox" checked={!!selected[r.id]} onChange={() => setSelected(s => ({ ...s, [r.id]: !s[r.id] }))} className="accent-accent" /></td>
                   <td className="px-3 py-3"><div className="flex items-center gap-2">{r.source === 'photo_scan' && <Camera className="w-3.5 h-3.5 text-[#4A3B52]" aria-label="Photo-scan submission" />}<Link href={`/admin/requests/${r.id}`} className="font-tabular font-600 text-primary hover:text-[#4A3B52]">{r.requestId}</Link></div></td>
                   <td className="px-3 py-3"><p className="text-sm">{r.client}</p><p className="text-[11px] text-muted-foreground">{r.clientEmail}</p></td>
@@ -146,7 +167,7 @@ function AdminRequestsContent() {
                     <td className="px-3 py-3 text-right font-tabular font-600">{r.totalBudget}</td>
                   )}
                   <td className="px-3 py-3 text-xs text-muted-foreground font-tabular">{r.date}</td>
-                  <td className="px-3 py-3"><StatusBadge status={r.status as any} /></td>
+                  <td className="px-3 py-3"><StatusBadge status={(r.status === 'CANCELLED' ? 'Cancelled' : r.status) as any} /></td>
                   <td className="px-3 py-3 text-right">
                     <div className="flex items-center justify-end gap-1">
                       <Link href={`/admin/requests/${r.id}`} className="p-1.5 rounded-md hover:bg-muted" title="View"><Eye className="w-3.5 h-3.5" /></Link>

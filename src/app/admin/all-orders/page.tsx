@@ -98,6 +98,17 @@ function AdminAllOrdersContent() {
     fetchOrders(abortController.signal);
     return () => abortController.abort();
   }, []);
+
+  // Re-fetch when the user returns to this tab — only if a token exists (prevents 401 redirect loop)
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.visibilityState === 'visible' && localStorage.getItem('elios_access_token')) {
+        fetchOrders();
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
 
@@ -149,15 +160,16 @@ function AdminAllOrdersContent() {
   const allOnPageSelected = pageRows.length > 0 && pageRows.every(r => selected[r.id]);
 
   function changeStatus(id: string, ns: string) {
-    // Optimistic update
     const prev = orders.find(o => o.id === id)?.status;
+    // Optimistic update + immediate success toast — rollback only if API fails
     setOrders(cur => cur.map(o => o.id === id ? { ...o, status: ns as any } : o));
+    addToast({ type: 'success', title: 'Status updated', description: `Order set to “${ns}”.` });
     ordersApi.updateOrderStatus(id, ns)
       .then(() => {
-        addToast({ type: 'success', title: 'Status updated', description: `Order set to “${ns}”.` });
+        ordersCache.clear();
       })
       .catch(() => {
-        // Roll back on failure
+        // Roll back UI on failure
         setOrders(cur => cur.map(o => o.id === id ? { ...o, status: (prev ?? o.status) as any } : o));
         addToast({ type: 'error', title: 'Update failed', description: 'Could not save status. Please try again.' });
       });
