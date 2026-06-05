@@ -32,6 +32,9 @@ function LoginForm() {
   const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState('');
+  const [isResending, setIsResending] = useState(false);
   // Wipe any stale staff localStorage keys so getStaffRegistry() re-seeds fresh
   useEffect(() => {
     localStorage.removeItem('bk_staff_registry');
@@ -51,6 +54,7 @@ function LoginForm() {
 
   async function onSubmit(data: LoginFormValues) {
     setIsLoading(true);
+    setNeedsVerification(false);
     try {
       // 1. Try real backend API
       const res = await authApi.login({ email: data.email, password: data.password });
@@ -91,6 +95,11 @@ function LoginForm() {
         (apiErr as { response?: { data?: { message?: string } } })?.response?.data?.message
         || 'Invalid credentials. Please try again.';
       console.log('[login] Backend API failed:', errMsg);
+      // Surface a "resend verification" affordance when the account is unverified
+      if (errMsg.toLowerCase().includes('verif')) {
+        setNeedsVerification(true);
+        setUnverifiedEmail(data.email);
+      }
       // 2. Backend failed — try local staffStore (demo staff accounts)
       const staffMember = authenticateStaff(data.email, data.password);
       if (staffMember) {
@@ -118,6 +127,27 @@ function LoginForm() {
       });
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function handleResendVerification() {
+    if (!unverifiedEmail) return;
+    setIsResending(true);
+    try {
+      const res = await authApi.resendVerification(unverifiedEmail);
+      addToast({
+        type: 'success',
+        title: 'Verification email sent',
+        description: res.data?.message || 'Check your inbox for the verification link.',
+      });
+    } catch {
+      addToast({
+        type: 'error',
+        title: 'Could not resend email',
+        description: 'Something went wrong. Please try again in a moment.',
+      });
+    } finally {
+      setIsResending(false);
     }
   }
 
@@ -215,6 +245,30 @@ function LoginForm() {
             <h2 className="text-2xl font-700 text-foreground mb-1.5">Welcome back</h2>
             <p className="text-sm text-muted-foreground">Sign in to your EliosWholesale account</p>
           </div>
+
+          {needsVerification && (
+            <div className="mb-5 p-4 rounded-xl bg-amber-50 border border-amber-200">
+              <p className="text-sm font-600 text-amber-800 mb-1">Email not verified</p>
+              <p className="text-sm text-amber-700 mb-3">
+                Please check your inbox and click the verification link to activate your account.
+              </p>
+              <button
+                type="button"
+                onClick={handleResendVerification}
+                disabled={isResending}
+                className="inline-flex items-center gap-2 text-sm font-600 text-[#1D9E75] hover:underline disabled:opacity-60"
+              >
+                {isResending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                    Sending...
+                  </>
+                ) : (
+                  'Resend verification email'
+                )}
+              </button>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
             {/* Google Sign In */}

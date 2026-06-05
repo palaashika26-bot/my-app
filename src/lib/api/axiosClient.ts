@@ -1,9 +1,10 @@
 import axios from 'axios';
+import { resolveApiBaseUrl } from '../apiBase';
 
 const TOKEN_KEY = 'elios_access_token';
 
 const axiosClient = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1',
+  baseURL: resolveApiBaseUrl(),
   headers: { 'Content-Type': 'application/json' },
   withCredentials: true, // required for httpOnly refresh-token cookie
   timeout: 15000, // 15-second timeout — prevents requests from hanging indefinitely

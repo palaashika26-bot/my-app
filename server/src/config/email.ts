@@ -17,7 +17,16 @@ interface SendEmailOptions {
   html: string;
 }
 
-export async function sendEmail({ to, subject, html }: SendEmailOptions): Promise<void> {
+/**
+ * Sends an email. Returns `true` on success and `false` on failure.
+ *
+ * The underlying error is logged server-side but never thrown, so existing
+ * fire-and-forget callers (notifications, receipts) keep working. Callers that
+ * MUST react to a delivery failure — e.g. the email-verification step during
+ * registration — should check the returned boolean and surface the problem to
+ * the user instead of assuming the message was delivered.
+ */
+export async function sendEmail({ to, subject, html }: SendEmailOptions): Promise<boolean> {
   try {
     await transporter.sendMail({
       from: config.EMAIL_FROM,
@@ -26,7 +35,9 @@ export async function sendEmail({ to, subject, html }: SendEmailOptions): Promis
       html,
     });
     console.log(`Email sent to ${to}: ${subject}`);
+    return true;
   } catch (err) {
     console.error(`Failed to send email to ${to}:`, err);
+    return false;
   }
 }

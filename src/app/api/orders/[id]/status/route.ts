@@ -1,6 +1,7 @@
+import { resolveApiBaseUrl } from '@/lib/apiBase';
 import { NextRequest, NextResponse } from 'next/server';
 
-const EXPRESS_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+const EXPRESS_BASE = resolveApiBaseUrl();
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

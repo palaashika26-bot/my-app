@@ -8,11 +8,30 @@ function required(key: string): string {
   return value;
 }
 
+const NODE_ENV = process.env.NODE_ENV || "development";
+const IS_PRODUCTION = NODE_ENV === "production";
+
+// Resolve a public URL from the first of `keys` that is set. In production there
+// is deliberately NO localhost fallback — a missing value throws so the
+// misconfiguration is caught loudly instead of silently emailing localhost links.
+function requiredUrl(...keys: string[]): string {
+  for (const key of keys) {
+    const value = process.env[key];
+    if (value && value.trim()) return value.trim();
+  }
+  if (IS_PRODUCTION) {
+    throw new Error(
+      `One of [${keys.join(", ")}] must be set in production (no localhost fallback is allowed)`
+    );
+  }
+  return "http://localhost:3000";
+}
+
 const config = {
   PORT: parseInt(process.env.PORT || "4000", 10),
-  NODE_ENV: process.env.NODE_ENV || "development",
-  CLIENT_URL: process.env.CLIENT_URL || "http://localhost:3000",
-  FRONTEND_URL: process.env.FRONTEND_URL || process.env.CLIENT_URL || "http://localhost:3000",
+  NODE_ENV,
+  CLIENT_URL: requiredUrl("CLIENT_URL", "FRONTEND_URL"),
+  FRONTEND_URL: requiredUrl("FRONTEND_URL", "CLIENT_URL"),
 
   // Database
   DATABASE_URL: required("DATABASE_URL"),

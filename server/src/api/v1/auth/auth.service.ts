@@ -51,7 +51,10 @@ export const authService = {
 
     // 4. Block unverified client accounts before issuing tokens
     if (user.role === "CLIENT" && !user.isEmailVerified) {
-      throw new ApiError(401, "Please verify your email first");
+      throw new ApiError(
+        401,
+        "Please check your email and click the verification link to activate your account."
+      );
     }
     if (user.role === "CLIENT" && !user.isApproved) {
       throw new ApiError(401, "Your account is not yet active");
@@ -100,54 +103,110 @@ export const authService = {
   },
 
   async registerClient(data: RegisterClientInput) {
-    // 1. Check email uniqueness
+    // 1. Check for an existing account. A verified account blocks re-registration.
+    //    A still-unverified account is stale (e.g. a previous attempt whose
+    //    verification email never sent) — delete it so the email is freed up and
+    //    registration can proceed fresh instead of being permanently stuck.
     const existing = await authRepository.findUserByEmail(data.email);
-    if (existing) throw new ApiError(409, "Email already registered");
+    if (existing) {
+      if (existing.isEmailVerified) {
+        throw new ApiError(409, "Email already registered");
+      }
+      await authRepository.deleteUserById(existing.id);
+    }
 
     // 2. Hash password
     const passwordHash = await bcrypt.hash(data.password, 10);
 
-    // 3. Create user (isEmailVerified=false, isApproved=false by DB default)
-    const user = await authRepository.createUser({
-      email: data.email,
-      passwordHash,
-      firstName: data.firstName,
-      lastName: data.lastName,
-      phone: data.phone,
-    });
+    // 3. Create user + client profile + verification token atomically
+    //    (isEmailVerified=false, isApproved=false by DB default)
+    const { user, token } = await authRepository.createUnverifiedClient(
+      {
+        email: data.email,
+        passwordHash,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        phone: data.phone,
+      },
+      {
+        companyName: data.companyName,
+        gstin: data.gstin || null,
+        addressLine1: data.addressLine1 || null,
+        city: data.city || null,
+        state: data.state || null,
+        pincode: data.pincode || null,
+      }
+    );
 
-    // 4. Create full client profile
-    await authRepository.createClientProfile(user.id, {
-      companyName: data.companyName,
-      gstin: data.gstin || null,
-      addressLine1: data.addressLine1 || null,
-      city: data.city || null,
-      state: data.state || null,
-      pincode: data.pincode || null,
-    });
-
-    // 5. Generate email verification token
-    const token = await authRepository.createEmailVerificationToken(user.id);
-
-    // 6. Build verification URL
+    // 4. Build verification URL
     const verifyUrl = `${config.FRONTEND_URL}/verify-email?token=${token}`;
 
-    // 7. Log URL in development for easy testing without real email
+    // 5. Log URL in development for easy testing without real email
     if (config.NODE_ENV === "development") {
       console.log("\n✉  VERIFICATION URL:", verifyUrl, "\n");
     }
 
-    // 8. Send verification email (failure is logged, never crashes the app)
-    await sendEmail({
+    // 6. Send verification email. If it cannot be delivered, roll the new
+    //    account back so the email address is freed up for another attempt.
+    const sent = await sendEmail({
       to: data.email,
       subject: "Verify your Elios account",
       html: verificationEmailTemplate(data.firstName, verifyUrl),
     });
 
+    // In production a failed send rolls the new account back so the email is
+    // freed for another attempt. In development we keep it — the verification
+    // URL was logged above, so local testing works without a real SMTP server.
+    if (!sent && config.NODE_ENV !== "development") {
+      await authRepository.deleteUserById(user.id);
+      throw new ApiError(
+        502,
+        "We couldn't send the verification email. Please check the address and try again."
+      );
+    }
+
     return {
       message:
         "Registration successful. Please check your email to verify your account.",
     };
+  },
+
+  async resendVerification(email: string) {
+    // Always return the same message so this endpoint can't be used to probe
+    // which emails have accounts.
+    const genericMessage =
+      "If an account for that email still needs verification, a new link has been sent.";
+
+    const user = await authRepository.findUserByEmail(email);
+
+    // Nothing to do for unknown or already-verified accounts.
+    if (!user || user.isEmailVerified) {
+      return { message: genericMessage };
+    }
+
+    // Invalidate any older links, then issue and send a fresh one.
+    await authRepository.invalidateUserVerificationTokens(user.id);
+    const token = await authRepository.createEmailVerificationToken(user.id);
+
+    const verifyUrl = `${config.FRONTEND_URL}/verify-email?token=${token}`;
+    if (config.NODE_ENV === "development") {
+      console.log("\n✉  RESEND VERIFICATION URL:", verifyUrl, "\n");
+    }
+
+    const sent = await sendEmail({
+      to: user.email,
+      subject: "Verify your Elios account",
+      html: verificationEmailTemplate(user.firstName, verifyUrl),
+    });
+
+    if (!sent && config.NODE_ENV !== "development") {
+      throw new ApiError(
+        502,
+        "We couldn't send the verification email. Please try again in a few minutes."
+      );
+    }
+
+    return { message: genericMessage };
   },
 
   async verifyEmail(token: string) {

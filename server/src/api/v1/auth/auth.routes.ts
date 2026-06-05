@@ -4,12 +4,18 @@ import {
   register,
   registerClient,
   verifyEmail,
+  resendVerification,
   logout,
   me,
   refresh,
   acceptInvite,
 } from "./auth.controller";
-import { loginSchema, registerSchema, registerClientSchema } from "./auth.schema";
+import {
+  loginSchema,
+  registerSchema,
+  registerClientSchema,
+  resendVerificationSchema,
+} from "./auth.schema";
 import { validate } from "../../../middleware/validate";
 import { authenticate } from "../../../middleware/authenticate";
 import { authLimiter } from "../../../middleware/rateLimiter";
@@ -35,6 +41,13 @@ router.post(
 
 // GET /api/v1/auth/verify-email?token=...
 router.get("/verify-email", asyncHandler(verifyEmail));
+
+// POST /api/v1/auth/resend-verification  (re-send the verification email)
+router.post(
+  "/resend-verification",
+  validate(resendVerificationSchema),
+  asyncHandler(resendVerification)
+);
 
 // POST /api/v1/auth/logout
 router.post("/logout", asyncHandler(logout));

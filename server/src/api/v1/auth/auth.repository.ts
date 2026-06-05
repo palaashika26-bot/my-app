@@ -157,6 +157,64 @@ export const authRepository = {
     });
   },
 
+  // Create the user, their client profile and a verification token atomically.
+  // If any step fails the whole transaction rolls back, so a half-registered
+  // email is never left behind to block a later retry.
+  async createUnverifiedClient(user: CreateUserData, client: CreateClientData) {
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    const createdUser = await prisma.$transaction(async (tx) => {
+      const u = await tx.user.create({
+        data: {
+          email: user.email,
+          passwordHash: user.passwordHash,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          phone: user.phone,
+          role: user.role ?? Role.CLIENT,
+        },
+      });
+      await tx.client.create({
+        data: {
+          userId: u.id,
+          companyName: client.companyName,
+          gstin: client.gstin || null,
+          addressLine1: client.addressLine1 || null,
+          city: client.city || null,
+          state: client.state || null,
+          pincode: client.pincode || null,
+        },
+      });
+      await tx.emailVerification.create({
+        data: { userId: u.id, token, expiresAt },
+      });
+      return u;
+    });
+
+    return { user: createdUser, token };
+  },
+
+  // Hard-delete a user and their dependent rows. Used to roll a registration
+  // back when the verification email cannot be delivered. The Client relation
+  // has no onDelete cascade, so it is removed explicitly before the user;
+  // deleting the user then cascades emailVerifications and refreshTokens.
+  async deleteUserById(userId: string) {
+    return prisma.$transaction([
+      prisma.client.deleteMany({ where: { userId } }),
+      prisma.user.delete({ where: { id: userId } }),
+    ]);
+  },
+
+  // Mark every still-valid verification token for a user as used, so issuing a
+  // fresh link invalidates any older ones first.
+  async invalidateUserVerificationTokens(userId: string) {
+    return prisma.emailVerification.updateMany({
+      where: { userId, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+  },
+
   async findPendingVerification(userId: string) {
     return prisma.emailVerification.findFirst({
       where: {

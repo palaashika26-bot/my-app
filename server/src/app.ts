@@ -11,6 +11,8 @@ import v1Router from "./api/v1/index";
 
 const app = express();
 
+app.set("trust proxy", 1);
+
 // ── 1. Security headers (helmet + hpp + disable x-powered-by) ─────────────────
 applySecurityMiddleware(app);
 

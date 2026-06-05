@@ -13,7 +13,7 @@ import { authService, generateAccessToken, generateRefreshToken } from '../api/v
 import { authRepository } from '../api/v1/auth/auth.repository';
 
 jest.mock('../config/email', () => ({
-  sendEmail: jest.fn().mockResolvedValue(undefined),
+  sendEmail: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock('../templates/verificationEmail', () => ({

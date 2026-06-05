@@ -21,6 +21,9 @@ export const authApi = {
   verifyEmail: (token: string) =>
     axiosClient.get<ApiResponse<null>>(`/auth/verify-email?token=${token}`),
 
+  resendVerification: (email: string) =>
+    axiosClient.post<ApiResponse<null>>('/auth/resend-verification', { email }),
+
   logout: () =>
     axiosClient.post<ApiResponse<null>>('/auth/logout'),
 

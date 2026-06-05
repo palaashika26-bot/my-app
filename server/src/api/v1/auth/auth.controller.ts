@@ -41,6 +41,12 @@ export const verifyEmail = async (req: Request, res: Response) => {
   return ApiResponse.success(res, null, result.message);
 };
 
+export const resendVerification = async (req: Request, res: Response) => {
+  const { email } = req.body as { email: string };
+  const result = await authService.resendVerification(email);
+  return ApiResponse.success(res, null, result.message);
+};
+
 export const logout = async (req: Request, res: Response) => {
   const token = req.cookies?.refreshToken as string | undefined;
 

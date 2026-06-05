@@ -1,8 +1,9 @@
+import { resolveApiBaseUrl } from '@/lib/apiBase';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
   try {
-    const EXPRESS_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+    const EXPRESS_BASE = resolveApiBaseUrl();
 
     const formData = await req.formData();
     const authHeader = req.headers.get('authorization') || '';
