@@ -17,10 +17,13 @@ const nextConfig = {
   ],
 
   typescript: {
-    ignoreBuildErrors: true,
+    // Type errors now fail the build (codebase is clean at 0 errors).
+    ignoreBuildErrors: false,
   },
 
   eslint: {
+    // Still ignored: ESLint reports ~6,900 mostly-formatting errors and the lint
+    // setup needs migrating to flat config first. Re-enable after a lint cleanup pass.
     ignoreDuringBuilds: true,
   },
 
@@ -34,9 +37,17 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: '/(.*)',
+        // API responses must never be cached — they contain live data
+        source: '/api/:path*',
         headers: [
           { key: 'Cache-Control', value: 'no-store, max-age=0' },
+        ],
+      },
+      {
+        // Static Next.js assets are already content-hashed; cache them aggressively
+        source: '/_next/static/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
         ],
       },
     ];

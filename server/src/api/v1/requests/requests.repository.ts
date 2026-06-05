@@ -279,6 +279,30 @@ export const requestsRepository = {
     });
   },
 
+  async cancelRequest(requestId: string, userId: string, reason?: string) {
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.sourcingRequest.update({
+        where: { id: requestId },
+        data: {
+          status: "CANCELLED",
+          cancelledAt: new Date(),
+          cancelReason: reason ?? undefined,
+        },
+        include: fullInclude,
+      });
+
+      await tx.requestActivity.create({
+        data: {
+          requestId,
+          userId,
+          action: reason ? `Request cancelled: ${reason}` : "Request cancelled",
+        },
+      });
+
+      return updated;
+    });
+  },
+
   async respondToQuotation(
     requestId: string,
     clientId: string,
@@ -411,7 +435,6 @@ export const requestsRepository = {
       data: {
         requestNumber,
         clientId,
-        requestType: (data.requestType ?? "SOURCING") as any,
         notes: data.notes,
         referenceNote: data.referenceNote ?? null,
         totalBudgetINR: data.totalBudgetINR ?? null,

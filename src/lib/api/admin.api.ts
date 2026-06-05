@@ -74,6 +74,17 @@ export interface ClientsParams {
   isActive?: boolean;
 }
 
+export interface StaffMemberApi {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string | null;
+  staffRole: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
 export const adminApi = {
   getStats: () =>
     axiosClient.get<ApiResponse<AdminStats>>('/admin/stats'),
@@ -86,4 +97,31 @@ export const adminApi = {
 
   getClientById: (id: string) =>
     axiosClient.get<ApiResponse<AdminClientDetail>>(`/admin/clients/${id}`),
+
+  listStaff: () =>
+    axiosClient.get<ApiResponse<StaffMemberApi[]>>('/admin/staff', { params: { includeInactive: true } }),
+
+  createStaff: (data: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    password: string;
+    phone?: string;
+    staffRole: string;
+  }) => axiosClient.post<ApiResponse<StaffMemberApi>>('/admin/staff', data),
+
+  updateStaff: (
+    id: string,
+    data: {
+      firstName?: string;
+      lastName?: string;
+      phone?: string;
+      staffRole?: string;
+      password?: string;
+      isActive?: boolean;
+    }
+  ) => axiosClient.patch<ApiResponse<StaffMemberApi>>(`/admin/staff/${id}`, data),
+
+  deleteStaff: (id: string) =>
+    axiosClient.delete<ApiResponse<{ id: string }>>(`/admin/staff/${id}`),
 };

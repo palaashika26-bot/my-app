@@ -50,6 +50,17 @@ export const rejectRequest = async (req: Request, res: Response) => {
   return ApiResponse.success(res, request, "Request rejected");
 };
 
+export const cancelRequest = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const request = await requestsService.cancelRequest(
+    id,
+    req.user!.userId,
+    req.user!.role,
+    req.body?.cancelReason
+  );
+  return ApiResponse.success(res, request, "Request cancelled");
+};
+
 export const respondToQuotation = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await requestsService.respondToQuotation(id, req.user!.userId, req.body);

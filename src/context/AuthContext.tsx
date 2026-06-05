@@ -1,5 +1,5 @@
 'use client';
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import type { StaffRoleId } from '@/lib/staffRoles';
 
@@ -68,7 +68,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push('/login');
   }, [router]);
 
-  return <Ctx.Provider value={{ role, user, login, logout, isReady }}>{children}</Ctx.Provider>;
+  const value = useMemo(
+    () => ({ role, user, login, logout, isReady }),
+    [role, user, login, logout, isReady]
+  );
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
 export function useAuth() {

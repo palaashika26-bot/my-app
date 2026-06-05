@@ -13,12 +13,9 @@ import { generateInvoice } from '@/lib/generateInvoice';
 import { generateGSTInvoice } from '@/lib/generateGSTInvoice';
 import { generateCommercialInvoice } from '@/lib/generateCommercialInvoice';
 import { generatePackingList } from '@/lib/generatePackingList';
-import GSTInvoiceModal from '@/components/GSTInvoiceModal';
-import GSTInvoicePopover from '@/components/GSTInvoicePopover';
 import type { GSTData } from '@/components/GSTInvoicePopover';
 import { paymentsApi } from '@/lib/api/payments.api';
 import ProductImage from '@/components/ProductImage';
-import ExceptionChat from '@/components/ExceptionChat';
 import { useAuth } from '@/context/AuthContext';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import { notFound } from 'next/navigation';
@@ -28,6 +25,9 @@ import { STAFF_ROLE_LABELS } from '@/lib/staffRoles';
 import dynamic from 'next/dynamic';
 
 const ShipmentTimeline = dynamic(() => import('@/components/ShipmentTimeline'), { ssr: false });
+const GSTInvoiceModal = dynamic(() => import('@/components/GSTInvoiceModal'), { ssr: false });
+const GSTInvoicePopover = dynamic(() => import('@/components/GSTInvoicePopover'), { ssr: false });
+const ExceptionChat = dynamic(() => import('@/components/ExceptionChat'), { ssr: false });
 
 const DEMO_SEED_UPDATES = [
   { id: '3', location: 'Mumbai JNPT Port', message: 'Shipment arrived at Mumbai port. Customs clearance initiated.', stage: 'Arrived Destination Port', addedBy: 'Meera Nair', addedByRole: 'Sourcing & Logistics Staff', timestamp: '2026-05-20T09:30:00.000Z' },

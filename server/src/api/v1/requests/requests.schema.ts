@@ -53,6 +53,10 @@ export const rejectRequestSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 
+export const cancelRequestSchema = z.object({
+  cancelReason: z.string().max(500).optional(),
+});
+
 export const respondToQuotationSchema = z.object({
   items: z
     .array(
@@ -95,3 +99,4 @@ export type SendQuotationInput = z.infer<typeof sendQuotationSchema>;
 export type RespondToQuotationInput = z.infer<typeof respondToQuotationSchema>;
 export type RespondToCounterInput = z.infer<typeof respondToCounterSchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
+export type CancelRequestInput = z.infer<typeof cancelRequestSchema>;

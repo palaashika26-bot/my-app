@@ -47,7 +47,7 @@ export const requestsService = {
 
     const referenceNote = (data as CreateRequestInputV2).referenceNote;
     const requestType = data.requestType ?? "SOURCING";
-    const request = await requestsRepository.createWithReferenceData(client.id, {
+    const createdRequest = await requestsRepository.createWithReferenceData(client.id, {
       notes: data.notes,
       referenceNote,
       requestType,
@@ -64,6 +64,14 @@ export const requestsService = {
         referenceImageUrls: (item as any).referenceImageUrls ?? [],
       })),
     });
+
+    // Re-fetch request with items included so TypeScript knows about the relation
+    const request = await prisma.sourcingRequest.findUnique({
+      where: { id: createdRequest.id },
+      include: { items: true },
+    });
+
+    if (!request) throw new ApiError(500, "Failed to fetch created request");
 
     // Notify all ADMIN + STAFF (fire-and-forget)
     const staffAndAdmins = await prisma.user.findMany({
@@ -343,6 +351,68 @@ export const requestsService = {
 ${reason ? `<p>Reason: ${reason}</p>` : ""}
 <p>Please contact our team if you have questions.</p>`,
     }).catch(() => {});
+
+    return updated;
+  },
+
+  async cancelRequest(
+    requestId: string,
+    userId: string,
+    role: string,
+    cancelReason?: string
+  ) {
+    // CLIENT can only cancel their own requests
+    if (role === "CLIENT") {
+      const client = await prisma.client.findUnique({
+        where: { userId },
+        select: { id: true },
+      });
+      if (!client) throw ApiError.forbidden("Client profile not found");
+      const owned = await prisma.sourcingRequest.findFirst({
+        where: { id: requestId, clientId: client.id },
+        select: { id: true },
+      });
+      if (!owned) throw ApiError.forbidden("Request not found or access denied");
+    }
+
+    const existing = await prisma.sourcingRequest.findUnique({
+      where: { id: requestId },
+      include: {
+        client: { include: { user: { select: { email: true, firstName: true, lastName: true } } } },
+      },
+    });
+    if (!existing) throw ApiError.notFound("Request not found");
+    if (existing.status === "CONVERTED") {
+      throw ApiError.badRequest("Cannot cancel a request that has already been converted to an order");
+    }
+    if (existing.status === "REJECTED") {
+      throw ApiError.badRequest("Cannot cancel a request that has been rejected");
+    }
+    if (existing.status === "CANCELLED") {
+      throw ApiError.badRequest("Request is already cancelled");
+    }
+
+    const updated = await requestsRepository.cancelRequest(requestId, userId, cancelReason);
+
+    // Notify ADMIN + STAFF when a client withdraws a request (fire-and-forget)
+    if (role === "CLIENT") {
+      const staffAndAdmins = await prisma.user.findMany({
+        where: { role: { in: ["ADMIN", "STAFF"] }, isActive: true },
+        select: { email: true, firstName: true },
+      });
+      const clientName = `${existing.client.user.firstName} ${existing.client.user.lastName}`;
+      const dashboardUrl = `${FRONTEND_URL}/staff/sourcing/requests/${requestId}`;
+      for (const staff of staffAndAdmins) {
+        sendEmail({
+          to: staff.email,
+          subject: `Request Cancelled: ${existing.requestNumber}`,
+          html: `<p>Hi ${staff.firstName},</p>
+<p><strong>${clientName}</strong> from <strong>${existing.client.companyName}</strong> has cancelled sourcing request <strong>${existing.requestNumber}</strong>.</p>
+${cancelReason ? `<p>Reason: ${cancelReason}</p>` : ""}
+<p><a href="${dashboardUrl}">View Request</a></p>`,
+        }).catch(() => {});
+      }
+    }
 
     return updated;
   },

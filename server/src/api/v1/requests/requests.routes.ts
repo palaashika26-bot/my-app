@@ -6,6 +6,7 @@ import {
   sendQuotation,
   approveRequest,
   rejectRequest,
+  cancelRequest,
   respondToQuotation,
   respondToCounter,
   sendMessage,
@@ -19,6 +20,7 @@ import {
   createRequestSchemaV2,
   sendQuotationSchema,
   rejectRequestSchema,
+  cancelRequestSchema,
   respondToQuotationSchema,
   respondToCounterSchema,
   sendMessageSchema,
@@ -59,6 +61,15 @@ router.post(
   authorize(["ADMIN", "STAFF"]),
   validate(rejectRequestSchema),
   asyncHandler(rejectRequest)
+);
+
+// PATCH /api/v1/requests/:id/cancel — client withdraws their own request (admin/staff may also cancel)
+router.patch(
+  "/:id/cancel",
+  authenticate,
+  authorize(["CLIENT", "ADMIN", "STAFF"]),
+  validate(cancelRequestSchema),
+  asyncHandler(cancelRequest)
 );
 
 router.post(

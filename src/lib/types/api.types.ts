@@ -109,6 +109,7 @@ export interface ApiOrderItem {
     id: string;
     name: string;
     slug: string;
+    images?: string[];
   } | null;
   supplier: {
     id: string;

@@ -72,7 +72,8 @@ describe('authenticate middleware', () => {
       client: { id: 'client-1' },
     });
 
-    const token = generateAccessToken('u1', 'CLIENT');
+    // NB: distinct userId from the verified-user test above — the auth cache is keyed by userId
+    const token = generateAccessToken('u2', 'CLIENT');
     const req = { headers: { authorization: `Bearer ${token}` } } as unknown as Request;
     await authenticate(req, mockRes, mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 401 }));

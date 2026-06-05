@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AdminLayout from '@/components/AdminLayout';
 import { useToast } from '@/components/ui/Toast';
-import { Plus, Pencil, Trash2, X, Search, Tag, ImageIcon } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Search, Tag, ImageIcon, Download, Upload } from 'lucide-react';
+import ImportProductsModal from '@/components/ImportProductsModal';
 
 // ── Category management ──────────────────────────────────────────────────────
 interface StripCategory {
@@ -138,6 +139,7 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 export default function AdminCatalogPage() {
   const { addToast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [q, setQ] = useState('');
   const [modalMode, setModalMode] = useState<'add' | 'edit' | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -381,9 +383,21 @@ export default function AdminCatalogPage() {
           <h1 className="text-2xl font-700">Product Catalog</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Manage products visible to clients in the catalog</p>
         </div>
-        <button onClick={openAdd} className="btn-primary px-4 py-2 text-sm flex items-center gap-1.5">
-          <Plus className="w-4 h-4" /> Add Product
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { const l = document.createElement('a'); l.href = '/sample-products.csv'; l.download = 'sample-products.csv'; l.click(); }}
+            className="px-3 py-2 text-sm border border-border rounded-lg flex items-center gap-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+            <Download className="w-4 h-4" /> Sample CSV
+          </button>
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="px-3 py-2 text-sm bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg flex items-center gap-1.5 hover:bg-indigo-100 transition-colors">
+            <Upload className="w-4 h-4" /> Import CSV
+          </button>
+          <button onClick={openAdd} className="btn-primary px-4 py-2 text-sm flex items-center gap-1.5">
+            <Plus className="w-4 h-4" /> Add Product
+          </button>
+        </div>
       </div>
 
       {/* ══════════════════════════════════════════════
@@ -925,6 +939,11 @@ export default function AdminCatalogPage() {
           </div>
         </div>
       )}
+      <ImportProductsModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onSuccess={() => setShowImportModal(false)}
+      />
     </AdminLayout>
   );
 }

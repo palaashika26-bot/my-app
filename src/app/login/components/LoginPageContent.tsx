@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useForm } from 'react-hook-form';
-import { Eye, EyeOff, ArrowRight, Copy, Check, Loader2, Globe, Shield } from 'lucide-react';
+import { Eye, EyeOff, ArrowRight, Loader2, Globe } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/context/AuthContext';
 import { eliosWholesale } from '@/lib/brandAssets';
@@ -11,32 +11,6 @@ import { TOKEN_KEY } from '@/lib/api/axiosClient';
 import { authenticateStaff, touchStaffLastLogin } from '@/lib/staffStore';
 import type { StaffRoleId } from '@/lib/staffRoles';
 
-const DEMO_CREDENTIALS = [
-  {
-    role: 'Client' as const,
-    email: 'client1@elios.in',
-    password: 'Demo@1234',
-    description: 'Client dashboard, orders, and requests',
-  },
-  {
-    role: 'Admin' as const,
-    email: 'admin@elios.in',
-    password: 'Demo@1234',
-    description: 'Admin panel — full access',
-  },
-  {
-    role: 'Staff' as const,
-    email: 'sourcing.staff@elioswholesale.in',
-    password: 'Demo@1234',
-    description: 'Sourcing & Logistics workspace',
-  },
-  {
-    role: 'Staff' as const,
-    email: 'warehouse.staff@elioswholesale.in',
-    password: 'Demo@1234',
-    description: 'Warehouse & QC workspace',
-  },
-];
 
 interface LoginFormValues {
   email: string;
@@ -58,8 +32,6 @@ function LoginForm() {
   const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
-
   // Wipe any stale staff localStorage keys so getStaffRegistry() re-seeds fresh
   useEffect(() => {
     localStorage.removeItem('bk_staff_registry');
@@ -72,7 +44,6 @@ function LoginForm() {
   const {
     register,
     handleSubmit,
-    setValue,
     formState: { errors },
   } = useForm<LoginFormValues>({
     defaultValues: { email: '', password: '', rememberMe: false },
@@ -154,19 +125,8 @@ function LoginForm() {
     addToast({
       type: 'info',
       title: 'Google Sign-In coming soon',
-      description: 'Use demo credentials below for the live demo.',
+      description: 'This feature is not available yet.',
     });
-  }
-
-  async function copyToClipboard(text: string, fieldId: string) {
-    await navigator.clipboard.writeText(text);
-    setCopiedField(fieldId);
-    setTimeout(() => setCopiedField(null), 2000);
-  }
-
-  function fillCredentials(email: string, password: string) {
-    setValue('email', email);
-    setValue('password', password);
   }
 
   return (
@@ -391,78 +351,6 @@ function LoginForm() {
             </a>
           </p>
 
-          {/* Demo credentials */}
-          <div className="mt-8 rounded-xl border border-border overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-3 bg-muted border-b border-border">
-              <Shield className="w-3.5 h-3.5 text-muted-foreground" aria-hidden="true" />
-              <span className="text-xs font-600 text-muted-foreground uppercase tracking-wider">
-                Demo Credentials
-              </span>
-            </div>
-            <div className="divide-y divide-border">
-              {DEMO_CREDENTIALS.map((cred) => (
-                <div key={cred.email} className="px-4 py-3">
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-                      <span
-                        className={`badge text-[10px] px-2 py-0.5 flex-shrink-0 ${
-                          cred.role === 'Admin'
-                            ? 'bg-primary text-primary-foreground'
-                            : cred.role === 'Staff'
-                            ? 'bg-slate-700 text-white'
-                            : 'bg-[#4A3B52]/15 text-[#4A3B52]'
-                        }`}
-                      >
-                        {cred.role}
-                      </span>
-                      <span className="text-xs text-muted-foreground truncate">
-                        {cred.description}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => fillCredentials(cred.email, cred.password)}
-                      className="text-xs text-[#4A3B52] hover:text-[#4A3B52] font-600 transition-colors px-2 py-1 rounded hover:bg-[#4A3B52]/10 flex-shrink-0"
-                    >
-                      Use
-                    </button>
-                  </div>
-                  <div className="space-y-1.5">
-                    {[
-                      { label: 'Email', value: cred.email, id: `${cred.role}-email` },
-                      { label: 'Password', value: cred.password, id: `${cred.role}-password` },
-                    ].map((field) => (
-                      <div
-                        key={field.id}
-                        className="flex items-center justify-between bg-secondary rounded-lg px-3 py-1.5"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-[10px] text-muted-foreground font-500 w-14 flex-shrink-0">
-                            {field.label}
-                          </span>
-                          <span className="text-xs font-500 text-foreground font-tabular truncate">
-                            {field.value}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(field.value, field.id)}
-                          className="flex-shrink-0 ml-2 text-muted-foreground hover:text-foreground transition-colors"
-                          aria-label={`Copy ${field.label}`}
-                        >
-                          {copiedField === field.id ? (
-                            <Check className="w-3.5 h-3.5 text-emerald-500" />
-                          ) : (
-                            <Copy className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </div>

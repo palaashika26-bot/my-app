@@ -27,6 +27,13 @@ function fmtINR(n: number): string {
   return 'Rs. ' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
+function fmtDate(d: string | Date): string {
+  const dt = new Date(d);
+  return isNaN(dt.getTime())
+    ? '—'
+    : dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
 // ── Colours ───────────────────────────────────────────────────────────────────
 const DARK     = [30, 30, 30]    as [number, number, number];
 const GRAY     = [120, 120, 120] as [number, number, number];

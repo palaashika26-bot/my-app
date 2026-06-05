@@ -1,12 +1,6 @@
 import {
   PrismaClient,
   Role,
-  OrderStatus,
-  InquiryStatus,
-  QCStatus,
-  ShipmentStatus,
-  RequestStatus,
-  RequestItemType,
 } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
@@ -14,10 +8,6 @@ const prisma = new PrismaClient();
 
 async function main() {
   const passwordHash = await bcrypt.hash("Demo@1234", 10);
-
-  const now = new Date();
-  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const tenDaysAgo = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000);
 
   await prisma.$transaction(
     async (tx) => {
@@ -48,59 +38,7 @@ async function main() {
         role: Role.STAFF,
       },
     });
-
-    const clientUser1 = await tx.user.upsert({
-      where: { email: "client1@elios.in" },
-      update: {},
-      create: {
-        email: "client1@elios.in",
-        passwordHash,
-        firstName: "Rahul",
-        lastName: "Gupta",
-        phone: "+91-9988776655",
-        role: Role.CLIENT,
-      },
-    });
-
-    const clientUser2 = await tx.user.upsert({
-      where: { email: "client2@elios.in" },
-      update: {},
-      create: {
-        email: "client2@elios.in",
-        passwordHash,
-        firstName: "Sneha",
-        lastName: "Patel",
-        phone: "+91-9871234560",
-        role: Role.CLIENT,
-      },
-    });
-
-    // ── Clients ────────────────────────────────────────────────────────────
-    const client1 = await tx.client.upsert({
-      where: { userId: clientUser1.id },
-      update: {},
-      create: {
-        userId: clientUser1.id,
-        companyName: "Gupta Traders Pvt Ltd",
-        gstin: "27AABCG1234F1Z5",
-        city: "Mumbai",
-        state: "Maharashtra",
-        pincode: "400001",
-      },
-    });
-
-    const client2 = await tx.client.upsert({
-      where: { userId: clientUser2.id },
-      update: {},
-      create: {
-        userId: clientUser2.id,
-        companyName: "Patel Enterprises",
-        gstin: "24AABCP5678F1Z3",
-        city: "Surat",
-        state: "Gujarat",
-        pincode: "395001",
-      },
-    });
+    void staffUser;
 
     // ── Suppliers (no unique field in schema — findFirst + create) ─────────
     let supplier1 = await tx.supplier.findFirst({
@@ -189,7 +127,7 @@ async function main() {
     });
 
     // ── Products ───────────────────────────────────────────────────────────
-    const prod1 = await tx.product.upsert({
+    await tx.product.upsert({
       where: { slug: "usb-c-fast-charger-65w" },
       update: {},
       create: {
@@ -208,7 +146,7 @@ async function main() {
       },
     });
 
-    const prod2 = await tx.product.upsert({
+    await tx.product.upsert({
       where: { slug: "led-strip-light-5m-rgb" },
       update: {},
       create: {
@@ -265,242 +203,13 @@ async function main() {
       },
     });
 
-    // ── Order 1 — Delivered ────────────────────────────────────────────────
-    const order1 = await tx.order.upsert({
-      where: { orderNumber: "EL-2024-001" },
-      update: {},
-      create: {
-        orderNumber: "EL-2024-001",
-        clientId: client1.id,
-        status: OrderStatus.DELIVERED,
-        subtotalINR: 82500,
-        shippingCostINR: 5000,
-        taxINR: 0,
-        totalINR: 87500,
-      },
-    });
-
-    let orderItem1 = await tx.orderItem.findFirst({
-      where: { orderId: order1.id, productId: prod1.id },
-    });
-    if (!orderItem1) {
-      orderItem1 = await tx.orderItem.create({
-        data: {
-          orderId: order1.id,
-          productId: prod1.id,
-          supplierId: supplier1.id,
-          quantity: 500,
-          unitPriceCNY: 45.0,
-          unitPriceINR: 15.0,
-          totalINR: 7500,
-        },
-      });
-    }
-
-    await tx.shipment.upsert({
-      where: { orderId: order1.id },
-      update: {},
-      create: {
-        orderId: order1.id,
-        trackingNumber: "CNSHP123456IN",
-        carrier: "Blue Dart",
-        status: ShipmentStatus.DELIVERED,
-        dispatchedAt: thirtyDaysAgo,
-        deliveredAt: tenDaysAgo,
-      },
-    });
-
-    // ── Order 2 — QC Pending ───────────────────────────────────────────────
-    const order2 = await tx.order.upsert({
-      where: { orderNumber: "EL-2024-002" },
-      update: {},
-      create: {
-        orderNumber: "EL-2024-002",
-        clientId: client1.id,
-        status: OrderStatus.QC_PENDING,
-        subtotalINR: 40000,
-        shippingCostINR: 3200,
-        taxINR: 0,
-        totalINR: 43200,
-      },
-    });
-
-    let orderItem2 = await tx.orderItem.findFirst({
-      where: { orderId: order2.id, productId: prod2.id },
-    });
-    if (!orderItem2) {
-      orderItem2 = await tx.orderItem.create({
-        data: {
-          orderId: order2.id,
-          productId: prod2.id,
-          supplierId: supplier1.id,
-          quantity: 300,
-          unitPriceCNY: 28.5,
-          unitPriceINR: 130.0,
-          totalINR: 39000,
-        },
-      });
-    }
-
-    await tx.qualityCheck.upsert({
-      where: { orderItemId: orderItem2.id },
-      update: {},
-      create: {
-        orderItemId: orderItem2.id,
-        checkedByUserId: staffUser.id,
-        status: QCStatus.PENDING,
-        notes: "Awaiting inspection at warehouse",
-        images: [],
-      },
-    });
-
-    // ── Inquiry ────────────────────────────────────────────────────────────
-    const existingInquiry = await tx.inquiry.findFirst({
-      where: { clientId: client2.id },
-    });
-    if (!existingInquiry) {
-      await tx.inquiry.create({
-        data: {
-          inquiryNumber: `INQ-${new Date().getFullYear()}-001`,
-          clientId: client2.id,
-          status: InquiryStatus.QUOTED,
-          staffNotes: "Quoted at ₹13/unit for 1000 pcs MOQ",
-          items: {
-            create: {
-              type: "CATALOG",
-              productId: prod1.id,
-              productName: "USB-C Charger",
-              quantity: 1000,
-              unit: "PCS",
-              targetPricePerUnit: 12.5,
-              quotedPrice: 13.0,
-            },
-          },
-        },
-      });
-    }
-
-    // ── Sourcing Requests ──────────────────────────────────────────────────
-
-    // Find bubble wrap product
-    const prod4 = await tx.product.findFirst({
-      where: { slug: "bubble-wrap-roll-50m" },
-    });
-
-    // Request 1 — QUOTED
-    const existingReq1 = await tx.sourcingRequest.findFirst({
-      where: { requestNumber: "BK-REQ-2024-0312" },
-    });
-    if (!existingReq1) {
-      await tx.sourcingRequest.create({
-        data: {
-          requestNumber: "BK-REQ-2024-0312",
-          clientId: client1.id,
-          status: RequestStatus.QUOTED,
-          quotedAt: thirtyDaysAgo,
-          staffNotes: "Sourced from Shenzhen supplier — competitive pricing",
-          items: {
-            create: [
-              {
-                type: RequestItemType.CATALOG,
-                productId: prod1.id,
-                productName: "USB-C Fast Charger 65W",
-                quantity: 50,
-                unit: "PCS",
-                quotedRMB: 45,
-                quotedINR: 517.5,
-                status: "QUOTED",
-              },
-              {
-                type: RequestItemType.CATALOG,
-                productId: prod2.id,
-                productName: "LED Strip Light 5m RGB",
-                quantity: 75,
-                unit: "PCS",
-                quotedRMB: 28,
-                quotedINR: 322,
-                status: "QUOTED",
-              },
-              {
-                type: RequestItemType.CUSTOM,
-                productName: "USB Hubs 4-port",
-                productDescription: "4-port USB 3.0 hub, white/black colour options",
-                quantity: 100,
-                unit: "PCS",
-                quotedRMB: 35,
-                quotedINR: 402.5,
-                status: "QUOTED",
-              },
-            ],
-          },
-        },
-      });
-    }
-
-    // Request 2 — SUBMITTED
-    const existingReq2 = await tx.sourcingRequest.findFirst({
-      where: { requestNumber: "BK-REQ-2024-0308" },
-    });
-    if (!existingReq2) {
-      await tx.sourcingRequest.create({
-        data: {
-          requestNumber: "BK-REQ-2024-0308",
-          clientId: client1.id,
-          status: RequestStatus.SUBMITTED,
-          notes: "Need these urgently for festive season",
-          items: {
-            create: [
-              {
-                type: RequestItemType.CUSTOM,
-                productName: "Silicone Phone Cases iPhone 15",
-                productDescription: "Clear silicone protective cases, bulk pack of 10",
-                quantity: 200,
-                unit: "PCS",
-                targetPriceINR: 150,
-                status: "PENDING",
-              },
-            ],
-          },
-        },
-      });
-    }
-
-    // Request 3 — CONVERTED (became an order)
-    const existingReq3 = await tx.sourcingRequest.findFirst({
-      where: { requestNumber: "BK-REQ-2024-0295" },
-    });
-    if (!existingReq3 && prod4) {
-      await tx.sourcingRequest.create({
-        data: {
-          requestNumber: "BK-REQ-2024-0295",
-          clientId: client1.id,
-          status: RequestStatus.CONVERTED,
-          quotedAt: thirtyDaysAgo,
-          approvedAt: tenDaysAgo,
-          items: {
-            create: [
-              {
-                type: RequestItemType.CATALOG,
-                productId: prod4.id,
-                productName: "Bubble Wrap Roll 50m",
-                quantity: 20,
-                unit: "PCS",
-                quotedRMB: 95,
-                quotedINR: 1092.5,
-                status: "ACCEPTED",
-              },
-            ],
-          },
-        },
-      });
-    }
   },
   { timeout: 30000 }
   );
 
   console.log("✅ Seed completed successfully");
   console.log(
-    "   4 users | 2 clients | 3 suppliers | 5 categories | 4 products | 2 orders | 1 inquiry"
+    "   2 users (admin + staff) | 3 suppliers | 5 categories | 4 products"
   );
 }
 

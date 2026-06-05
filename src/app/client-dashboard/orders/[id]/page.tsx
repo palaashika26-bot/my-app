@@ -148,7 +148,7 @@ function mapApiOrderToRow(o: ApiOrder) {
 function ContactCard({ orderId }: { orderId: string }) {
   const [contact, setContact] = useState<{
     admin: { firstName: string; lastName: string; email: string; phone: string | null } | null;
-    staff: { firstName: string; lastName: string; email: string; phone: string | null; staffRole: string | null }[];
+    staff: { firstName: string; lastName: string; email: string; phone: string | null; staffRole: string | null } | null;
   } | null>(null);
 
   useEffect(() => {
