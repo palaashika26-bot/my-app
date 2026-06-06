@@ -34,7 +34,7 @@ export const adminRepository = {
       prisma.$queryRawUnsafe<{ month: string; revenue: number }[]>(
         `SELECT to_char("createdAt", 'Mon') AS month,
                 COALESCE(SUM("totalINR"), 0)::numeric AS revenue
-         FROM "Order"
+         FROM "orders"
          WHERE "deletedAt" IS NULL
            AND "createdAt" >= $1::timestamp
          GROUP BY date_trunc('month', "createdAt"), to_char("createdAt", 'Mon')
@@ -42,30 +42,33 @@ export const adminRepository = {
         sixMonthsAgo
       ),
       prisma.$queryRawUnsafe<{ name: string; value: number; color: string }[]>(
+        // status is the OrderStatus enum — cast to text before comparing to
+        // string literals, otherwise Postgres tries to coerce literals to the
+        // enum and errors on any value that isn't a valid label (22P02).
+        // Everything not shipped/delivered/cancelled counts as in-progress ("Active").
         `SELECT
             CASE
-              WHEN status IN ('PENDING','CONFIRMED','PROCESSING') THEN 'Active'
-              WHEN status = 'SHIPPED' THEN 'Shipped'
-              WHEN status = 'DELIVERED' THEN 'Delivered'
-              WHEN status = 'CANCELLED' THEN 'Cancelled'
-              ELSE 'Other'
+              WHEN status::text = 'SHIPPED' THEN 'Shipped'
+              WHEN status::text = 'DELIVERED' THEN 'Delivered'
+              WHEN status::text = 'CANCELLED' THEN 'Cancelled'
+              ELSE 'Active'
             END AS name,
             COUNT(*)::int AS value,
             CASE
-              WHEN status IN ('PENDING','CONFIRMED','PROCESSING') THEN '#5c5470'
-              WHEN status = 'SHIPPED' THEN '#06b6d4'
-              WHEN status = 'DELIVERED' THEN '#10b981'
-              WHEN status = 'CANCELLED' THEN '#ef4444'
-              ELSE '#f59e0b'
+              WHEN status::text = 'SHIPPED' THEN '#06b6d4'
+              WHEN status::text = 'DELIVERED' THEN '#10b981'
+              WHEN status::text = 'CANCELLED' THEN '#ef4444'
+              ELSE '#5c5470'
             END AS color
-         FROM "Order"
+         FROM "orders"
          WHERE "deletedAt" IS NULL
          GROUP BY name, color
          ORDER BY MIN(
-           CASE status
-             WHEN 'PENDING' THEN 1 WHEN 'CONFIRMED' THEN 2 WHEN 'PROCESSING' THEN 3
-             WHEN 'SHIPPED' THEN 4 WHEN 'DELIVERED' THEN 5 WHEN 'CANCELLED' THEN 6
-             ELSE 7
+           CASE
+             WHEN status::text = 'SHIPPED' THEN 4
+             WHEN status::text = 'DELIVERED' THEN 5
+             WHEN status::text = 'CANCELLED' THEN 6
+             ELSE 1
            END
          )`
       ),

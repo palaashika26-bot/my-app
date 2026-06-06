@@ -107,7 +107,11 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
   const lastReqSent = React.useRef(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [chatMessages, setChatMessages] = useState<{ id: string; senderRole: string; text: string; createdAt: string }[]>([]);
-  const [lastMsgSeen, setLastMsgSeen] = useState(() => Date.now().toString());
+  // Empty so the first poll fetches the full history (no `since` param). It is
+  // then advanced to the newest message's ISO timestamp so later polls only
+  // pull new messages. (Was Date.now() millis, which both 500'd the API and
+  // skipped all existing messages on open.)
+  const [lastMsgSeen, setLastMsgSeen] = useState('');
 
   function applyApiRequest(req: any) {
     setApiRequest(req);
