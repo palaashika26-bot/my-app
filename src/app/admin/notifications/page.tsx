@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminLayout from '@/components/AdminLayout';
+import { notificationsApi } from '@/lib/api/notifications.api';
 import { Check } from 'lucide-react';
 
 interface AdminNotif {
@@ -15,13 +16,6 @@ interface AdminNotif {
 }
 
 const NOTIF_KEY = 'notifications-admin';
-
-const defaultAdminNotifs: AdminNotif[] = [
-  { id: 'an-001', title: 'New Request', description: 'Client Rahul Kumar submitted BK-REQ-2024-0315.', time: '5 min ago', read: false, type: 'request', href: '/admin/requests/req-012' },
-  { id: 'an-002', title: 'Payment Received', description: 'Payment confirmed for BK-ORD-2024-0287.', time: '1 hour ago', read: false, type: 'payment', href: '/admin/all-orders/ord-006' },
-  { id: 'an-003', title: 'Exception Flagged', description: 'Item shortage on BK-ORD-2024-0241.', time: '3 hours ago', read: false, type: 'alert', href: '/admin/all-orders/ord-008' },
-  { id: 'an-004', title: 'Order Shipped', description: 'BK-ORD-2024-0268 shipped from China.', time: '1 day ago', read: true, type: 'order', href: '/admin/all-orders/ord-004' },
-];
 
 const filters = ['All', 'Orders', 'Payments', 'Requests', 'Alerts'];
 const typeMap: Record<string, string> = { order: 'Orders', payment: 'Payments', request: 'Requests', alert: 'Alerts' };
@@ -39,12 +33,32 @@ export default function AdminNotificationsPage() {
   const [filter, setFilter] = useState('All');
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(NOTIF_KEY);
-      setNotifs(stored ? JSON.parse(stored) : defaultAdminNotifs);
-    } catch {
-      setNotifs(defaultAdminNotifs);
-    }
+    notificationsApi.getNotifications()
+      .then(r => {
+        const apiData = r.data?.data ?? [];
+        if (apiData.length > 0) {
+          setNotifs(apiData.map((n: any) => ({
+            id: n.id,
+            title: n.title,
+            description: n.message || n.description || '',
+            time: n.createdAt ? new Date(n.createdAt).toLocaleString() : 'Just now',
+            read: n.isRead ?? false,
+            type: n.type || 'alert',
+            href: n.link || n.href || '#',
+          })));
+        } else {
+          try {
+            const stored = localStorage.getItem(NOTIF_KEY);
+            if (stored) setNotifs(JSON.parse(stored));
+          } catch {}
+        }
+      })
+      .catch(() => {
+        try {
+          const stored = localStorage.getItem(NOTIF_KEY);
+          if (stored) setNotifs(JSON.parse(stored));
+        } catch {}
+      });
   }, []);
 
   function persist(updated: AdminNotif[]) {

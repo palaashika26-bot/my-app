@@ -63,15 +63,7 @@ async function getWarehouseAddress() {
   return raw ? JSON.parse(raw) : DEFAULT_WAREHOUSE_ADDRESS;
 }
 
-const WAREHOUSE_INSTRUCTIONS = [
-  'Before delivery, please contact the warehouse, pack the woven bag, and write the label and warehouse number on the outer box.',
-  'The warehouse does not cover unloading, please arrange it by yourself.',
-  'Warehouse entry fee to be paid by client/factory.',
-  'If the goods contain batteries, powders, liquids, food and other sensitive items, please be sure to note.',
-  'If you arrange express delivery to the warehouse, please put the packing list in a plastic bag and paste it on a box of goods. Cash on delivery is not accepted.',
-  'When delivering goods, be sure to provide a packing list that meets the requirements of our company\'s format (warehouse number + mark + box number + product name + ingredient + quantity per piece + brand + whether the document declaration is electrically magnetic or contains liquid powder, etc.). You need to provide the production and sales unit and the value of the goods, otherwise the warehouse will refuse to accept it.',
-  'The length, width and height of the clothing bag should not exceed 100×100×100 cm, and the weight of a single piece cannot exceed 55 KG. If the above requirements are exceeded, the warehouse will require a change of packaging. Please pay attention!!!',
-];
+
 
 interface AdminQuote {
   carrier: string;
@@ -422,22 +414,7 @@ export default function ClientLogisticsDetailPage({ params }: { params: Promise<
               </button>
             </div>
 
-            {/* Shipping instructions */}
-            <div className="bg-[#fef9ec] border border-[#fde68a] rounded-xl p-4">
-              <p className="text-sm font-700 mb-3">📋 Important Instructions</p>
-              <ol className="space-y-2">
-                {WAREHOUSE_INSTRUCTIONS.map((instr, i) => (
-                  <li key={i} className="flex items-start gap-2.5 text-sm">
-                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#f59e0b] text-white text-[11px] flex items-center justify-center font-700 mt-0.5">{i + 1}</span>
-                    <span>{instr}</span>
-                  </li>
-                ))}
-              </ol>
-              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-                <span className="text-red-500 font-bold text-lg mt-0.5">⚠️</span>
-                <p className="text-red-600 font-semibold text-sm">Upload warehouse slip or order cannot be tracked.</p>
-              </div>
-            </div>
+
           </div>
 
           {/* Step B / C: Slip upload OR Cargo confirmed */}

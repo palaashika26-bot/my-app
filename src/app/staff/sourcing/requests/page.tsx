@@ -2,7 +2,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { mockClients } from '@/lib/adminMockData';
 import { requestsApi } from '@/lib/api/requests.api';
 import { useToast } from '@/components/ui/Toast';
 import { Search, Download, Camera, Eye, Send, AlertTriangle } from 'lucide-react';

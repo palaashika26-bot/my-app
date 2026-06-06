@@ -6,12 +6,6 @@ import ClientLayout from '@/components/ClientLayout';
 import { useToast } from '@/components/ui/Toast';
 import { ArrowLeft, Camera, Upload, X, Sparkles, Check } from 'lucide-react';
 
-const mockScanResults = [
-  { productName: 'LED Strip Light (RGB, 5m)', category: 'Lighting & Electrical', detectedSpecs: ['RGB Color Changing', '5 Meter Roll', 'IP65 Waterproof', '12V DC', 'SMD 5050 LEDs'], estimatedUnitPrice: '¥35–55 (₹420–660)', suggestedQuantity: 100, confidence: 94, similarProducts: ['LED Strip Light 10m', 'LED Neon Flex', 'LED Fairy Lights'] },
-  { productName: 'Silicone Phone Case (Universal)', category: 'Mobile Accessories', detectedSpecs: ['Silicone Material', 'Drop Protection', 'Multiple Colors', 'Compatible: iPhone/Samsung'], estimatedUnitPrice: '¥8–15 (₹96–180)', suggestedQuantity: 500, confidence: 89, similarProducts: ['TPU Phone Case', 'Clear Phone Case', 'Leather Flip Case'] },
-  { productName: 'Stainless Steel Water Bottle (500ml)', category: 'Kitchenware', detectedSpecs: ['500ml Capacity', '304 Stainless Steel', 'Double-Wall Insulated', 'BPA Free', 'Leak-Proof Lid'], estimatedUnitPrice: '¥18–28 (₹216–336)', suggestedQuantity: 200, confidence: 91, similarProducts: ['Insulated Tumbler', 'Plastic Water Bottle', 'Glass Bottle'] },
-];
-
 const analysisSteps = ['Identifying product...', 'Extracting specifications...', 'Finding sourcing details...'];
 
 export default function PhotoRequestPage() {
@@ -24,7 +18,6 @@ export default function PhotoRequestPage() {
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [imgInfo, setImgInfo] = useState<{name: string; size: string} | null>(null);
   const [scanStep, setScanStep] = useState(0);
-  const [result, setResult] = useState<typeof mockScanResults[0] | null>(null);
   const [product, setProduct] = useState('');
   const [qty, setQty] = useState(0);
   const [budget, setBudget] = useState('');
@@ -47,17 +40,10 @@ export default function PhotoRequestPage() {
       setScanStep(i + 1);
     }
     await new Promise(r => setTimeout(r, 400));
-    const r = mockScanResults[Math.floor(Math.random() * mockScanResults.length)];
-    setResult(r);
-    setProduct(r.productName);
-    setQty(r.suggestedQuantity);
-    setBudget(r.estimatedUnitPrice.split('(')[1]?.replace(')', '') || '');
-    setSpecs(r.detectedSpecs);
     setStage('results');
   }
 
-  function reset() { setStage('upload'); setImgUrl(null); setImgInfo(null); setResult(null); }
-  function removeSpec(s: string) { setSpecs(specs.filter(x => x !== s)); }
+  function reset() { setStage('upload'); setImgUrl(null); setImgInfo(null); setProduct(''); setQty(0); setBudget(''); setSpecs([]); }
 
   async function submit() {
     setSubmitting(true);
@@ -119,33 +105,28 @@ export default function PhotoRequestPage() {
         </div>
       )}
 
-      {stage === 'results' && result && imgUrl && (
+      {stage === 'results' && imgUrl && (
         <div className="grid lg:grid-cols-2 gap-5">
           <div className="bg-card rounded-2xl border border-border shadow-card p-5">
             <img src={imgUrl} alt="" className="w-full rounded-xl bg-muted" />
-            <div className="flex items-center justify-between mt-3">
-              <span className="badge bg-emerald-100 text-emerald-700">✅ {result.confidence}% Match</span>
-              <button onClick={reset} className="text-xs text-muted-foreground hover:text-foreground">Wrong product? Try again</button>
+            <div className="mt-3">
+              <button onClick={reset} className="text-xs text-muted-foreground hover:text-foreground">Try a different image</button>
             </div>
           </div>
           <div className="bg-card rounded-2xl border border-border shadow-card p-5 space-y-4">
-            <p className="text-sm font-700 text-emerald-600">✅ Product Identified</p>
-            <div><label className="text-xs font-600 text-muted-foreground">Product Name</label><input value={product} onChange={e => setProduct(e.target.value)} className="input-field mt-1" /></div>
-            <div><label className="text-xs font-600 text-muted-foreground">Category</label><input value={result.category} readOnly className="input-field mt-1" /></div>
-            <div><label className="text-xs font-600 text-muted-foreground">Detected Specs</label>
-              <div className="flex flex-wrap gap-1.5 mt-1">{specs.map(s => <span key={s} className="badge bg-muted text-foreground border border-border">{s}<button onClick={() => removeSpec(s)} className="ml-1 text-muted-foreground hover:text-red-500"><X className="w-3 h-3" /></button></span>)}</div>
+            <p className="text-sm text-muted-foreground">No scan results available. Please fill in the product details manually.</p>
+            <div><label className="text-xs font-600 text-muted-foreground">Product Name</label><input value={product} onChange={e => setProduct(e.target.value)} className="input-field mt-1" placeholder="Enter product name" /></div>
+            <div><label className="text-xs font-600 text-muted-foreground">Specifications</label>
+              <div className="flex flex-wrap gap-1.5 mt-1">{specs.map(s => <span key={s} className="badge bg-muted text-foreground border border-border">{s}<button onClick={() => setSpecs(specs.filter(x => x !== s))} className="ml-1 text-muted-foreground hover:text-red-500"><X className="w-3 h-3" /></button></span>)}</div>
+              <input className="input-field mt-1" placeholder="Add spec and press Enter" onKeyDown={e => { if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) { setSpecs([...specs, (e.target as HTMLInputElement).value.trim()]); (e.target as HTMLInputElement).value = ''; } }} />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="text-xs font-600 text-muted-foreground">Est. Unit Price</label><div className="input-field bg-muted mt-1">{result.estimatedUnitPrice}</div></div>
-              <div><label className="text-xs font-600 text-muted-foreground">Quantity</label><input value={qty} onChange={e => setQty(+e.target.value)} type="number" className="input-field mt-1" /></div>
+              <div><label className="text-xs font-600 text-muted-foreground">Quantity</label><input value={qty} onChange={e => setQty(+e.target.value)} type="number" className="input-field mt-1" placeholder="0" /></div>
+              <div><label className="text-xs font-600 text-muted-foreground">Budget per unit (INR)</label><input value={budget} onChange={e => setBudget(e.target.value)} className="input-field mt-1" placeholder="e.g. 500" /></div>
             </div>
-            <div><label className="text-xs font-600 text-muted-foreground">Budget per unit (INR)</label><input value={budget} onChange={e => setBudget(e.target.value)} className="input-field mt-1" /></div>
             <div><label className="text-xs font-600 text-muted-foreground">Additional notes</label><textarea value={notes} onChange={e => setNotes(e.target.value)} className="input-field mt-1" rows={2} placeholder="Special requirements..." /></div>
             <div><label className="text-xs font-600 text-muted-foreground">Shipping</label>
               <div className="grid grid-cols-3 gap-2 mt-1">{['Sea Freight','Air Freight','Express'].map(m => <button key={m} onClick={() => setShipping(m)} className={`px-2 py-1.5 rounded-lg text-xs font-500 border ${shipping === m ? 'border-[#4A3B52] bg-[#4A3B52]/10 text-[#4A3B52]' : 'border-border text-muted-foreground'}`}>{m}</button>)}</div>
-            </div>
-            <div><p className="text-xs font-600 text-muted-foreground mb-2">You might also want:</p>
-              <div className="flex gap-2 overflow-x-auto scrollbar-hide">{result.similarProducts.map(p => <button key={p} onClick={() => setProduct(p)} className="flex-shrink-0 badge bg-muted text-foreground border border-border hover:bg-[#4A3B52]/10 hover:border-[#4A3B52]">{p}</button>)}</div>
             </div>
             <button onClick={submit} disabled={submitting} className="btn-primary w-full py-3">{submitting ? 'Submitting...' : 'Submit Sourcing Request'}</button>
           </div>

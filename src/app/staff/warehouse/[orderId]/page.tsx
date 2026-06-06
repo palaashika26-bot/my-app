@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
-import { mockAdminOrders } from '@/lib/adminMockData';
+import { ordersApi } from '@/lib/api/orders.api';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { ArrowLeft, CheckCircle, AlertTriangle, Upload, Truck, Package } from 'lucide-react';
 
@@ -44,19 +44,32 @@ export default function WarehouseOrderDetailPage({ params }: { params: Promise<{
   const { user } = useAuth();
   const { addToast } = useToast();
 
-  const orderData = mockAdminOrders.find((o) => o.id === orderId);
-  if (!orderData) { notFound(); return null; }
-  const order = orderData;
+  const [order, setOrder] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [notFoundState, setNotFoundState] = useState(false);
 
-  const orderItems = [
-    { name: 'LED Strip Light (RGB, 5m)', qty: 50 },
-    { name: 'USB-C Cable (Braided)', qty: 100 },
-    { name: 'Wireless Earbuds', qty: 25 },
-  ];
+  useEffect(() => {
+    ordersApi.getOrderById(orderId)
+      .then(r => {
+        const data = r.data?.data;
+        if (!data) { setNotFoundState(true); return; }
+        setOrder(data);
+      })
+      .catch(() => setNotFoundState(true))
+      .finally(() => setLoading(false));
+  }, [orderId]);
+
+  if (loading) return <div className="p-10 text-center text-muted-foreground">Loading...</div>;
+  if (notFoundState || !order) { notFound(); return null; }
+
+  const orderItems = (order.items || []).map((item: any) => ({
+    name: item.product?.name || 'Unknown Product',
+    qty: item.quantity,
+  }));
 
   // Section 3 — Missing items report
   const [itemReports, setItemReports] = useState<ItemReport[]>(() =>
-    orderItems.map((it) => ({ name: it.name, qty: it.qty, allOk: true, issueDescription: '', issuePhoto: null }))
+    orderItems.map((it: { name: string; qty: number }) => ({ name: it.name, qty: it.qty, allOk: true, issueDescription: '', issuePhoto: null }))
   );
   const [reportSubmitted, setReportSubmitted] = useState(false);
 
@@ -100,7 +113,7 @@ export default function WarehouseOrderDetailPage({ params }: { params: Promise<{
     notifications.unshift({
       id: `wh-report-${Date.now()}`,
       title: 'Warehouse Report Submitted',
-      description: `Staff ${user?.name} submitted item report for ${order.orderId}.`,
+      description: `Staff ${user?.name} submitted item report for ${order.orderNumber || order.id}.`,
       time: 'Just now',
       read: false,
       type: 'alert',
@@ -151,7 +164,7 @@ export default function WarehouseOrderDetailPage({ params }: { params: Promise<{
     notifications.unshift({
       id: `wh-sent-${Date.now()}`,
       title: 'Sent to China Warehouse',
-      description: `${order.orderId} marked as sent. Tracking: ${outbound.trackingId}`,
+      description: `${order.orderNumber || order.id} marked as sent. Tracking: ${outbound.trackingId}`,
       time: 'Just now',
       read: false,
       type: 'order',
@@ -172,13 +185,13 @@ export default function WarehouseOrderDetailPage({ params }: { params: Promise<{
       {/* Section 1 — Order header */}
       <div className="bg-card rounded-xl border border-border shadow-card p-5">
         <div className="flex flex-wrap items-center gap-3 mb-2">
-          <span className="font-tabular font-700 text-lg">{order.orderId}</span>
+          <span className="font-tabular font-700 text-lg">{order.orderNumber || order.id}</span>
           <StatusBadge status={order.status as any} />
         </div>
-        <p className="text-sm text-muted-foreground mb-4">Client: <span className="font-600 text-foreground">{order.client}</span></p>
+        <p className="text-sm text-muted-foreground mb-4">Client: <span className="font-600 text-foreground">{order.client?.companyName || order.client?.user?.firstName || '—'}</span></p>
         <h3 className="text-xs uppercase font-600 text-muted-foreground mb-2">Items</h3>
         <ul className="space-y-1">
-          {orderItems.map((it) => (
+          {orderItems.map((it: { name: string; qty: number }) => (
             <li key={it.name} className="flex items-center justify-between text-sm border-b border-border pb-1 last:border-0 last:pb-0">
               <span className="font-500">{it.name}</span>
               <span className="font-tabular text-muted-foreground">Qty: {it.qty}</span>
@@ -195,7 +208,7 @@ export default function WarehouseOrderDetailPage({ params }: { params: Promise<{
           <span className="ml-auto text-[10px] font-600 uppercase bg-muted text-muted-foreground px-2 py-0.5 rounded">Read Only</span>
         </div>
         <div className="space-y-3">
-          {orderItems.map((it) => (
+          {orderItems.map((it: { name: string; qty: number }) => (
             <div key={it.name} className="rounded-lg border border-border p-3">
               <p className="font-600 text-sm">{it.name}</p>
               <p className="text-xs text-muted-foreground mt-0.5">Expected Qty: <span className="font-tabular font-600 text-foreground">{it.qty}</span></p>

@@ -1,8 +1,20 @@
 'use client';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { mockTickets, type SupportTicket } from '@/lib/adminMockData';
 import { useToast } from '@/components/ui/Toast';
 import { Search, ArrowLeft, Send, Paperclip, X, FileText, Play } from 'lucide-react';
+
+interface SupportTicket {
+  id: string;
+  clientName: string;
+  clientEmail: string;
+  subject: string;
+  category: string;
+  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  status: 'Open' | 'In Progress' | 'Resolved' | 'Closed';
+  createdAt: string;
+  lastReply: string;
+  description: string;
+}
 
 const statusColor: Record<SupportTicket['status'], string> = {
   Open: 'bg-[#e4eeee] text-[#6b8f90]',
@@ -74,7 +86,7 @@ function PendingChips({ pending, onRemove }: { pending: Attachment[]; onRemove: 
 
 export default function SourcingSupportPage() {
   const { addToast } = useToast();
-  const [tickets, setTickets] = useState<SupportTicket[]>(mockTickets);
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [active, setActive] = useState<SupportTicket | null>(null);
@@ -247,9 +259,7 @@ export default function SourcingSupportPage() {
   return (
     <div>
       <h1 className="text-2xl font-700 mb-1">Support Tickets</h1>
-      <p className="text-sm text-muted-foreground mb-5">
-        {tickets.length} tickets • {tickets.filter(t => t.status === 'Open').length} open • {tickets.filter(t => t.priority === 'Urgent').length} urgent
-      </p>
+      <p className="text-sm text-muted-foreground mb-5">{tickets.length} total tickets</p>
       <div className="bg-card rounded-xl border border-border shadow-card p-4 mb-4 grid md:grid-cols-3 gap-3">
         <div className="relative md:col-span-2">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none z-10" />
@@ -274,7 +284,9 @@ export default function SourcingSupportPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {filtered.map(t => {
+              {filtered.length === 0 ? (
+                <tr><td colSpan={7} className="text-center text-muted-foreground py-10 text-sm">No tickets found</td></tr>
+              ) : filtered.map(t => {
                 const unread = !readSet.has(t.id) && t.status === 'Open';
                 return (
                   <tr key={t.id} onClick={() => setActive(t)} className="table-row-hover cursor-pointer">
