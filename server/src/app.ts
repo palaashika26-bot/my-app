@@ -16,18 +16,42 @@ app.set("trust proxy", 1);
 // ── 1. Security headers (helmet + hpp + disable x-powered-by) ─────────────────
 applySecurityMiddleware(app);
 
-// ── 2. CORS — strict origin whitelist ─────────────────────────────────────────
-const allowedOrigins = [
-  process.env.CLIENT_URL || "http://localhost:3000",
+// ── 2. CORS — strict origin allowlist ─────────────────────────────────────────
+// Exact-match origins: local dev + the configured production frontend(s).
+// CORS_ORIGINS (comma-separated) lets ops add domains without a redeploy
+// (e.g. a future custom domain like https://elioswholesale.in). Trailing
+// slashes are stripped so a value like "https://site/" still matches the
+// browser Origin header (which never has one).
+const staticAllowedOrigins = [
+  process.env.CLIENT_URL,
+  process.env.FRONTEND_URL,
+  ...(process.env.CORS_ORIGINS?.split(",") ?? []),
+  "https://elioswholesale.vercel.app",
   "http://localhost:3000",
+  "http://localhost:3001",
+  "http://localhost:5173",
+]
+  .map((o) => o?.trim().replace(/\/$/, ""))
+  .filter((o): o is string => Boolean(o));
+
+// Pattern-match origins: this project's Vercel preview deployments. Each deploy
+// gets a unique hash (e.g. elioswholesale-<hash>-palaashika26-3692s-projects
+// .vercel.app), so they can't be enumerated in a static list. Scoped to the
+// project name + team slug so arbitrary *.vercel.app sites are NOT allowed.
+const allowedOriginPatterns = [
+  /^https:\/\/elioswholesale-[a-z0-9-]+-palaashika26-3692s-projects\.vercel\.app$/,
 ];
+
+const isOriginAllowed = (origin: string): boolean =>
+  staticAllowedOrigins.includes(origin) ||
+  allowedOriginPatterns.some((pattern) => pattern.test(origin));
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no Origin header (Postman, curl, mobile apps)
+      // Allow requests with no Origin header (Postman, curl, server-to-server)
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (isOriginAllowed(origin)) return callback(null, true);
       callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
