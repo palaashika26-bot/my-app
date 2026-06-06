@@ -1,9 +1,8 @@
 'use client';
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Package, MapPin, Clock, CheckCircle2, Warehouse } from 'lucide-react';
-import { getOrders } from '@/lib/ordersStore';
 import type { OrderRow } from '@/lib/ordersStore';
 
 const PIPELINE_STAGES = [
@@ -49,13 +48,8 @@ const PIPELINE_STAGES = [
   },
 ];
 
-export default function QuickStats() {
+export default function QuickStats({ orders }: { orders: OrderRow[] }) {
   const router = useRouter();
-  const [orders, setOrders] = useState<OrderRow[]>([]);
-
-  useEffect(() => {
-    setOrders(getOrders());
-  }, []);
 
   const totalInPipeline = orders.filter(o =>
     PIPELINE_STAGES.some(s => s.statuses.includes(o.status))
@@ -97,18 +91,35 @@ export default function QuickStats() {
           <span className="font-500">China</span>
         </div>
         <div className="flex-1 flex items-center gap-1">
-          {[
-            { w: '25%', color: 'bg-cyan-400' },
-            { w: '15%', color: 'bg-[#5c5470]' },
-            { w: '60%', color: 'bg-muted' },
-          ].map((seg, i) => (
-            <div
-              key={`pipeline-seg-${i}`}
-              className={`h-1.5 rounded-full ${seg.color}`}
-              style={{ width: seg.w }}
-              aria-hidden="true"
-            />
-          ))}
+          {(() => {
+            const chinaN = orders.filter(o =>
+              ['At China Warehouse', 'China Consolidation Warehouse', 'Repacking Warehouse'].includes(o.status)
+            ).length;
+            const transitN = orders.filter(o =>
+              ['Shipped from China', 'In Transit'].includes(o.status)
+            ).length;
+            const indiaN = orders.filter(o =>
+              ['Arrived India Warehouse', 'Out for Delivery'].includes(o.status)
+            ).length;
+            const tot = chinaN + transitN + indiaN;
+            if (tot === 0) {
+              return <div className="h-1.5 rounded-full bg-muted w-full" aria-hidden="true" />;
+            }
+            return [
+              { n: chinaN, color: 'bg-cyan-400' },
+              { n: transitN, color: 'bg-[#5c5470]' },
+              { n: indiaN, color: 'bg-green-400' },
+            ]
+              .filter((seg) => seg.n > 0)
+              .map((seg, i) => (
+                <div
+                  key={`pipeline-seg-${i}`}
+                  className={`h-1.5 rounded-full ${seg.color}`}
+                  style={{ width: `${(seg.n / tot) * 100}%` }}
+                  aria-hidden="true"
+                />
+              ));
+          })()}
         </div>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <span className="font-500">India</span>

@@ -2,7 +2,7 @@
 import React from 'react';
 import { useRouter } from 'next/navigation';
 import { ShoppingBag, CreditCard, Clock, CheckCircle } from 'lucide-react';
-import { kpiData } from '@/lib/mockData';
+import type { DashboardKpis } from '../useDashboardData';
 import Icon from '@/components/ui/AppIcon';
 
 
@@ -55,14 +55,14 @@ function KpiCard({
   );
 }
 
-export default function KpiCards() {
+export default function KpiCards({ kpis }: { kpis: DashboardKpis }) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       <KpiCard
         icon={ShoppingBag}
         label="Active Orders"
-        value={kpiData.activeOrders.value}
-        subtext={kpiData.activeOrders.change}
+        value={kpis.activeOrders.value}
+        subtext={kpis.activeOrders.change}
         accentClass="kpi-card-accent-orange"
         iconBg="bg-[#fdf2ed]"
         iconColor="text-[#c17b5c]"
@@ -71,8 +71,8 @@ export default function KpiCards() {
       <KpiCard
         icon={CreditCard}
         label="Pending Payments"
-        value={kpiData.pendingPayments.value}
-        subtext={kpiData.pendingPayments.change}
+        value={kpis.pendingPayments.value}
+        subtext={kpis.pendingPayments.change}
         accentClass="kpi-card-accent-yellow"
         iconBg="bg-yellow-50"
         iconColor="text-yellow-600"
@@ -82,8 +82,8 @@ export default function KpiCards() {
       <KpiCard
         icon={Clock}
         label="Awaiting Approval"
-        value={kpiData.awaitingApproval.value}
-        subtext={kpiData.awaitingApproval.change}
+        value={kpis.awaitingApproval.value}
+        subtext={kpis.awaitingApproval.change}
         accentClass="kpi-card-accent-blue"
         iconBg="bg-[#e4f4f4]"
         iconColor="text-[#4a9e9f]"
@@ -93,8 +93,8 @@ export default function KpiCards() {
       <KpiCard
         icon={CheckCircle}
         label="Completed"
-        value={kpiData.completed.value}
-        subtext={kpiData.completed.change}
+        value={kpis.completed.value}
+        subtext={kpis.completed.change}
         accentClass="kpi-card-accent-green"
         iconBg="bg-emerald-50"
         iconColor="text-emerald-600"

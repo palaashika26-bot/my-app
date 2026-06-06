@@ -1,10 +1,10 @@
 ﻿'use client';
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Eye, ChevronUp, ChevronDown, ChevronsUpDown, Plus, AlertTriangle } from 'lucide-react';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
-
-import { getRequests } from '@/lib/requestsStore';
+import { TableSkeleton } from '@/components/ui/LoadingSkeleton';
 import type { RequestRow } from '@/lib/mockData';
 import Link from 'next/link';
 import type { OrderStatus } from '@/components/ui/StatusBadge';
@@ -12,10 +12,16 @@ import type { OrderStatus } from '@/components/ui/StatusBadge';
 type SortKey = 'requestId' | 'date' | 'items' | 'status';
 type SortDir = 'asc' | 'desc' | null;
 
-export default function RecentRequestsTable() {
+export default function RecentRequestsTable({
+  requests,
+  loading,
+}: {
+  requests: RequestRow[];
+  loading: boolean;
+}) {
+  const router = useRouter();
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
-  const requests = getRequests();
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -34,6 +40,7 @@ export default function RecentRequestsTable() {
     const cmp = String(av).localeCompare(String(bv), undefined, { numeric: true });
     return sortDir === 'asc' ? cmp : -cmp;
   });
+  const recent = sorted.slice(0, 5);
 
   function SortIcon({ col }: { col: SortKey }) {
     if (sortKey !== col)
@@ -63,19 +70,6 @@ export default function RecentRequestsTable() {
           </Link>
         </div>
       </div>
-
-      {/* Exception alert */}
-      {requests.some((r) => r.status === 'Exception') && (
-        <div className="flex items-center gap-2.5 px-5 py-2.5 bg-red-50 border-b border-red-100">
-          <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" aria-hidden="true" />
-          <p className="text-xs text-red-700 font-500">
-            1 request has an exception — please review BK-REQ-2024-0265
-          </p>
-          <Link href="/client-dashboard/requests/req-008" className="ml-auto text-xs text-red-600 font-600 hover:text-red-700 transition-colors">
-            View →
-          </Link>
-        </div>
-      )}
 
       {/* Table */}
       <div className="overflow-x-auto scrollbar-hide">
@@ -124,20 +118,22 @@ export default function RecentRequestsTable() {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {sorted.length === 0 ? (
+            {loading ? (
+              <TableSkeleton rows={5} cols={6} />
+            ) : requests.length === 0 ? (
               <tr>
                 <td colSpan={6}>
                   <EmptyState
                     variant="requests"
                     action={{
                       label: 'Submit New Request',
-                      onClick: () => {},
+                      onClick: () => router.push('/client-dashboard/requests/new'),
                     }}
                   />
                 </td>
               </tr>
             ) : (
-              sorted.map((row: RequestRow) => (
+              recent.map((row: RequestRow) => (
                 <tr
                   key={row.id}
                   className={`table-row-hover group ${
@@ -188,34 +184,21 @@ export default function RecentRequestsTable() {
         </table>
       </div>
 
-      {/* Pagination */}
-      <div className="flex items-center justify-between px-5 py-3.5 border-t border-border bg-muted/20">
-        <p className="text-xs text-muted-foreground">
-          Showing <span className="font-600 text-foreground">8</span> of{' '}
-          <span className="font-600 text-foreground">23</span> requests
-        </p>
-        <div className="flex items-center gap-1">
-          <button className="px-3 py-1.5 text-xs font-500 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors disabled:opacity-40" disabled>
-            Previous
-          </button>
-          {[1, 2, 3].map((p) => (
-            <button
-              key={`req-page-${p}`}
-              className={`w-7 h-7 flex items-center justify-center text-xs font-500 rounded-lg transition-colors ${
-                p === 1
-                  ? 'bg-[#4A3B52] text-[#4A3B52]-foreground'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-              }`}
-              aria-current={p === 1 ? 'page' : undefined}
-            >
-              {p}
-            </button>
-          ))}
-          <button className="px-3 py-1.5 text-xs font-500 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-            Next
-          </button>
+      {/* Footer — link to the full requests list */}
+      {!loading && requests.length > 0 && (
+        <div className="flex items-center justify-between px-5 py-3.5 border-t border-border bg-muted/20">
+          <p className="text-xs text-muted-foreground">
+            Showing <span className="font-600 text-foreground">{recent.length}</span> of{' '}
+            <span className="font-600 text-foreground">{requests.length}</span> request{requests.length !== 1 ? 's' : ''}
+          </p>
+          <Link
+            href="/client-dashboard/requests"
+            className="text-xs font-600 text-[#4A3B52] hover:underline"
+          >
+            View all requests →
+          </Link>
         </div>
-      </div>
+      )}
     </div>
   );
 }

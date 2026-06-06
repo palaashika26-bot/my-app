@@ -4,7 +4,7 @@ import { Eye, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle, Truck } fro
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 import { TableSkeleton } from '@/components/ui/LoadingSkeleton';
-import { mockOrders, type OrderRow } from '@/lib/mockData';
+import type { OrderRow } from '@/lib/mockData';
 import Link from 'next/link';
 import type { OrderStatus } from '@/components/ui/StatusBadge';
 
@@ -65,10 +65,15 @@ function MiniProgressBar({ status }: { status: OrderStatus }) {
   );
 }
 
-export default function RecentOrdersTable() {
+export default function RecentOrdersTable({
+  orders,
+  loading,
+}: {
+  orders: OrderRow[];
+  loading: boolean;
+}) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
-  const [isLoading] = useState(false);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -80,13 +85,15 @@ export default function RecentOrdersTable() {
     }
   }
 
-  const sorted = [...mockOrders].sort((a, b) => {
+  const sorted = [...orders].sort((a, b) => {
     if (!sortKey || !sortDir) return 0;
     const av = a[sortKey];
     const bv = b[sortKey];
     const cmp = String(av).localeCompare(String(bv), undefined, { numeric: true });
     return sortDir === 'asc' ? cmp : -cmp;
   });
+  const recent = sorted.slice(0, 5);
+  const exceptionCount = orders.filter((o) => o.status === 'Exception').length;
 
   function SortIcon({ col }: { col: SortKey }) {
     if (sortKey !== col)
@@ -103,7 +110,7 @@ export default function RecentOrdersTable() {
         <div>
           <h2 className="text-sm font-600 text-foreground">Recent Orders</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {mockOrders.length} total orders
+            {orders.length} total order{orders.length !== 1 ? 's' : ''}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -118,13 +125,13 @@ export default function RecentOrdersTable() {
       </div>
 
       {/* Exception alert */}
-      {mockOrders.some((o) => o.status === 'Exception') && (
+      {exceptionCount > 0 && (
         <div className="flex items-center gap-2.5 px-5 py-2.5 bg-red-50 border-b border-red-100">
           <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" aria-hidden="true" />
           <p className="text-xs text-red-700 font-500">
-            Order BK-ORD-2024-0241 has an exception — item shortage reported by supplier
+            {exceptionCount} order{exceptionCount !== 1 ? 's' : ''} need attention
           </p>
-          <Link href="/client-dashboard/orders/ord-008" className="ml-auto text-xs text-red-600 font-600 hover:text-red-700 transition-colors">
+          <Link href="/client-dashboard/orders?filter=exception" className="ml-auto text-xs text-red-600 font-600 hover:text-red-700 transition-colors">
             View →
           </Link>
         </div>
@@ -184,16 +191,16 @@ export default function RecentOrdersTable() {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {isLoading ? (
-              <TableSkeleton rows={6} cols={7} />
-            ) : sorted.length === 0 ? (
+            {loading ? (
+              <TableSkeleton rows={5} cols={7} />
+            ) : orders.length === 0 ? (
               <tr>
                 <td colSpan={7}>
                   <EmptyState variant="orders" />
                 </td>
               </tr>
             ) : (
-              sorted.map((row: OrderRow) => (
+              recent.map((row: OrderRow) => (
                 <tr
                   key={row.id}
                   className={`table-row-hover group ${
@@ -254,34 +261,21 @@ export default function RecentOrdersTable() {
         </table>
       </div>
 
-      {/* Pagination */}
-      <div className="flex items-center justify-between px-5 py-3.5 border-t border-border bg-muted/20">
-        <p className="text-xs text-muted-foreground">
-          Showing <span className="font-600 text-foreground">8</span> of{' '}
-          <span className="font-600 text-foreground">47</span> orders
-        </p>
-        <div className="flex items-center gap-1">
-          <button className="px-3 py-1.5 text-xs font-500 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors disabled:opacity-40" disabled>
-            Previous
-          </button>
-          {[1, 2, 3, 4, 5].map((p) => (
-            <button
-              key={`ord-page-${p}`}
-              className={`w-7 h-7 flex items-center justify-center text-xs font-500 rounded-lg transition-colors ${
-                p === 1
-                  ? 'bg-[#4A3B52] text-[#4A3B52]-foreground'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-              }`}
-              aria-current={p === 1 ? 'page' : undefined}
-            >
-              {p}
-            </button>
-          ))}
-          <button className="px-3 py-1.5 text-xs font-500 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-            Next
-          </button>
+      {/* Footer — link to the full orders list */}
+      {!loading && orders.length > 0 && (
+        <div className="flex items-center justify-between px-5 py-3.5 border-t border-border bg-muted/20">
+          <p className="text-xs text-muted-foreground">
+            Showing <span className="font-600 text-foreground">{recent.length}</span> of{' '}
+            <span className="font-600 text-foreground">{orders.length}</span> order{orders.length !== 1 ? 's' : ''}
+          </p>
+          <Link
+            href="/client-dashboard/orders"
+            className="text-xs font-600 text-[#4A3B52] hover:underline"
+          >
+            View all orders →
+          </Link>
         </div>
-      </div>
+      )}
     </div>
   );
 }

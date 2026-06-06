@@ -4,7 +4,15 @@ import { Plus, ArrowRight, TrendingUp, BookOpen } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 
-export default function DashboardWelcomeBanner() {
+interface DashboardWelcomeBannerProps {
+  awaitingApproval?: number;
+  pendingPayments?: number;
+}
+
+export default function DashboardWelcomeBanner({
+  awaitingApproval = 0,
+  pendingPayments = 0,
+}: DashboardWelcomeBannerProps) {
   const { user } = useAuth();
   const firstName = user?.name ? user.name.split(' ')[0] : 'there';
 
@@ -47,8 +55,14 @@ export default function DashboardWelcomeBanner() {
         </h1>
         <p className="text-sm text-slate-300 mt-0.5">
           You have{' '}
-          <span className="text-[#c17b5c] font-600">0 quotations</span> awaiting your approval and{' '}
-          <span className="text-yellow-400 font-600">0 pending payments</span>.
+          <span className="text-[#c17b5c] font-600">
+            {awaitingApproval} quotation{awaitingApproval !== 1 ? 's' : ''}
+          </span>{' '}
+          awaiting your approval and{' '}
+          <span className="text-yellow-400 font-600">
+            {pendingPayments} pending payment{pendingPayments !== 1 ? 's' : ''}
+          </span>
+          .
         </p>
       </div>
 
