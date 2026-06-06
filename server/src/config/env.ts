@@ -54,6 +54,10 @@ const config = {
   EMAIL_PASS: process.env.EMAIL_PASS || "",
   EMAIL_FROM: process.env.EMAIL_FROM || "Elios <noreply@elioswholesale.in>",
 
+  // Brevo (Sendinblue) HTTP API key. When set, mail is sent over HTTPS instead
+  // of SMTP — required on Render, which blocks outbound SMTP ports (25/465/587).
+  BREVO_API_KEY: process.env.BREVO_API_KEY || "",
+
   // Web Push (VAPID)
   VAPID_PUBLIC_KEY:  process.env.VAPID_PUBLIC_KEY  || "",
   VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY || "",
