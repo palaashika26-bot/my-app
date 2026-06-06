@@ -1,6 +1,15 @@
 import prisma from "../../../config/prisma";
+import { Prisma } from "@prisma/client";
 import { ApiError } from "../../../utils/ApiError";
 import { generateRequestNumber } from "../../../utils/generateRequestNumber";
+
+// Interactive transactions default to a 5s timeout. On Render the round-trip to
+// the Supabase pooler is slow enough that updating items + request + activity
+// (and, in some flows, re-reading with includes) trips P2028 "Transaction
+// already closed". Give every interactive transaction generous headroom, and a
+// longer maxWait to acquire a connection from the small pool.
+const runTxn = <T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> =>
+  prisma.$transaction(fn, { maxWait: 10000, timeout: 20000 });
 
 const RMB_TO_INR = 11.5;
 
@@ -139,44 +148,47 @@ export const requestsRepository = {
     staffNotes?: string,
     advanceAmountINR?: number
   ) {
-    return prisma.$transaction(async (tx) => {
-      for (const item of items) {
-        const quotedINR = parseFloat((item.quotedRMB * RMB_TO_INR).toFixed(2));
-        await tx.requestItem.update({
-          where: { id: item.id },
+    // Keep the transaction short: only the writes run inside it, and the heavy
+    // re-fetch (fullInclude pulls items with base64 reference images) is moved
+    // out. Holding a pooled connection through that big include is what starves
+    // the low-connection_limit Supabase pooler and 500s the quote under the
+    // dashboard's concurrent polling. maxWait/timeout give headroom to acquire
+    // a connection and finish instead of failing fast.
+    await prisma.$transaction(
+      async (tx) => {
+        for (const item of items) {
+          const quotedINR = parseFloat((item.quotedRMB * RMB_TO_INR).toFixed(2));
+          await tx.requestItem.update({
+            where: { id: item.id },
+            data: { quotedRMB: item.quotedRMB, quotedINR, status: "QUOTED" },
+          });
+        }
+
+        await tx.sourcingRequest.update({
+          where: { id: requestId },
           data: {
-            quotedRMB: item.quotedRMB,
-            quotedINR,
             status: "QUOTED",
+            quotedAt: new Date(),
+            staffNotes: staffNotes ?? undefined,
+            advanceAmountINR: advanceAmountINR ?? null,
           },
         });
-      }
 
-      const updated = await tx.sourcingRequest.update({
-        where: { id: requestId },
-        data: {
-          status: "QUOTED",
-          quotedAt: new Date(),
-          staffNotes: staffNotes ?? undefined,
-          advanceAmountINR: advanceAmountINR ?? null,
-        },
-        include: fullInclude,
-      });
+        await tx.requestActivity.create({
+          data: { requestId, userId: staffId, action: "Quotation sent to client" },
+        });
+      },
+      { maxWait: 10000, timeout: 20000 }
+    );
 
-      await tx.requestActivity.create({
-        data: {
-          requestId,
-          userId: staffId,
-          action: "Quotation sent to client",
-        },
-      });
-
-      return updated;
+    return prisma.sourcingRequest.findUniqueOrThrow({
+      where: { id: requestId },
+      include: fullInclude,
     });
   },
 
   async approveRequest(requestId: string, staffId: string, isAutoConverted = false) {
-    return prisma.$transaction(async (tx) => {
+    return runTxn(async (tx) => {
       const request = await tx.sourcingRequest.findUnique({
         where: { id: requestId },
         include: {
@@ -256,7 +268,7 @@ export const requestsRepository = {
   },
 
   async rejectRequest(requestId: string, staffId: string, reason?: string) {
-    return prisma.$transaction(async (tx) => {
+    return runTxn(async (tx) => {
       const updated = await tx.sourcingRequest.update({
         where: { id: requestId },
         data: {
@@ -280,7 +292,7 @@ export const requestsRepository = {
   },
 
   async cancelRequest(requestId: string, userId: string, reason?: string) {
-    return prisma.$transaction(async (tx) => {
+    return runTxn(async (tx) => {
       const updated = await tx.sourcingRequest.update({
         where: { id: requestId },
         data: {
@@ -308,7 +320,7 @@ export const requestsRepository = {
     clientId: string,
     items: { id: string; response: string; counterPriceINR?: number; counterNote?: string }[]
   ) {
-    return prisma.$transaction(async (tx) => {
+    return runTxn(async (tx) => {
       for (const item of items) {
         await tx.requestItem.update({
           where: { id: item.id },
@@ -375,7 +387,7 @@ export const requestsRepository = {
     staffId: string,
     items: { id: string; newQuotedRMB: number }[]
   ) {
-    return prisma.$transaction(async (tx) => {
+    return runTxn(async (tx) => {
       for (const item of items) {
         const quotedINR = parseFloat((item.newQuotedRMB * RMB_TO_INR).toFixed(2));
         await tx.requestItem.update({
