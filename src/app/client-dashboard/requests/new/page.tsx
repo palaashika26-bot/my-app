@@ -38,7 +38,9 @@ export default function NewRequestPage() {
   function addItem() { if (items.length < 5) setItems([...items, { name: '', desc: '', qty: '', url: '', refImages: [] }]); }
   function removeItem(i: number) { if (items.length > 1) setItems(items.filter((_, idx) => idx !== i)); }
 
-  const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2MB
+  // 5MB per image. With max 5 images that is ~34MB once base64-encoded, which
+  // stays under the backend's 50MB JSON body limit.
+  const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 
   function handleRefImages(itemIdx: number, e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -48,7 +50,7 @@ export default function NewRequestPage() {
 
     const oversized = toAdd.filter(f => f.size > MAX_IMAGE_SIZE);
     if (oversized.length > 0) {
-      addToast({ type: 'error', title: 'Image too large. Max 2MB per image.' });
+      addToast({ type: 'error', title: 'Image too large. Max 5MB per image.' });
       e.target.value = '';
       return;
     }

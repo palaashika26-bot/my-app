@@ -156,34 +156,40 @@ export const requestsService = {
       data.advanceAmountINR
     );
 
-    // Notify client via email (fire-and-forget)
-    const clientEmail = existing.client.user.email;
-    const clientFirstName = existing.client.user.firstName;
-    const quotedItems = updated.items
-      .filter((i) => i.quotedINR != null)
-      .map((i) => ({
-        productName: i.productName,
-        quantity: i.quantity,
-        unit: i.unit,
-        unitPriceINR: parseFloat(i.quotedINR!.toString()),
-      }));
-    const totalINR = quotedItems.reduce(
-      (sum, i) => sum + i.unitPriceINR * i.quantity,
-      0
-    );
+    // Notify client via email (fire-and-forget). The whole block is wrapped so
+    // that a failure building the template or sending the mail can never bubble
+    // up and 500 the quotation itself — the quote is already committed above.
+    try {
+      const clientEmail = existing.client.user.email;
+      const clientFirstName = existing.client.user.firstName;
+      const quotedItems = updated.items
+        .filter((i) => i.quotedINR != null)
+        .map((i) => ({
+          productName: i.productName,
+          quantity: i.quantity,
+          unit: i.unit,
+          unitPriceINR: parseFloat(i.quotedINR!.toString()),
+        }));
+      const totalINR = quotedItems.reduce(
+        (sum, i) => sum + i.unitPriceINR * i.quantity,
+        0
+      );
 
-    sendEmail({
-      to: clientEmail,
-      subject: `Quotation Ready: ${existing.requestNumber}`,
-      html: quotationEmailTemplate({
-        clientName: clientFirstName,
-        requestNumber: existing.requestNumber,
-        requestId,
-        items: quotedItems,
-        totalINR,
-        frontendUrl: FRONTEND_URL,
-      }),
-    }).catch(() => {});
+      sendEmail({
+        to: clientEmail,
+        subject: `Quotation Ready: ${existing.requestNumber}`,
+        html: quotationEmailTemplate({
+          clientName: clientFirstName,
+          requestNumber: existing.requestNumber,
+          requestId,
+          items: quotedItems,
+          totalINR,
+          frontendUrl: FRONTEND_URL,
+        }),
+      }).catch(() => {});
+    } catch (err) {
+      console.error("Failed to build/send quotation email:", err);
+    }
 
     return updated;
   },

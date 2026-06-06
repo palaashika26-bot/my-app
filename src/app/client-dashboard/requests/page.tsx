@@ -53,7 +53,10 @@ function AllRequestsContent() {
 
   useEffect(() => {
     const abortController = new AbortController();
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000));
+    // 25s, not 5s: the Render free instance sleeps on inactivity and can take
+    // ~50s to wake, so a short timeout shows an empty list on the first load
+    // (especially on slower mobile networks) even though requests exist.
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 25000));
     Promise.race([
       requestsApi.getRequests({ limit: 50 }, abortController.signal),
       timeout,

@@ -465,7 +465,14 @@ export const requestsRepository = {
   async getMessages(requestId: string, since?: string) {
     const where: Record<string, unknown> = { requestId };
     if (since) {
-      where.createdAt = { gt: new Date(since) };
+      // `since` may arrive as epoch millis ("1780743849774") or an ISO string.
+      // new Date("1780743849774") yields an Invalid Date (NaN), which makes
+      // Prisma throw and the whole poll 500s — so parse both shapes and skip
+      // the filter entirely if the value is unparseable.
+      const ts = /^\d+$/.test(since) ? new Date(Number(since)) : new Date(since);
+      if (!Number.isNaN(ts.getTime())) {
+        where.createdAt = { gt: ts };
+      }
     }
     return prisma.requestMessage.findMany({
       where,
