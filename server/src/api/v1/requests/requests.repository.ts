@@ -139,39 +139,42 @@ export const requestsRepository = {
     staffNotes?: string,
     advanceAmountINR?: number
   ) {
-    return prisma.$transaction(async (tx) => {
-      for (const item of items) {
-        const quotedINR = parseFloat((item.quotedRMB * RMB_TO_INR).toFixed(2));
-        await tx.requestItem.update({
-          where: { id: item.id },
+    // Keep the transaction short: only the writes run inside it, and the heavy
+    // re-fetch (fullInclude pulls items with base64 reference images) is moved
+    // out. Holding a pooled connection through that big include is what starves
+    // the low-connection_limit Supabase pooler and 500s the quote under the
+    // dashboard's concurrent polling. maxWait/timeout give headroom to acquire
+    // a connection and finish instead of failing fast.
+    await prisma.$transaction(
+      async (tx) => {
+        for (const item of items) {
+          const quotedINR = parseFloat((item.quotedRMB * RMB_TO_INR).toFixed(2));
+          await tx.requestItem.update({
+            where: { id: item.id },
+            data: { quotedRMB: item.quotedRMB, quotedINR, status: "QUOTED" },
+          });
+        }
+
+        await tx.sourcingRequest.update({
+          where: { id: requestId },
           data: {
-            quotedRMB: item.quotedRMB,
-            quotedINR,
             status: "QUOTED",
+            quotedAt: new Date(),
+            staffNotes: staffNotes ?? undefined,
+            advanceAmountINR: advanceAmountINR ?? null,
           },
         });
-      }
 
-      const updated = await tx.sourcingRequest.update({
-        where: { id: requestId },
-        data: {
-          status: "QUOTED",
-          quotedAt: new Date(),
-          staffNotes: staffNotes ?? undefined,
-          advanceAmountINR: advanceAmountINR ?? null,
-        },
-        include: fullInclude,
-      });
+        await tx.requestActivity.create({
+          data: { requestId, userId: staffId, action: "Quotation sent to client" },
+        });
+      },
+      { maxWait: 10000, timeout: 20000 }
+    );
 
-      await tx.requestActivity.create({
-        data: {
-          requestId,
-          userId: staffId,
-          action: "Quotation sent to client",
-        },
-      });
-
-      return updated;
+    return prisma.sourcingRequest.findUniqueOrThrow({
+      where: { id: requestId },
+      include: fullInclude,
     });
   },
 
