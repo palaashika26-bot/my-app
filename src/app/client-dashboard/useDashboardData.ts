@@ -3,8 +3,29 @@ import { useEffect, useState } from 'react';
 import { ordersApi } from '@/lib/api/orders.api';
 import { requestsApi } from '@/lib/api/requests.api';
 import type { ApiOrder } from '@/lib/types/api.types';
-import type { OrderRow, RequestRow } from '@/lib/mockData';
 import type { OrderStatus } from '@/components/ui/StatusBadge';
+
+interface OrderRow {
+  id: string;
+  orderId: string;
+  date: string;
+  amount: string;
+  amountCny: string;
+  itemCount: number;
+  status: OrderStatus;
+  estimatedDelivery: string;
+  itemNames: string;
+}
+
+interface RequestRow {
+  id: string;
+  requestId: string;
+  date: string;
+  items: number;
+  itemNames: string;
+  status: OrderStatus;
+  totalBudget: string;
+}
 
 // ── Backend status → display status maps (kept in sync with the orders/requests
 //    list pages so the dashboard shows the same labels) ───────────────────────

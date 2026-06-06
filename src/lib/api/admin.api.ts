@@ -8,12 +8,14 @@ export interface AdminStats {
   activeOrders: number;
   totalClients: number;
   pendingPayments: number;
+  monthlyRevenue: { month: string; revenue: number }[];
+  ordersByStatus: { name: string; value: number; color: string }[];
   recentInquiries: {
     id: string;
-    quantity: number;
+    inquiryNumber: string;
     status: string;
     createdAt: string;
-    product: { name: string } | null;
+    items: { productName: string; quantity: number }[];
     client: {
       companyName: string;
       user: { firstName: string; lastName: string };

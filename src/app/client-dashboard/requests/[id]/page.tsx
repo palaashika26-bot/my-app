@@ -4,12 +4,31 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import ClientLayout from '@/components/ClientLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
-import type { RequestLineItem, PerProductQuoteStatus } from '@/lib/mockData';
 import { requestsApi } from '@/lib/api/requests.api';
 import { requestsCache } from '@/lib/api/requestsCache';
 import { paymentsApi } from '@/lib/api/payments.api';
-import { getRequestById as getStoreRequest } from '@/lib/requestsStore';
 import { ArrowLeft, Check, MessageSquare, CheckCircle2, Circle, X, ImageIcon, Ban } from 'lucide-react';
+
+type PerProductQuoteStatus = 'Pending' | 'Quoted' | 'Accepted' | 'Rejected';
+
+interface RequestLineItem {
+  id: string;
+  name: string;
+  quantity: number;
+  specs?: string;
+  imageUrl?: string;
+  referenceImageUrls?: string[];
+  targetPriceINR?: number;
+  rmbCostPerUnit: number;
+  unitPriceCny?: number;
+  unitPriceInr?: number;
+  status: PerProductQuoteStatus;
+  revisionRequested?: boolean;
+  clientProposedInr?: number;
+  clientResponse?: string;
+  counterPriceINR?: number;
+  counterNote?: string;
+}
 import { useToast } from '@/components/ui/Toast';
 
 const CNY_TO_INR = 11.5;
@@ -135,55 +154,7 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
           applyApiRequest(req);
         }
       })
-      .catch(() => {
-        if (signal?.aborted) return;
-        const storeReq = getStoreRequest(id);
-        if (storeReq) {
-          const items = storeReq.lineItems
-            ? storeReq.lineItems.map((l: any) => ({
-                id: l.id,
-                productName: l.name,
-                productDescription: l.specs || '',
-                quantity: l.quantity,
-                quotedRMB: l.unitPriceCny || null,
-                quotedINR: l.unitPriceInr || null,
-                status: l.status === 'Quoted' ? 'QUOTED' : l.status === 'Accepted' ? 'ACCEPTED' : l.status === 'Rejected' ? 'REJECTED' : 'PENDING',
-                clientResponse: l.clientResponse || null,
-                counterPriceINR: l.counterPriceINR || null,
-                counterNote: l.counterNote || null,
-                imageUrl: l.imageUrl || null,
-                referenceImageUrls: l.referenceImageUrls || [],
-                targetPriceINR: l.targetPriceINR || null,
-              }))
-            : storeReq.itemNames.split(',').map((name, i) => ({
-                id: `${storeReq.id}-line-${i}`,
-                productName: name.trim(),
-                productDescription: '',
-                quantity: 1,
-                quotedRMB: null,
-                quotedINR: null,
-                status: 'PENDING',
-                clientResponse: null,
-                counterPriceINR: null,
-                counterNote: null,
-                imageUrl: null,
-                referenceImageUrls: [],
-                targetPriceINR: null,
-              }));
-          const budget = parseFloat(storeReq.totalBudget.replace(/[₹,]/g, '')) || 0;
-          const synthetic = {
-            id: storeReq.id,
-            requestNumber: storeReq.requestId,
-            createdAt: new Date(storeReq.date).toISOString(),
-            totalBudgetINR: budget,
-            status: storeReq.status,
-            items,
-            advanceAmountINR: null,
-          };
-          requestsCache.set(id, synthetic);
-          applyApiRequest(synthetic);
-        }
-      });
+      .catch(() => {});
   }
 
   function fetchPayments(signal?: AbortSignal) {

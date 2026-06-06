@@ -4,13 +4,23 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import ClientLayout from '@/components/ClientLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
-import type { OrderRow } from '@/lib/ordersStore';
-import { getOrders } from '@/lib/ordersStore';
 import { ordersApi } from '@/lib/api/orders.api';
 import { ordersCache } from '@/lib/api/ordersCache';
 import type { ApiOrder } from '@/lib/types/api.types';
 import { Search, Eye, ChevronDown, ChevronUp, Package, Warehouse, MapPin, CheckCircle2, Clock, FileText, Truck, AlertCircle, DollarSign, ShoppingCart, List } from 'lucide-react';
 import { SkeletonTable } from '@/components/SkeletonLoader';
+
+interface OrderRow {
+  id: string;
+  orderId: string;
+  date: string;
+  itemCount: number;
+  itemNames: string;
+  amount?: string;
+  estimatedDelivery?: string;
+  status: string;
+  client?: string;
+}
 
 const statusFilters = ['All', 'Active', 'Completed', 'Exception'];
 
@@ -83,22 +93,19 @@ const ALL_STAGES = [
   { id: 'exception',          label: 'Exception',                   statuses: ['Exception'],                                 icon: AlertCircle,   color: 'text-red-600',      bg: 'bg-red-50'    },
 ];
 
-function PipelineView() {
+function PipelineView({ orders }: { orders: any[] }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [orders, setOrders] = useState<OrderRow[]>([]);
 
   useEffect(() => {
-    const loaded = getOrders();
-    setOrders(loaded);
     // Auto-expand stages that have orders
     const initExpanded: Record<string, boolean> = {};
     ALL_STAGES.forEach(stage => {
-      if (loaded.some(o => stage.statuses.includes(o.status as string))) {
+      if (orders.some((o: any) => stage.statuses.includes(o.status as string))) {
         initExpanded[stage.id] = true;
       }
     });
     setExpanded(initExpanded);
-  }, []);
+  }, [orders]);
 
   return (
     <div className="space-y-3">
@@ -291,7 +298,7 @@ function AllOrdersContent() {
           </div>
         </>
       ) : (
-        <PipelineView />
+        <PipelineView orders={liveOrders} />
       )}
     </ClientLayout>
   );

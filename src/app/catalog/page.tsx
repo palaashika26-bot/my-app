@@ -54,14 +54,7 @@ interface StripCategory {
 
 const CAT_LS_KEY = 'catalog-categories';
 
-const SEED_STRIP_CATS: StripCategory[] = [
-  { id: 'sc-electronics', name: 'Electronics',   image: '', productIds: ['p01', 'p05', 'p06', 'p09', 'p12'] },
-  { id: 'sc-fashion',     name: 'Fashion',        image: '', productIds: ['p11', 'p13', 'p14', 'p15'] },
-  { id: 'sc-home',        name: 'Home & Kitchen', image: '', productIds: ['p03', 'p08', 'p10', 'p19'] },
-  { id: 'sc-beauty',      name: 'Beauty',         image: '', productIds: ['p17'] },
-  { id: 'sc-sports',      name: 'Sports',         image: '', productIds: ['p07', 'p18'] },
-  { id: 'sc-toys',        name: 'Toys',           image: '', productIds: ['p16'] },
-];
+const EMPTY_STRIP_CATS: StripCategory[] = [];
 
 function getCategoryEmoji(name: string): string {
   const lower = name.toLowerCase();
@@ -78,20 +71,7 @@ function getCategoryEmoji(name: string): string {
   return '📦';
 }
 
-const SUBCATEGORIES: Record<string, string[]> = {
-  Electronics: ['LED Lights & Strips', 'Power Adapters & Chargers', 'Cables & Connectors', 'Smart Home Devices', 'Batteries & Power Banks'],
-  'Mobile Accessories': ['Phone Cases & Covers', 'Screen Protectors', 'Earphones & Earbuds', 'Charging Accessories', 'Camera & Lens Accessories'],
-  Jewellery: ['Necklaces & Chains', 'Earrings & Studs', 'Bangles & Bracelets', 'Rings', 'Anklets', 'Jewellery Sets', 'Hair Accessories'],
-  Kitchenware: ['Cookware & Pans', 'Storage Containers', 'Kitchen Tools & Gadgets', 'Tableware & Cutlery', 'Water Bottles & Flasks'],
-  'Clothing & Apparel': ["Men's Wear", "Women's Wear", "Kids' Wear", 'Innerwear & Socks', 'Winter Wear'],
-  'Home & Decor': ['Furniture & Storage', 'Bedding & Cushions', 'Wall Decor', 'Lighting & Lamps', 'Showpieces & Gifts'],
-  'Bags & Luggage': ['Handbags & Purses', 'Backpacks', 'Travel Luggage', 'Wallets & Pouches'],
-  'Toys & Games': ['Educational Toys', 'Action Figures', 'Board Games', 'Outdoor Toys'],
-  'Beauty & Personal Care': ['Skincare Tools', 'Hair Care Tools', 'Makeup Accessories', 'Grooming Products'],
-  'Sports & Fitness': ['Exercise Equipment', 'Sportswear Accessories', 'Outdoor & Camping'],
-};
-
-const CATEGORIES = ['All', ...Object.keys(SUBCATEGORIES)];
+const CATEGORIES = ['All'];
 
 type SortOption = 'relevance' | 'price-asc' | 'price-desc' | 'moq-asc' | 'moq-desc' | 'newest' | 'popular' | 'name-asc';
 
@@ -113,8 +93,8 @@ const MOQ_OPTIONS = [
   { key: '500+',    label: '500+ units' },
 ];
 
-const SHIPPING_OPTIONS = ['Yiwu', 'Guangzhou', 'Shenzhen', 'Shanghai'];
-const MATERIAL_OPTIONS = ['Gold Plated', 'Silver Plated', 'Stainless Steel', 'Brass', 'Artificial/Fashion'];
+const SHIPPING_OPTIONS: string[] = [];
+const MATERIAL_OPTIONS: string[] = [];
 
 interface Filters {
   priceMin: number;
@@ -133,29 +113,6 @@ const DEFAULT_FILTERS: Filters = {
   inStockOnly: false, newArrivals: false, onSale: false,
   shippingFrom: [], material: [], rating: 0,
 };
-
-const SEED_PRODUCTS: Product[] = [
-  { id: 'p01', emoji: '🔌', name: 'LED Strip Lights RGB 5m',      category: 'Electronics',           subcategory: 'LED Lights & Strips',    priceCny: '¥35–55', priceCnyMin: 35, priceCnyMax: 55, moq: 50,  bg: 'bg-[#f0eef8]',  inStock: true,  isNew: false, onSale: false, shippingFrom: 'Yiwu',      rating: 4.2 },
-  { id: 'p02', emoji: '📱', name: 'Silicone Phone Cases',         category: 'Mobile Accessories',    subcategory: 'Phone Cases & Covers',   priceCny: '¥8–15',  priceCnyMin: 8,  priceCnyMax: 15, moq: 200, bg: 'bg-[#e4eeee]',    inStock: true,  isNew: false, onSale: true,  shippingFrom: 'Guangzhou', rating: 4.5 },
-  { id: 'p03', emoji: '🍶', name: 'Stainless Steel Bottles',      category: 'Kitchenware',           subcategory: 'Water Bottles & Flasks', priceCny: '¥18–28', priceCnyMin: 18, priceCnyMax: 28, moq: 100, bg: 'bg-cyan-100',    inStock: true,  isNew: false, onSale: false, shippingFrom: 'Yiwu',      rating: 4.3 },
-  { id: 'p04', emoji: '🎧', name: 'Bluetooth Earbuds TWS',        category: 'Mobile Accessories',    subcategory: 'Earphones & Earbuds',    priceCny: '¥45–80', priceCnyMin: 45, priceCnyMax: 80, moq: 50,  bg: 'bg-purple-100',  inStock: true,  isNew: true,  onSale: false, shippingFrom: 'Shenzhen',  rating: 4.7, sampleAvailable: true, samplePrice: '¥120' },
-  { id: 'p05', emoji: '🔋', name: 'Power Banks 10000mAh',         category: 'Electronics',           subcategory: 'Batteries & Power Banks',priceCny: '¥65–95', priceCnyMin: 65, priceCnyMax: 95, moq: 30,  bg: 'bg-emerald-100', inStock: true,  isNew: false, onSale: false, shippingFrom: 'Shenzhen',  rating: 4.4 },
-  { id: 'p06', emoji: '🖱️', name: 'Wireless Mouse',               category: 'Electronics',           subcategory: 'Cables & Connectors',   priceCny: '¥22–35', priceCnyMin: 22, priceCnyMax: 35, moq: 50,  bg: 'bg-slate-100',   inStock: true,  isNew: false, onSale: false, shippingFrom: 'Guangzhou', rating: 3.9 },
-  { id: 'p07', emoji: '💪', name: 'Resistance Bands Set',         category: 'Sports & Fitness',      subcategory: 'Exercise Equipment',     priceCny: '¥15–25', priceCnyMin: 15, priceCnyMax: 25, moq: 100, bg: 'bg-rose-100',    inStock: true,  isNew: false, onSale: true,  shippingFrom: 'Yiwu',      rating: 4.1 },
-  { id: 'p08', emoji: '🧴', name: 'Soap Dispenser Pump',          category: 'Kitchenware',           subcategory: 'Kitchen Tools & Gadgets',priceCny: '¥12–20', priceCnyMin: 12, priceCnyMax: 20, moq: 100, bg: 'bg-teal-100',    inStock: true,  isNew: false, onSale: false, shippingFrom: 'Yiwu',      rating: 4.0 },
-  { id: 'p09', emoji: '🔌', name: 'USB-C Cables (Braided)',       category: 'Electronics',           subcategory: 'Cables & Connectors',   priceCny: '¥6–12',  priceCnyMin: 6,  priceCnyMax: 12, moq: 200, bg: 'bg-indigo-100',  inStock: true,  isNew: false, onSale: true,  shippingFrom: 'Shenzhen',  rating: 4.6 },
-  { id: 'p10', emoji: '📦', name: 'Storage Box Organiser',        category: 'Home & Decor',          subcategory: 'Furniture & Storage',   priceCny: '¥8–15',  priceCnyMin: 8,  priceCnyMax: 15, moq: 50,  bg: 'bg-yellow-100',  inStock: false, isNew: false, onSale: false, shippingFrom: 'Shanghai',  rating: 3.8 },
-  { id: 'p11', emoji: '🎒', name: 'Canvas Tote Bags',             category: 'Bags & Luggage',        subcategory: 'Handbags & Purses',      priceCny: '¥10–18', priceCnyMin: 10, priceCnyMax: 18, moq: 100, bg: 'bg-pink-100',    inStock: true,  isNew: true,  onSale: false, shippingFrom: 'Guangzhou', rating: 4.2 },
-  { id: 'p12', emoji: '🏮', name: 'Smart Plug WiFi 16A',          category: 'Electronics',           subcategory: 'Smart Home Devices',    priceCny: '¥18–28', priceCnyMin: 18, priceCnyMax: 28, moq: 50,  bg: 'bg-amber-100',   inStock: true,  isNew: true,  onSale: false, shippingFrom: 'Shenzhen',  rating: 4.8 },
-  { id: 'p13', emoji: '✨', name: 'Gold Plated Necklace Set',     category: 'Jewellery',             subcategory: 'Necklaces & Chains',    priceCny: '¥25–45', priceCnyMin: 25, priceCnyMax: 45, moq: 50,  bg: 'bg-yellow-100',  inStock: true,  isNew: true,  onSale: false, shippingFrom: 'Yiwu',      rating: 4.3, material: 'Gold Plated' },
-  { id: 'p14', emoji: '💎', name: 'Silver Stud Earrings',         category: 'Jewellery',             subcategory: 'Earrings & Studs',      priceCny: '¥12–22', priceCnyMin: 12, priceCnyMax: 22, moq: 100, bg: 'bg-slate-100',   inStock: true,  isNew: false, onSale: true,  shippingFrom: 'Yiwu',      rating: 4.5, material: 'Silver Plated' },
-  { id: 'p15', emoji: '👗', name: "Women's Cotton Kurta",         category: 'Clothing & Apparel',    subcategory: "Women's Wear",          priceCny: '¥30–55', priceCnyMin: 30, priceCnyMax: 55, moq: 50,  bg: 'bg-pink-100',    inStock: true,  isNew: true,  onSale: false, shippingFrom: 'Guangzhou', rating: 4.0 },
-  { id: 'p16', emoji: '🧸', name: 'Educational Building Blocks',  category: 'Toys & Games',          subcategory: 'Educational Toys',      priceCny: '¥18–35', priceCnyMin: 18, priceCnyMax: 35, moq: 100, bg: 'bg-emerald-100', inStock: true,  isNew: false, onSale: false, shippingFrom: 'Yiwu',      rating: 4.4 },
-  { id: 'p17', emoji: '🌿', name: 'Jade Roller Face Massager',    category: 'Beauty & Personal Care',subcategory: 'Skincare Tools',        priceCny: '¥15–28', priceCnyMin: 15, priceCnyMax: 28, moq: 50,  bg: 'bg-green-100',   inStock: true,  isNew: false, onSale: true,  shippingFrom: 'Guangzhou', rating: 4.6 },
-  { id: 'p18', emoji: '🧘', name: 'Yoga Mat Premium TPE',         category: 'Sports & Fitness',      subcategory: 'Exercise Equipment',    priceCny: '¥25–45', priceCnyMin: 25, priceCnyMax: 45, moq: 50,  bg: 'bg-violet-100',  inStock: false, isNew: false, onSale: false, shippingFrom: 'Shanghai',  rating: 4.2 },
-  { id: 'p19', emoji: '🖼️', name: 'Canvas Wall Art Prints',       category: 'Home & Decor',          subcategory: 'Wall Decor',            priceCny: '¥20–40', priceCnyMin: 20, priceCnyMax: 40, moq: 30,  bg: 'bg-rose-100',    inStock: true,  isNew: true,  onSale: false, shippingFrom: 'Yiwu',      rating: 3.9 },
-  { id: 'p20', emoji: '💼', name: 'Business Laptop Backpack',     category: 'Bags & Luggage',        subcategory: 'Backpacks',             priceCny: '¥55–85', priceCnyMin: 55, priceCnyMax: 85, moq: 30,  bg: 'bg-sky-100',     inStock: true,  isNew: false, onSale: false, shippingFrom: 'Guangzhou', rating: 4.7 },
-];
 
 const LS_KEY = 'bk-catalog-products';
 
@@ -180,59 +137,13 @@ function moqInRange(moq: number, range: string): boolean {
   return false;
 }
 
-function mergeWithLocalStorage(seed: Product[]): Product[] {
-  try {
-    const stored = localStorage.getItem(LS_KEY);
-    if (!stored) return seed;
-    const adminProducts = JSON.parse(stored) as Array<Record<string, unknown>>;
-    // Map admin products to client product shape
-    const mapped: Product[] = adminProducts.map(ap => {
-      // Find existing seed product to preserve client-specific fields
-      const existing = seed.find(s => s.id === String(ap.id));
-      return {
-        id: String(ap.id),
-        emoji: String(ap.emoji || '📦'),
-        name: String(ap.name || ''),
-        category: String(ap.category || ''),
-        subcategory: String(ap.subcategory || ''),
-        brand: ap.brand ? String(ap.brand) : undefined,
-        originCity: ap.originCity ? String(ap.originCity) : undefined,
-        sku: ap.sku ? String(ap.sku) : undefined,
-        priceCny: String(ap.priceCny || ''),
-        priceCnyMin: existing?.priceCnyMin ?? 0,
-        priceCnyMax: existing?.priceCnyMax ?? 0,
-        moq: Number(ap.moq) || 50,
-        sampleAvailable: Boolean(ap.sampleAvailable),
-        samplePrice: ap.samplePrice ? String(ap.samplePrice) : undefined,
-        shortDescription: ap.shortDescription ? String(ap.shortDescription) : undefined,
-        fullDescription: ap.fullDescription ? String(ap.fullDescription) : undefined,
-        keyFeatures: Array.isArray(ap.keyFeatures) ? (ap.keyFeatures as string[]).filter(Boolean) : undefined,
-        specifications: Array.isArray(ap.specifications) ? ap.specifications as Spec[] : undefined,
-        tags: ap.tags ? String(ap.tags) : undefined,
-        images: Array.isArray(ap.images) ? ap.images as string[] : [],
-        videos: Array.isArray(ap.videos) ? ap.videos as string[] : [],
-        bg: String(ap.bg || 'bg-[#e4eeee]'),
-        inStock: existing?.inStock ?? true,
-        isNew: Boolean(ap.isNew),
-        onSale: Boolean(ap.onSale),
-        shippingFrom: existing?.shippingFrom ?? (ap.originCity ? String(ap.originCity) : 'Yiwu'),
-        material: existing?.material,
-        rating: existing?.rating ?? 4.0,
-      };
-    });
-    return mapped.length > 0 ? mapped : seed;
-  } catch {
-    return seed;
-  }
-}
-
 const DELIVERY_OPTIONS = ['ASAP', '2–4 weeks', '1–2 months', 'Flexible'];
 
 export default function CatalogPage() {
   const { addToast } = useToast();
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
-  const [products, setProducts] = useState<Product[]>(SEED_PRODUCTS);
+  const [products, setProducts] = useState<Product[]>([]);
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('All');
   const [subcat, setSubcat] = useState('');
@@ -263,7 +174,7 @@ export default function CatalogPage() {
   const [customSubmitting, setCustomSubmitting] = useState(false);
 
   // Strip category state
-  const [stripCategories, setStripCategories] = useState<StripCategory[]>(SEED_STRIP_CATS);
+  const [stripCategories, setStripCategories] = useState<StripCategory[]>(EMPTY_STRIP_CATS);
   const [selectedStripCat, setSelectedStripCat] = useState('all');
   const stripRef = useRef<HTMLDivElement>(null);
   const stripPausedRef = useRef(false);
@@ -271,11 +182,8 @@ export default function CatalogPage() {
   const animationRef = useRef<number>(0);
 
   useEffect(() => {
-    const base = mergeWithLocalStorage(SEED_PRODUCTS);
-    setProducts(base);
-
-    // ── Fetch real products from backend (non-blocking) ─────────────────────
     const token = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null;
+
     if (token) {
       productsApi
         .getProducts({ limit: 100 })
@@ -301,38 +209,18 @@ export default function CatalogPage() {
             description: bp.description,
             shortDescription: bp.description,
           }));
-          // Prepend backend products, skip any with duplicate slug-based id
-          setProducts((prev) => {
-            const existingNames = new Set(prev.map((p) => p.name.toLowerCase()));
-            const fresh = backendProducts.filter(
-              (p) => !existingNames.has(p.name.toLowerCase())
-            );
-            return [...fresh, ...prev];
-          });
+          setProducts(backendProducts);
         })
-        .catch(() => {/* Backend unreachable — show seed products */});
+        .catch(() => {});
     }
 
     setTimeout(() => setIsLoading(false), 300);
-    // Load strip categories
-    try {
-      const stored = localStorage.getItem(CAT_LS_KEY);
-      const cats = stored ? JSON.parse(stored) as StripCategory[] : null;
-      if (cats && cats.length > 0) {
-        setStripCategories(cats);
-      } else {
-        setStripCategories(SEED_STRIP_CATS);
-        localStorage.setItem(CAT_LS_KEY, JSON.stringify(SEED_STRIP_CATS));
-      }
-    } catch {
-      setStripCategories(SEED_STRIP_CATS);
-    }
     // Read ?category= from URL
     const params = new URLSearchParams(window.location.search);
     const catParam = params.get('category');
     if (catParam) {
       setSelectedStripCat(catParam);
-      stripPausedRef.current = true; // start paused if a category is pre-selected
+      stripPausedRef.current = true;
     }
   }, []);
 
@@ -358,7 +246,7 @@ export default function CatalogPage() {
     return () => cancelAnimationFrame(rafId);
   }, []);
 
-  const subcats = cat === 'All' ? [] : (SUBCATEGORIES[cat] || []);
+  const subcats: string[] = cat === 'All' ? [] : [];
   const activeFilterCount = countActiveFilters(filters);
 
   const filtered = useMemo(() => {

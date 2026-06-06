@@ -6,10 +6,18 @@ import type { StaffRoleId } from '@/lib/staffRoles';
 export type AppRole = 'client' | 'admin' | 'staff' | null;
 
 export interface AuthUser {
+  userId?: string;
   name: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   company?: string;
   phone?: string;
+  clientCity?: string;
+  clientState?: string;
+  clientGstin?: string;
+  clientAddress?: string;
+  clientPincode?: string;
   staffId?: string;
   staffRoleId?: StaffRoleId;
 }

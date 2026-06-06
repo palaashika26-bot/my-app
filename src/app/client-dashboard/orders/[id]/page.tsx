@@ -22,36 +22,6 @@ async function apiFetch(path: string, options: RequestInit = {}) {
 
 // ─── Backend-ready tracking functions ─────────────────────────────────────────
 
-const DEMO_SEED_UPDATES = [
-  {
-    id: '3',
-    location: 'Mumbai JNPT Port',
-    message: 'Shipment arrived at Mumbai port. Customs clearance initiated.',
-    stage: 'Arrived Destination Port',
-    addedBy: 'Meera Nair',
-    addedByRole: 'Sourcing & Logistics Staff',
-    timestamp: '2026-05-20T09:30:00.000Z',
-  },
-  {
-    id: '2',
-    location: 'Arabian Sea',
-    message: 'Vessel is en route to India. Estimated arrival in 3 days.',
-    stage: 'In Transit — Sea/Air',
-    addedBy: 'Arjun Sharma',
-    addedByRole: 'Admin',
-    timestamp: '2026-05-17T14:00:00.000Z',
-  },
-  {
-    id: '1',
-    location: 'Shanghai Port, China',
-    message: 'Cargo loaded onto vessel. Bill of lading issued.',
-    stage: 'Departed Origin',
-    addedBy: 'Meera Nair',
-    addedByRole: 'Sourcing & Logistics Staff',
-    timestamp: '2026-05-15T08:00:00.000Z',
-  },
-];
-
 async function getTrackingUpdates(orderId: string) {
   const raw = typeof window !== 'undefined' ? localStorage.getItem(`tracking-updates-${orderId}`) : null;
   return raw ? JSON.parse(raw) : [];
@@ -61,7 +31,7 @@ import dynamic from 'next/dynamic';
 
 const ShipmentTimeline = dynamic(() => import('@/components/ShipmentTimeline'), { ssr: false });
 import ExceptionChat from '@/components/ExceptionChat';
-import { mockOrders, statusToLocation } from '@/lib/mockData';
+
 import { getEffectiveOrderStatus, getOrderQcBundle } from '@/lib/orderQcStore';
 import { ArrowLeft, Download, AlertTriangle, MapPin, CheckCircle2, XCircle, Circle, FileText, Info, Camera, X, ChevronLeft, ChevronRight, ZoomIn, MessageCircle, MessageSquare, Paperclip, Play, Package, Truck, Home, CreditCard, RefreshCw, Flag } from 'lucide-react';
 import { generateInvoice } from '@/lib/generateInvoice';
@@ -89,13 +59,6 @@ const CLIENT_STATUS_TO_STAGES: Record<string, string[]> = {
   'Out for Delivery':              ['Order Placed', 'Payment Confirmed', 'Sourcing', 'At China Warehouse', 'China Consolidation Warehouse', 'Repacking Warehouse', 'Shipped from China', 'In Transit', 'Arrived India Warehouse', 'Out for Delivery'],
   'Completed':                     ['Order Placed', 'Payment Confirmed', 'Sourcing', 'At China Warehouse', 'China Consolidation Warehouse', 'Repacking Warehouse', 'Shipped from China', 'In Transit', 'Arrived India Warehouse', 'Out for Delivery', 'Completed'],
 };
-
-const repackPhotos = [
-  { id: 1, emoji: '📦', label: 'Sealed outer carton',     bg: 'bg-gradient-to-br from-[#E8E1F5] to-[#D6CEE8]', note: 'Reinforced corrugated carton with EliosWholesale tape seal' },
-  { id: 2, emoji: '🔍', label: 'Inspection',              bg: 'bg-gradient-to-br from-[#E8E1F5] to-[#D6CEE8]',    note: 'Random sample tested for power, finish, packaging integrity' },
-  { id: 3, emoji: '💡', label: 'Product close-up',        bg: 'bg-gradient-to-br from-yellow-100 to-amber-200', note: 'LED Strip Light (RGB, 5m) — colour rendering verified' },
-  { id: 4, emoji: '📋', label: 'Item count & labels',     bg: 'bg-gradient-to-br from-emerald-100 to-green-200', note: '50 units counted, SKU label affixed, packing list inside' },
-];
 
 const ADVANCE_PAID = 15000;
 
@@ -217,11 +180,10 @@ function ContactCard({ orderId }: { orderId: string }) {
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { addToast } = useToast();
-  const mockOrder = mockOrders.find(o => o.id === id);
 
   // Always fetch fresh — never use stale in-memory cache for the detail page
   const [liveOrder, setLiveOrder] = useState<ReturnType<typeof mapApiOrderToRow> | null>(null);
-  const [apiLoading, setApiLoading] = useState(!mockOrder);
+  const [apiLoading, setApiLoading] = useState(true);
 
   // completedStages — driven by live API fetch only
   const [completedStages, setCompletedStages] = useState<string[]>([]);
@@ -241,13 +203,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           try { localStorage.setItem(`gst-invoice-${id}`, JSON.stringify(d.data)); } catch {}
         }
       } catch {}
-    }
-
-    if (mockOrder) {
-      // Mock order: no order polling, but still try to fetch GST data
-      fetchGSTData();
-      const gstInterval = setInterval(fetchGSTData, 30000);
-      return () => clearInterval(gstInterval);
     }
 
     // Lightweight poll — no photos, just status/approval/count.
@@ -319,7 +274,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     return () => { clearInterval(orderInterval); clearInterval(whInterval); };
   }, [id]);
 
-  const order = mockOrder ?? liveOrder;
+  const order = liveOrder;
   const [repackOpen, setRepackOpen] = useState(false);
   const [photoIdx, setPhotoIdx] = useState(0);
 
@@ -417,10 +372,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   useEffect(() => {
     if (!order) return;
     const key = `tracking-updates-${order.orderId}`;
-    const existing = localStorage.getItem(key);
-    if (!existing && order.orderId === 'BK-ORD-2024-0268') {
-      localStorage.setItem(key, JSON.stringify(DEMO_SEED_UPDATES));
-    }
     getTrackingUpdates(order.orderId).then(setTrackingUpdates);
   }, [id, order?.orderId]);
 
@@ -479,7 +430,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     ? completedStages.includes('Arrived India Warehouse')
     : order.status === 'Arrived India Warehouse';
 
-  // For live API orders use real line items; for mock orders use the hardcoded demo set
   const items: { name: string; qty: number; unitInr: number; totalInr: number; imageUrl?: string | null }[] =
     (order as any).lineItems?.map((li: any) => ({
       name: li.name,
@@ -487,17 +437,11 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       unitInr: li.unitPriceInr ?? li.unitPriceINR ?? 0,
       totalInr: li.totalInr ?? li.totalINR ?? 0,
       imageUrl: li.imageUrl ?? null,
-    })) ?? [
-      { name: 'LED Strip Light (RGB, 5m)', qty: 50,  unitInr: 504,   totalInr: 25200 },
-      { name: 'USB-C Cable (Braided)',     qty: 100, unitInr: 96,    totalInr: 9600 },
-      { name: 'Wireless Earbuds',          qty: 25,  unitInr: 1056,  totalInr: 26400 },
-    ];
+    })) ?? [];
 
-  const productCost = (order as any).lineItems
-    ? items.reduce((s, i) => s + i.totalInr, 0)
-    : 61200;
-  const logistics = (order as any).lineItems ? 0 : 8160;
-  const grandTotal = productCost + logistics - ((order as any).lineItems ? 0 : ADVANCE_PAID);
+  const productCost = items.reduce((s, i) => s + i.totalInr, 0);
+  const logistics = 0;
+  const grandTotal = productCost + logistics - ADVANCE_PAID;
 
   // Fetches the full base64 photos exactly once; subsequent opens use the cache.
   async function fetchWarehousePhotos() {
@@ -520,11 +464,13 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     fetchWarehousePhotos(); // lazy — no-op if already cached
   }
   function prevPhoto() {
-    const count = warehouseReport?.repackPhotos?.length || repackPhotos.length;
+    const count = warehouseReport?.repackPhotos?.length ?? 0;
+    if (count === 0) return;
     setPhotoIdx((p) => (p - 1 + count) % count);
   }
   function nextPhoto() {
-    const count = warehouseReport?.repackPhotos?.length || repackPhotos.length;
+    const count = warehouseReport?.repackPhotos?.length ?? 0;
+    if (count === 0) return;
     setPhotoIdx((p) => (p + 1) % count);
   }
 
@@ -1377,11 +1323,11 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                     />
                   </div>
                 ) : (
-                  <div className={`aspect-video rounded-xl ${repackPhotos[photoIdx].bg} flex items-center justify-center text-8xl shadow-inner`}>
-                    <span aria-hidden="true">{repackPhotos[photoIdx].emoji}</span>
+                  <div className="aspect-video rounded-xl bg-muted flex items-center justify-center shadow-inner">
+                    <p className="text-sm text-muted-foreground">No photos available</p>
                   </div>
                 )}
-                {!modalPhotoLoading && (
+                {!modalPhotoLoading && warehouseReport?.repackPhotos?.length > 0 && (
                   <>
                     <button onClick={prevPhoto} className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 shadow flex items-center justify-center hover:bg-white" aria-label="Previous photo">
                       <ChevronLeft className="w-4 h-4" />
@@ -1391,36 +1337,23 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                     </button>
                     <span className="absolute top-3 right-3 badge bg-white/90 text-foreground font-600">
                       <ZoomIn className="w-3 h-3 mr-1" />
-                      {warehouseReport?.repackPhotos?.length > 0
-                        ? `${photoIdx + 1} / ${warehouseReport.repackPhotos.length}`
-                        : `${photoIdx + 1} / ${repackPhotos.length}`}
+                      {photoIdx + 1} / {warehouseReport.repackPhotos.length}
                     </span>
                   </>
                 )}
               </div>
 
-              {!(warehouseReport?.repackPhotos?.length > 0) && repackPhotos[photoIdx] && (
-                <div className="mt-4 p-3 rounded-xl bg-muted/40 border border-border">
-                  <p className="font-600 text-foreground">{repackPhotos[photoIdx].label}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{repackPhotos[photoIdx].note}</p>
-                  <p className="text-[11px] text-muted-foreground mt-2 font-tabular">📅 Captured: 10 May 2026 • 14:22 CST • Shenzhen Consolidation Warehouse</p>
-                </div>
-              )}
 
-              <div className="grid grid-cols-4 gap-2 mt-4">
-                {warehouseReport?.repackPhotos?.length > 0
-                  ? (warehouseReport.repackPhotos as string[]).map((url: string, i: number) => (
+
+              {warehouseReport?.repackPhotos?.length > 0 && (
+                <div className="grid grid-cols-4 gap-2 mt-4">
+                  {(warehouseReport.repackPhotos as string[]).map((url: string, i: number) => (
                     <button key={i} onClick={() => setPhotoIdx(i)} className={`aspect-square rounded-lg bg-muted overflow-hidden transition-all ${i === photoIdx ? 'ring-2 ring-accent ring-offset-2' : 'opacity-60 hover:opacity-100'}`} aria-label={`Photo ${i + 1}`}>
                       <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
                     </button>
-                  ))
-                  : repackPhotos.map((p, i) => (
-                    <button key={p.id} onClick={() => setPhotoIdx(i)} className={`aspect-square rounded-lg ${p.bg} flex items-center justify-center text-3xl transition-all ${i === photoIdx ? 'ring-2 ring-accent ring-offset-2' : 'opacity-60 hover:opacity-100'}`} aria-label={p.label}>
-                      {p.emoji}
-                    </button>
-                  ))
-                }
-              </div>
+                  ))}
+                </div>
+              )}
 
               <div className="mt-5 flex flex-col sm:flex-row gap-2 pt-4 border-t border-border">
                 {approvalStatus === 'approved' || warehouseReport?.clientApproved === true ? (

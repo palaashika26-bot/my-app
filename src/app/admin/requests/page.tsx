@@ -4,9 +4,8 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import AdminLayout from '@/components/AdminLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { mockClients } from '@/lib/adminMockData';
 import { requestsApi } from '@/lib/api/requests.api';
-import { getRequests as getStoreRequests } from '@/lib/requestsStore';
+
 import { useToast } from '@/components/ui/Toast';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import { Search, Download, Camera, Eye, Send, AlertTriangle } from 'lucide-react';
@@ -47,6 +46,7 @@ function AdminRequestsContent() {
   const searchParams = useSearchParams();
   const [requests, setRequests] = useState<DisplayRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState('All Requests');
   const [q, setQ] = useState('');
   const [clientFilter, setClientFilter] = useState('All');
@@ -79,25 +79,14 @@ function AdminRequestsContent() {
       })
       .catch((e) => {
         if (e?.code !== 'ERR_CANCELED') {
-          const storeData = getStoreRequests();
-          const mapped: DisplayRequest[] = storeData.map((req) => ({
-            id: req.id,
-            requestId: req.requestId,
-            client: req.client ?? '—',
-            clientEmail: '',
-            items: req.items,
-            itemNames: req.itemNames,
-            totalBudget: req.totalBudget,
-            date: req.date,
-            status: req.status,
-            source: req.source,
-          }));
-          setRequests(mapped);
+          setError('Failed to load requests.');
         }
       })
       .finally(() => setLoading(false));
     return () => ac.abort();
   }, []);
+
+  const uniqueClients = useMemo(() => ['All', ...new Set(requests.map(r => r.client).filter(Boolean))], [requests]);
 
   const filtered = useMemo(() => requests.filter(r => {
     if (q && !(r.requestId.toLowerCase().includes(q.toLowerCase()) || (r.client||'').toLowerCase().includes(q.toLowerCase()) || r.itemNames.toLowerCase().includes(q.toLowerCase()))) return false;
@@ -121,7 +110,7 @@ function AdminRequestsContent() {
       </div>
       <div className="bg-card rounded-xl border border-border shadow-card p-4 mb-4 grid md:grid-cols-3 gap-3">
         <div className="relative md:col-span-2"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none z-10" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search Request ID, client, items..." className="input-field !pl-10" /></div>
-        <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="input-field"><option>All</option>{mockClients.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select>
+        <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="input-field">{uniqueClients.map(c => <option key={c} value={c}>{c}</option>)}</select>
       </div>
       {Object.values(selected).some(Boolean) && (
         <div className="bg-[#f5f4f7] border border-[#e8e4f0] rounded-xl p-3 mb-4 flex items-center gap-2 flex-wrap">

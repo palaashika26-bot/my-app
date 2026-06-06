@@ -6,7 +6,6 @@ import ClientLayout from '@/components/ClientLayout';
 import { useToast } from '@/components/ui/Toast';
 import { requestsApi } from '@/lib/api/requests.api';
 import { requestsCache } from '@/lib/api/requestsCache';
-import { addRequest as addStoreRequest } from '@/lib/requestsStore';
 import { Camera, Upload, ArrowLeft, ArrowRight, Plus, X, Check, ImageIcon } from 'lucide-react';
 
 interface Item {
@@ -122,26 +121,7 @@ export default function NewRequestPage() {
         router.push(`/client-dashboard/requests/${request.id}`);
       }
     } catch {
-      const requestId = `req-${Date.now()}`;
-      const itemNames = validItems.map(it => it.name.trim()).join(', ');
-      const total = totalBudget ? `₹${Number(totalBudget).toLocaleString('en-IN')}` : '₹25,000';
-      const storeReq = {
-        id: requestId,
-        requestId: `BK-REQ-${new Date().getFullYear()}-${String(Math.floor(1000 + Math.random() * 9000))}`,
-        date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-        items: validItems.length,
-        itemNames,
-        status: 'Request Submitted' as const,
-        totalBudget: total,
-        source: 'manual' as const,
-      };
-      addStoreRequest(storeReq);
-      addToast({
-        type: 'success',
-        title: 'Request submitted!',
-        description: `${storeReq.requestId} created. Our team will contact you within 24 hours.`,
-      });
-      router.push(`/client-dashboard/requests/${storeReq.id}`);
+      addToast({ type: 'error', title: 'Failed to submit request', description: 'Please try again.' });
     } finally {
       setSubmitting(false);
     }

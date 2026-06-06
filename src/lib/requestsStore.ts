@@ -1,28 +1,33 @@
-import { mockRequests, type RequestRow } from './mockData';
+export interface RequestRow {
+  id: string;
+  requestId: string;
+  date: string;
+  items: number;
+  itemNames: string;
+  status: any;
+  totalBudget: string;
+  client?: string;
+  source?: 'manual' | 'photo_scan';
+  imageAttached?: boolean;
+  detectedProduct?: string;
+  confidence?: number;
+  lineItems?: any[];
+}
 
 const STORAGE_KEY = 'bk-requests';
 
 export function getRequests(): RequestRow[] {
-  if (typeof window === 'undefined') return mockRequests;
+  if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw) as RequestRow[];
   } catch {}
-  seedRequests(mockRequests);
-  return mockRequests;
+  return [];
 }
 
 export function setRequests(requests: RequestRow[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(requests));
-  } catch {}
-}
-
-export function seedRequests(requests: RequestRow[]): void {
-  try {
-    if (!localStorage.getItem(STORAGE_KEY)) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(requests));
-    }
   } catch {}
 }
 

@@ -76,10 +76,18 @@ function LoginForm() {
       console.log('[login] Backend API success — role:', apiUser.role, 'staffRole:', apiUser.staffRole);
 
       login(frontendRole, {
+        userId: apiUser.id,
         name: `${apiUser.firstName} ${apiUser.lastName}`,
+        firstName: apiUser.firstName,
+        lastName: apiUser.lastName,
         email: apiUser.email,
         phone: apiUser.phone,
         company: apiUser.client?.companyName,
+        clientCity: apiUser.client?.city,
+        clientState: apiUser.client?.state,
+        clientGstin: apiUser.client?.gstin,
+        clientAddress: apiUser.client?.addressLine1,
+        clientPincode: apiUser.client?.pincode,
         ...(staffRoleId && { staffRoleId }),
       });
 

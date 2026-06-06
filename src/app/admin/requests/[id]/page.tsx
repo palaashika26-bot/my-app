@@ -6,12 +6,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import AdminLayout from '@/components/AdminLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { mockRequests, mockClients } from '@/lib/adminMockData';
 import { useToast } from '@/components/ui/Toast';
 import { ArrowLeft, Camera, Check, X, MessageSquare, Send, Package, Pencil, Upload, ImageIcon, Ban } from 'lucide-react';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import type { RequestLineItem, PerProductQuoteStatus } from '@/lib/mockData';
-import { defaultLineItemsFromRequest, loadRfqLineItems, persistRfqLineItems } from '@/lib/rfqLineItems';
+import { persistRfqLineItems } from '@/lib/rfqLineItems';
 import { loadPaymentProof, savePaymentConfirmed, loadPaymentConfirmed } from '@/lib/paymentStore';
 import { requestsApi } from '@/lib/api/requests.api';
 import { paymentsApi } from '@/lib/api/payments.api';
@@ -60,15 +59,12 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
   const { id } = use(params);
   const { addToast } = useToast();
   const router = useRouter();
-  const req = mockRequests.find(r => r.id === id);
   const perms = useAdminPermissions();
   const qs = perms.quotationScope;
 
   const [apiRequest, setApiRequest] = useState<any>(null);
   const [apiLoading, setApiLoading] = useState(true);
-  const [lineItems, setLineItems] = useState<RequestLineItem[]>(() =>
-    req ? defaultLineItemsFromRequest(req) : []
-  );
+  const [lineItems, setLineItems] = useState<RequestLineItem[]>([]);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [draftUnitCny, setDraftUnitCny] = useState('');
   const [draftRmb, setDraftRmb] = useState('');
@@ -147,14 +143,10 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
             fetchRequestPayments();
           }
         } else {
-          const row = mockRequests.find(r => r.id === id);
-          if (row) setLineItems(loadRfqLineItems(row));
+          const row = null;
         }
       })
-      .catch(() => {
-        const row = mockRequests.find(r => r.id === id);
-        if (row) setLineItems(loadRfqLineItems(row));
-      })
+      .catch(() => {})
       .finally(() => setApiLoading(false));
   }
 
@@ -223,10 +215,10 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
     }
   }, [id]);
 
-  const client = mockClients.find(c => c.name === req?.client);
+  const client = apiRequest?.client ?? null;
   const displayBudget = apiRequest?.totalBudgetINR
     ? `₹${Number(apiRequest.totalBudgetINR).toLocaleString('en-IN')}`
-    : (req?.totalBudget ?? '—');
+    : '—';
 
   function beginEdit(line: RequestLineItem) {
     setEditingLineId(line.id);
@@ -476,7 +468,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
 
   const showFullQuoteCols = qs === 'full';
   // ── Skeleton while loading real data (no mock fallback available) ──────────
-  if (apiLoading && !req) {
+  if (apiLoading) {
     return (
       <AdminLayout>
         <Link href="/admin/requests" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4">
@@ -507,7 +499,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
     );
   }
 
-  const displayStatus: string = apiRequest?.status ?? (req?.status as string) ?? 'SUBMITTED';
+  const displayStatus: string = apiRequest?.status ?? 'SUBMITTED';
   const counteredCount = lineItems.filter(l => l.clientResponse === 'COUNTERED').length;
   const convertedOrderNumber: string | null = (() => {
     if (displayStatus !== 'CONVERTED') return null;
@@ -633,12 +625,11 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
         {/* Request header card */}
         <div className="bg-card rounded-xl border border-border shadow-card p-4 mb-4">
           <div className="flex flex-wrap items-center gap-3 mb-2">
-            {req?.source === 'photo_scan' && <Camera className="w-4 h-4 text-[#4A3B52]" />}
-            <span className="font-tabular font-700 text-lg">{apiRequest?.requestNumber ?? req?.requestId}</span>
-            <StatusBadge status={paymentConfirmed ? ('Payment Confirmed' as never) : ((apiRequest?.status ?? req?.status) as never)} />
+            <span className="font-tabular font-700 text-lg">{apiRequest?.requestNumber ?? '—'}</span>
+            <StatusBadge status={paymentConfirmed ? ('Payment Confirmed' as never) : ((apiRequest?.status ?? 'SUBMITTED') as never)} />
           </div>
           <p className="text-xs text-muted-foreground break-words">
-            {apiRequest?.client?.companyName ?? req?.client} • {apiRequest?.client?.user?.email ?? client?.email} • {apiRequest ? new Date(apiRequest.createdAt).toLocaleDateString('en-IN') : req?.date}
+            {apiRequest?.client?.companyName ?? '—'} • {apiRequest?.client?.user?.email ?? '—'} • {apiRequest ? new Date(apiRequest.createdAt).toLocaleDateString('en-IN') : '—'}
             {perms.canSeeRequestBudget ? ` • Budget ${displayBudget}` : ''}
           </p>
         </div>
@@ -673,20 +664,6 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
           {/* Main column */}
           <div className="lg:col-span-2 space-y-4 min-w-0">
 
-            {req?.imageAttached && (
-              <div className="bg-card rounded-xl border border-border shadow-card p-4">
-                <h3 className="font-700 mb-3">Photo Submission</h3>
-                <div className="flex gap-3">
-                  <div className="w-20 h-20 sm:w-32 sm:h-32 flex-shrink-0 rounded-xl bg-gradient-to-br from-[#E8E1F5] to-[#D6CEE8] flex items-center justify-center text-4xl">📷</div>
-                  <div className="min-w-0">
-                    <p className="text-sm break-words">
-                      AI detected: <span className="font-600">{req.detectedProduct}</span>
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">{req.confidence}% match confidence</p>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Quotations / Items card */}
             <div className="bg-card rounded-xl border border-border shadow-card p-4">

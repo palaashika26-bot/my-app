@@ -3,7 +3,6 @@ import React from 'react';
 import Link from 'next/link';
 import AdminLayout from '@/components/AdminLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { adminKpis, recentActivity, pendingActions } from '@/lib/adminMockData';
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, Cell } from 'recharts';
 import { ShoppingBag, Users, Truck, Clock, IndianRupee, AlertTriangle, ArrowRight, Sun, Plus, Download, MapPin, Eye, Camera } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -120,7 +119,7 @@ export default function AdminDashboardPage() {
         <div className="lg:col-span-2 bg-card rounded-xl border border-border shadow-card p-5">
           <div className="flex items-center justify-between mb-3"><h3 className="font-700">Monthly Revenue</h3><span className="text-xs text-muted-foreground">Last 6 months</span></div>
           <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={adminKpis.monthlyRevenue}>
+            <LineChart data={stats?.monthlyRevenue ?? []}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
               <XAxis dataKey="month" tickLine={false} axisLine={false} style={{ fontSize: 11 }} />
               <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `₹${(v/100000).toFixed(0)}L`} style={{ fontSize: 11 }} />
@@ -133,12 +132,12 @@ export default function AdminDashboardPage() {
         <div className={`bg-card rounded-xl border border-border shadow-card p-5 ${perms.canSeeGrandTotalsAndMargins ? '' : 'lg:max-w-xl'}`}>
           <div className="flex items-center justify-between mb-3"><h3 className="font-700">Orders by Status</h3></div>
           <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={adminKpis.ordersByStatus} layout="vertical" margin={{ left: 8 }}>
+            <BarChart data={stats?.ordersByStatus ?? []} layout="vertical" margin={{ left: 8 }}>
               <XAxis type="number" tickLine={false} axisLine={false} style={{ fontSize: 10 }} />
               <YAxis type="category" dataKey="name" width={80} tickLine={false} axisLine={false} style={{ fontSize: 10 }} />
               <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0' }} />
               <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                {adminKpis.ordersByStatus.map((d, i) => <Cell key={i} fill={d.color} />)}
+                {(stats?.ordersByStatus ?? []).map((d, i) => <Cell key={i} fill={d.color} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -164,25 +163,59 @@ export default function AdminDashboardPage() {
 
       <div className="grid lg:grid-cols-2 gap-5 mb-6">
         <div className="bg-card rounded-xl border border-border shadow-card p-5">
-          <div className="flex items-center justify-between mb-3"><h3 className="font-700">Pending Actions</h3><span className="badge bg-[#f0eef8] text-[#5c5470]">{pendingActions.length} items</span></div>
+          <div className="flex items-center justify-between mb-3"><h3 className="font-700">Pending Actions</h3></div>
           <div className="space-y-2">
-            {pendingActions.map(a => (
-              <Link key={a.id} href={a.href} className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/40 transition-colors">
-                <div><p className="text-sm font-600 text-foreground">{a.title}</p><p className="text-xs text-muted-foreground">{a.desc}</p></div>
-                <span className="text-xs text-[#4A3B52] font-600 inline-flex items-center gap-1">{a.action} <ArrowRight className="w-3 h-3" /></span>
-              </Link>
-            ))}
+            {statsLoading ? (
+              <p className="text-sm text-muted-foreground">Loading...</p>
+            ) : (stats && ((stats.pendingPayments ?? 0) > 0 || (stats.pendingInquiries ?? 0) > 0)) ? (
+              <>
+                {(stats.pendingInquiries ?? 0) > 0 && (
+                  <Link href="/admin/requests?filter=awaiting-approval" className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/40 transition-colors">
+                    <div><p className="text-sm font-600 text-foreground">{stats.pendingInquiries} pending quotation{stats.pendingInquiries > 1 ? 's' : ''}</p><p className="text-xs text-muted-foreground">New sourcing requests need pricing</p></div>
+                    <span className="text-xs text-[#4A3B52] font-600 inline-flex items-center gap-1">Review <ArrowRight className="w-3 h-3" /></span>
+                  </Link>
+                )}
+                {(stats.pendingPayments ?? 0) > 0 && (
+                  <Link href="/admin/orders" className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/40 transition-colors">
+                    <div><p className="text-sm font-600 text-foreground">{stats.pendingPayments} payment verification{stats.pendingPayments > 1 ? 's' : ''} pending</p><p className="text-xs text-muted-foreground">Confirm bank receipts for client orders</p></div>
+                    <span className="text-xs text-[#4A3B52] font-600 inline-flex items-center gap-1">Verify <ArrowRight className="w-3 h-3" /></span>
+                  </Link>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">No pending actions</p>
+            )}
           </div>
         </div>
         <div className="bg-card rounded-xl border border-border shadow-card p-5">
           <h3 className="font-700 mb-3">Recent Activity</h3>
           <ol className="space-y-3 max-h-72 overflow-y-auto">
-            {recentActivity.map(a => (
-              <li key={a.id} className="flex items-start gap-3">
-                <span className="text-lg flex-shrink-0">{a.icon}</span>
-                <div className="flex-1 min-w-0"><p className="text-sm text-foreground">{a.text}</p><p className="text-[10px] text-muted-foreground mt-0.5">{a.time}</p></div>
-              </li>
-            ))}
+            {statsLoading ? (
+              <li className="text-sm text-muted-foreground">Loading...</li>
+            ) : (stats?.recentOrders ?? []).length === 0 && (stats?.recentInquiries ?? []).length === 0 ? (
+              <li className="text-sm text-muted-foreground">No recent activity</li>
+            ) : (
+              <>
+                {(stats?.recentOrders ?? []).slice(0, 3).map(o => (
+                  <li key={`ord-${o.id}`} className="flex items-start gap-3">
+                    <span className="text-lg flex-shrink-0">📦</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-foreground">Order <span className="font-tabular font-600">{o.orderNumber}</span> — <span className="text-xs">{o.client.companyName}</span></p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{new Date(o.createdAt).toLocaleDateString('en-IN')}</p>
+                    </div>
+                  </li>
+                ))}
+                {(stats?.recentInquiries ?? []).slice(0, 2).map(r => (
+                  <li key={`inq-${r.id}`} className="flex items-start gap-3">
+                    <span className="text-lg flex-shrink-0">📋</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-foreground">New inquiry <span className="font-tabular font-600">{r.inquiryNumber}</span> from <span className="font-600">{r.client.companyName}</span></p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{new Date(r.createdAt).toLocaleDateString('en-IN')}</p>
+                    </div>
+                  </li>
+                ))}
+              </>
+            )}
           </ol>
         </div>
       </div>
@@ -219,8 +252,8 @@ export default function AdminDashboardPage() {
             ) : (stats?.recentInquiries ?? []).map(r => (
               <Link key={r.id} href={`/admin/requests/${r.id}`} className="flex items-center gap-3 p-3 hover:bg-muted/40 transition-colors">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5"><Camera className="w-3 h-3 text-[#4A3B52]" /><p className="font-tabular font-600 text-sm">{r.product?.name ?? 'Custom item'}</p></div>
-                  <p className="text-xs text-muted-foreground truncate">{r.client.companyName} • qty {r.quantity}</p>
+                  <div className="flex items-center gap-1.5"><Camera className="w-3 h-3 text-[#4A3B52]" /><p className="font-tabular font-600 text-sm">{r.items?.[0]?.productName ?? 'Custom item'}</p></div>
+                  <p className="text-xs text-muted-foreground truncate">{r.client.companyName} • qty {r.items?.[0]?.quantity ?? '—'}</p>
                 </div>
                 <StatusBadge status={r.status as any} />
               </Link>

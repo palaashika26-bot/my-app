@@ -1,7 +1,7 @@
-const proofKey      = (reqId: string) => `payment-proof:${reqId}`;
-const confirmedKey  = (reqId: string) => `payment-confirmed:${reqId}`;
-const timestampKey  = (reqId: string) => `payment-timestamp:${reqId}`;
-const receiptIdKey  = (reqId: string) => `payment-receipt-id:${reqId}`;
+const proofKey = (reqId: string) => `payment-proof:${reqId}`;
+const confirmedKey = (reqId: string) => `payment-confirmed:${reqId}`;
+const timestampKey = (reqId: string) => `payment-timestamp:${reqId}`;
+const receiptIdKey = (reqId: string) => `payment-receipt-id:${reqId}`;
 
 export function savePaymentProof(reqId: string, dataUrl: string) {
   if (typeof window === 'undefined') return;
