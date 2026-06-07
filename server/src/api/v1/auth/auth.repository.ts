@@ -250,4 +250,42 @@ export const authRepository = {
       },
     });
   },
+
+  // ── Password reset ────────────────────────────────────────────────────────────
+
+  async createPasswordResetToken(email: string): Promise<string> {
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    await prisma.passwordReset.create({
+      data: { email, token, expiresAt },
+    });
+    return token;
+  },
+
+  async findPasswordResetToken(token: string) {
+    return prisma.passwordReset.findUnique({
+      where: { token },
+    });
+  },
+
+  async markPasswordResetTokenUsed(id: string) {
+    return prisma.passwordReset.update({
+      where: { id },
+      data: { usedAt: new Date() },
+    });
+  },
+
+  async updateUserPassword(email: string, passwordHash: string) {
+    return prisma.user.update({
+      where: { email },
+      data: { passwordHash },
+    });
+  },
+
+  async invalidatePasswordResetTokens(email: string) {
+    return prisma.passwordReset.updateMany({
+      where: { email, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+  },
 };

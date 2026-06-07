@@ -193,19 +193,10 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
   const [paymentActionLoading, setPaymentActionLoading] = useState(false);
 
   function handleViewProof(payment: any) {
-    console.log('=== PROOF DEBUG ===');
-    console.log('Payment ID:', payment.id);
-    console.log('Payment status:', payment.status);
-    console.log('proofImageBase64 type:', typeof payment.proofImageBase64);
-    console.log('proofImageBase64 length:', payment.proofImageBase64?.length);
-    console.log('proofImageBase64 start:', payment.proofImageBase64?.substring(0, 100));
-    console.log('proofFileName:', payment.proofFileName);
-
     const base64 = payment.proofImageBase64 as string | null | undefined;
     // A real screenshot is always at least ~10 KB → ~14 000 base64 chars.
     // If we get ≤ 5 000 chars the data was truncated by the old sanitiser (hard cap was 2 000).
     const isTruncated = !base64 || base64.length < 5000;
-    console.log('isTruncated:', isTruncated, '(length:', base64?.length, ')');
 
     setProofImageError(isTruncated);
     setProofModalUrl(base64 ?? null);

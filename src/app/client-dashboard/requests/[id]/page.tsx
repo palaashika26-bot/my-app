@@ -318,12 +318,6 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
   }
 
   async function submitResponses() {
-    console.log('=== COUNTER SUBMIT ===');
-    console.log('itemResponses state:', itemResponses);
-    console.log('counterInputs state:', counterInputs);
-    console.log('counterNotes state:', counterNotes);
-    console.log('apiRequest present:', !!apiRequest);
-
     const items = Object.entries(itemResponses)
       .filter(([, v]) => v != null)
       .map(([itemId, response]) => ({
@@ -332,8 +326,6 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
         counterPriceINR: response === 'COUNTERED' ? (parseFloat(counterInputs[itemId] ?? '') || undefined) : undefined,
         counterNote: response === 'COUNTERED' ? (counterNotes[itemId]?.trim() || undefined) : undefined,
       }));
-
-    console.log('Payload:', JSON.stringify({ items }));
 
     if (!items.length) {
       addToast({ type: 'warning', title: 'No responses', description: 'Please respond to at least one item.' });

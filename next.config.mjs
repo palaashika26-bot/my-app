@@ -28,8 +28,11 @@ const nextConfig = {
   },
 
   images: {
-    remotePatterns: imageHosts,
-    domains: ['localhost'],
+    remotePatterns: [
+      ...imageHosts,
+      { protocol: 'http', hostname: 'localhost', port: '3000' },
+      { protocol: 'http', hostname: 'localhost', port: '4000' },
+    ],
     minimumCacheTTL: 86400,
     qualities: [75, 85],
   },

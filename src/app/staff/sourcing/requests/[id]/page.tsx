@@ -113,18 +113,6 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
       .then((r) => {
         const req = r.data?.data;
         if (req) {
-          console.log('=== REQUEST DEBUG ===');
-          console.log('Request status:', req?.status);
-          console.log('Items:', req?.items);
-          req?.items?.forEach((item: any, i: number) => {
-            console.log(`Item ${i}:`, {
-              name: item.productName,
-              status: item.status,
-              clientResponse: item.clientResponse,
-              counterPriceINR: item.counterPriceINR,
-              counterNote: item.counterNote,
-            });
-          });
           setApiRequest(req);
           const apiLineItems: RequestLineItem[] = (req.items ?? []).map((item: any) => ({
             id: item.id,

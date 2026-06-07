@@ -66,6 +66,10 @@ const config = {
   // Google OAuth
   GOOGLE_CLIENT_ID:     process.env.GOOGLE_CLIENT_ID     || "",
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || "",
+
+  // Password reset
+  RESET_PASSWORD_TOKEN_SECRET: process.env.RESET_PASSWORD_TOKEN_SECRET || "",
+  RESET_PASSWORD_EXPIRES_IN: process.env.RESET_PASSWORD_EXPIRES_IN || "1h",
 };
 
 export default config;

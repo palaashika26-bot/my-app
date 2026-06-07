@@ -3,7 +3,7 @@ import { authService } from "./auth.service";
 import { ApiResponse } from "../../../utils/ApiResponse";
 import { ApiError } from "../../../utils/ApiError";
 import config from "../../../config/env";
-import { RegisterClientInput, GoogleLoginInput } from "./auth.schema";
+import { RegisterClientInput, GoogleLoginInput, ForgotPasswordInput, ResetPasswordInput } from "./auth.schema";
 
 const REFRESH_COOKIE_OPTIONS = {
   httpOnly: true,
@@ -99,5 +99,17 @@ export const acceptInvite = async (req: Request, res: Response) => {
   if (!password || password.length < 8) throw new ApiError(400, "Password must be at least 8 characters");
 
   const result = await authService.acceptInvite(token.trim(), password);
+  return ApiResponse.success(res, null, result.message);
+};
+
+export const forgotPassword = async (req: Request, res: Response) => {
+  const { email } = req.body as ForgotPasswordInput;
+  const result = await authService.forgotPassword(email);
+  return ApiResponse.success(res, null, result.message);
+};
+
+export const resetPassword = async (req: Request, res: Response) => {
+  const { token, password } = req.body as ResetPasswordInput;
+  const result = await authService.resetPassword(token, password);
   return ApiResponse.success(res, null, result.message);
 };

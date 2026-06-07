@@ -65,15 +65,9 @@ const CNY_TO_INR = 11.5;
 
 async function getProduct(id: string): Promise<Product | null> {
   try {
-    console.log('=== PRODUCT DEBUG ===');
-    console.log('URL param id:', id);
-    console.log('Raw localStorage key used:', 'bk-catalog-products');
     const raw = localStorage.getItem('bk-catalog-products');
     const products = JSON.parse(raw || '[]') as Array<Record<string, unknown>>;
-    console.log('Products found in storage:', products.length);
-    console.log('Product IDs available:', products.map(p => p.id || p.productId || p._id));
     const mapped = products.map(mapAdminProduct);
-    console.log('Mapped IDs:', mapped.map(p => p.id));
     const found = mapped.find(p =>
       p.id === id ||
       p.id === decodeURIComponent(id)

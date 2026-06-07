@@ -10,6 +10,8 @@ import {
   me,
   refresh,
   acceptInvite,
+  forgotPassword,
+  resetPassword,
 } from "./auth.controller";
 import {
   loginSchema,
@@ -17,6 +19,8 @@ import {
   registerSchema,
   registerClientSchema,
   resendVerificationSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
 } from "./auth.schema";
 import { validate } from "../../../middleware/validate";
 import { authenticate } from "../../../middleware/authenticate";
@@ -65,5 +69,11 @@ router.post("/refresh", asyncHandler(refresh));
 
 // POST /api/v1/auth/accept-invite  (staff sets their password from invite link)
 router.post("/accept-invite", asyncHandler(acceptInvite));
+
+// POST /api/v1/auth/forgot-password
+router.post("/forgot-password", validate(forgotPasswordSchema), asyncHandler(forgotPassword));
+
+// POST /api/v1/auth/reset-password
+router.post("/reset-password", validate(resetPasswordSchema), asyncHandler(resetPassword));
 
 export default router;

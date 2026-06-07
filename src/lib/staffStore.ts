@@ -94,13 +94,10 @@ export function findStaffByEmail(email: string): StaffMember | undefined {
 
 export function authenticateStaff(email: string, password: string): StaffMember | null {
   const registry = getStaffRegistry();
-  console.log('[staffStore] registry:', registry.map((s) => ({ id: s.id, email: s.email })));
-  console.log('[staffStore] trying:', email.trim(), '/', password.trim());
 
   const member = registry.find(
     (s) => s.email.toLowerCase() === email.toLowerCase().trim()
   );
-  console.log('[staffStore] found member:', member ?? null);
 
   if (!member) return null;
   if (member.password !== password.trim()) return null;

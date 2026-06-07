@@ -38,4 +38,10 @@ export const authApi = {
 
   googleLogin: (credential: string) =>
     axiosClient.post<ApiResponse<AuthResponse>>('/auth/google', { credential }),
+
+  forgotPassword: (email: string) =>
+    axiosClient.post<ApiResponse<null>>('/auth/forgot-password', { email }),
+
+  resetPassword: (data: { token: string; password: string }) =>
+    axiosClient.post<ApiResponse<null>>('/auth/reset-password', data),
 };

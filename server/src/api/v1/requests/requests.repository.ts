@@ -447,6 +447,7 @@ export const requestsRepository = {
       data: {
         requestNumber,
         clientId,
+        requestType: (data.requestType ?? "SOURCING") as "SOURCING" | "QUOTATION" | "SAMPLE",
         notes: data.notes,
         referenceNote: data.referenceNote ?? null,
         totalBudgetINR: data.totalBudgetINR ?? null,

@@ -8,6 +8,7 @@ import { ApiError } from "../../../utils/ApiError";
 import { RegisterInput, RegisterClientInput } from "./auth.schema";
 import { sendEmail } from "../../../config/email";
 import { verificationEmailTemplate } from "../../../templates/verificationEmail";
+import { resetPasswordEmailTemplate } from "../../../templates/resetPasswordEmail";
 
 // Google OAuth client — lazy-init so a missing CLIENT_ID in dev does not crash
 let googleClient: OAuth2Client | null = null;
@@ -371,5 +372,72 @@ export const authService = {
     await adminRepository.activateStaffAccount(user.id, passwordHash);
 
     return { message: "Account activated. You can now log in." };
+  },
+
+  async forgotPassword(email: string) {
+    const genericMessage =
+      "If an account with that email exists, a password reset link has been sent.";
+
+    const user = await authRepository.findUserByEmail(email);
+    if (!user) {
+      return { message: genericMessage };
+    }
+
+    // Invalidate previous unused tokens for this email
+    await authRepository.invalidatePasswordResetTokens(email);
+
+    // Create fresh token
+    const token = await authRepository.createPasswordResetToken(email);
+
+    const resetUrl = `${config.FRONTEND_URL}/reset-password?token=${token}`;
+    if (config.NODE_ENV === "development") {
+      console.log("\n🔑 RESET PASSWORD URL:", resetUrl, "\n");
+    }
+
+    const sent = await sendEmail({
+      to: user.email,
+      subject: "Reset your Elios Wholesale password",
+      html: resetPasswordEmailTemplate(user.firstName, resetUrl),
+    });
+
+    if (!sent && config.NODE_ENV !== "development") {
+      throw new ApiError(
+        502,
+        "We couldn't send the reset email. Please try again in a few minutes."
+      );
+    }
+
+    return { message: genericMessage };
+  },
+
+  async resetPassword(token: string, newPassword: string) {
+    // 1. Find token record
+    const record = await authRepository.findPasswordResetToken(token);
+
+    // 2. Not found
+    if (!record) throw new ApiError(400, "Invalid or expired reset link");
+
+    // 3. Already used
+    if (record.usedAt) throw new ApiError(400, "This reset link has already been used");
+
+    // 4. Expired
+    if (record.expiresAt < new Date()) {
+      throw new ApiError(400, "Reset link expired. Please request a new one.");
+    }
+
+    // 5. Hash new password
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+
+    // 6. Update user password and mark token used atomically
+    const user = await authRepository.findUserByEmail(record.email);
+    if (!user) throw new ApiError(400, "Account not found");
+
+    await authRepository.updateUserPassword(record.email, passwordHash);
+    await authRepository.markPasswordResetTokenUsed(record.id);
+
+    // 7. Revoke all existing sessions so the user must log in again
+    await authRepository.deleteAllUserRefreshTokens(user.id);
+
+    return { message: "Password reset successfully. You can now log in with your new password." };
   },
 };

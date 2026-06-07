@@ -104,6 +104,12 @@ enum RequestItemType {
   CUSTOM
 }
 
+enum RequestType {
+  SOURCING
+  QUOTATION
+  SAMPLE
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
@@ -178,6 +184,19 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+model PasswordReset {
+  id        String    @id @default(uuid())
+  email     String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+  @@index([token])
+  @@map("password_resets")
 }
 
 model Client {
@@ -413,7 +432,7 @@ model Tracking {
   stage      String
   statusNote String?
   updatedBy  String
-  updatedAt  DateTime
+  updatedAt  DateTime @default(now()) @updatedAt
   createdAt  DateTime @default(now())
 
   @@index([orderId])
@@ -504,6 +523,7 @@ model SourcingRequest {
   requestNumber    String        @unique
   clientId         String
   status           RequestStatus @default(SUBMITTED)
+  requestType      RequestType   @default(SOURCING)
   totalBudgetINR   Decimal?      @db.Decimal(12, 2)
   advanceAmountINR Decimal?      @db.Decimal(12, 2)
   notes            String?
