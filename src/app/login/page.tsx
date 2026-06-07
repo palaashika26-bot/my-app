@@ -1,18 +1,18 @@
 'use client';
-import React from 'react';
+import React, { Suspense } from 'react';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import LoginPageContent from './components/LoginPageContent';
 
 export default function LoginPage() {
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
 
-  if (!clientId) {
-    return <LoginPageContent googleEnabled={false} />;
-  }
+  const content = !clientId
+    ? <LoginPageContent googleEnabled={false} />
+    : (
+      <GoogleOAuthProvider clientId={clientId}>
+        <LoginPageContent googleEnabled={true} />
+      </GoogleOAuthProvider>
+    );
 
-  return (
-    <GoogleOAuthProvider clientId={clientId}>
-      <LoginPageContent googleEnabled={true} />
-    </GoogleOAuthProvider>
-  );
+  return <Suspense fallback={null}>{content}</Suspense>;
 }

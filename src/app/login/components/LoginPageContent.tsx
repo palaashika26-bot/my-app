@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { Eye, EyeOff, ArrowRight, Loader2, Globe } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
@@ -31,6 +32,8 @@ function getRedirectPath(role: string, staffRoleId?: StaffRoleId | null): string
 function LoginForm({ googleEnabled = false }: { googleEnabled?: boolean }) {
   const { addToast } = useToast();
   const { login } = useAuth();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get('redirect');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
@@ -97,7 +100,7 @@ function LoginForm({ googleEnabled = false }: { googleEnabled?: boolean }) {
         description: 'Redirecting...',
       });
 
-      window.location.href = getRedirectPath(apiUser.role, staffRoleId);
+      window.location.href = redirectTo || getRedirectPath(apiUser.role, staffRoleId);
     } catch (apiErr: unknown) {
       const errMsg =
         (apiErr as { response?: { data?: { message?: string } } })?.response?.data?.message
@@ -118,7 +121,7 @@ function LoginForm({ googleEnabled = false }: { googleEnabled?: boolean }) {
           staffId: staffMember.id,
           staffRoleId: staffMember.role,
         });
-        const redirectPath = getRedirectPath('STAFF', staffMember.role);
+        const redirectPath = redirectTo || getRedirectPath('STAFF', staffMember.role);
         addToast({
           type: 'success',
           title: `Welcome back, ${staffMember.name.split(' ')[0]}!`,
