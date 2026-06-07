@@ -11,7 +11,7 @@
  */
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authApi } from '@/lib/api/auth.api';
-import { TOKEN_KEY } from '@/lib/api/axiosClient';
+import { TOKEN_KEY, setAccessToken, clearAccessToken } from '@/lib/api/axiosClient';
 import { setOrders } from '@/lib/ordersStore';
 import { requestsCache } from '@/lib/api/requestsCache';
 import type { ApiUser } from '@/lib/types/api.types';
@@ -52,7 +52,7 @@ export function ApiAuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (email: string, password: string): Promise<ApiUser> => {
     const res = await authApi.login({ email, password });
     const { user: apiUser, accessToken } = res.data.data;
-    localStorage.setItem(TOKEN_KEY, accessToken);
+    setAccessToken(accessToken);
     setUser(apiUser);
     return apiUser;
   }, []);
@@ -64,7 +64,7 @@ export function ApiAuthProvider({ children }: { children: React.ReactNode }) {
       // Ignore errors — still clear local state
     } finally {
       // Clear auth token and client-scoped caches to avoid stale UI flashes
-      localStorage.removeItem(TOKEN_KEY);
+      clearAccessToken();
       try { setOrders([]); } catch {}
       try { requestsCache.clear(); } catch {}
       setUser(null);

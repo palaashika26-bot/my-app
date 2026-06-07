@@ -36,8 +36,10 @@ const config = {
   // Database
   DATABASE_URL: required("DATABASE_URL"),
 
-  // Legacy secret (kept for backwards compat)
-  JWT_SECRET: required("JWT_SECRET"),
+  // Legacy secret (kept for backwards compat). Optional — the app signs and
+  // verifies with JWT_ACCESS_SECRET / JWT_REFRESH_SECRET, so a missing value
+  // must not crash boot.
+  JWT_SECRET: process.env.JWT_SECRET || "",
 
   // Access token — long-lived (24h)
   JWT_ACCESS_SECRET: required("JWT_ACCESS_SECRET"),

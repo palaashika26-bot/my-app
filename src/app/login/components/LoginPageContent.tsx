@@ -9,8 +9,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/context/AuthContext';
 import { eliosWholesale } from '@/lib/brandAssets';
 import { authApi } from '@/lib/api/auth.api';
-import { TOKEN_KEY } from '@/lib/api/axiosClient';
-import { authenticateStaff, touchStaffLastLogin } from '@/lib/staffStore';
+import { setAccessToken } from '@/lib/api/axiosClient';
 import { GoogleLogin } from '@react-oauth/google';
 import type { StaffRoleId } from '@/lib/staffRoles';
 
@@ -65,7 +64,7 @@ function LoginForm({ googleEnabled = false }: { googleEnabled?: boolean }) {
       const res = await authApi.login({ email: data.email, password: data.password });
       const { user: apiUser, accessToken } = res.data.data;
 
-      localStorage.setItem(TOKEN_KEY, accessToken);
+      setAccessToken(accessToken);
 
       const frontendRole =
         apiUser.role === 'ADMIN' ? 'admin' :
@@ -110,26 +109,6 @@ function LoginForm({ googleEnabled = false }: { googleEnabled?: boolean }) {
         setNeedsVerification(true);
         setUnverifiedEmail(data.email);
       }
-      // 2. Backend failed — try local staffStore (demo staff accounts)
-      const staffMember = authenticateStaff(data.email, data.password);
-      if (staffMember) {
-        touchStaffLastLogin(staffMember.id);
-        login('staff', {
-          name: staffMember.name,
-          email: staffMember.email,
-          phone: staffMember.phone,
-          staffId: staffMember.id,
-          staffRoleId: staffMember.role,
-        });
-        const redirectPath = redirectTo || getRedirectPath('STAFF', staffMember.role);
-        addToast({
-          type: 'success',
-          title: `Welcome back, ${staffMember.name.split(' ')[0]}!`,
-          description: 'Redirecting...',
-        });
-        window.location.href = redirectPath;
-        return;
-      }
       addToast({
         type: 'error',
         title: 'Login failed',
@@ -167,7 +146,7 @@ function LoginForm({ googleEnabled = false }: { googleEnabled?: boolean }) {
       const res = await authApi.googleLogin(credential);
       const { user: apiUser, accessToken } = res.data.data;
 
-      localStorage.setItem(TOKEN_KEY, accessToken);
+      setAccessToken(accessToken);
 
       const frontendRole =
         apiUser.role === 'ADMIN' ? 'admin' :

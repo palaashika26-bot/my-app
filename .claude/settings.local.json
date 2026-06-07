@@ -226,7 +226,23 @@
       "Bash(echo \"Frontend errors: $\\(npx tsc -p tsconfig.json --noEmit 2>&1)",
       "Bash(npm --prefix server run dev)",
       "Bash(curl -s --retry 40 --retry-connrefused --retry-delay 1 --max-time 20 -o /dev/null -w \"backend  /api/v1/health -> [%{http_code}]\\\\n\" \"http://localhost:4000/api/v1/health\")",
-      "Bash(curl -s --retry 60 --retry-connrefused --retry-delay 1 --max-time 120 -o /dev/null -w \"frontend http://localhost:3000 -> [%{http_code}]\\\\n\" \"http://localhost:3000\")"
+      "Bash(curl -s --retry 60 --retry-connrefused --retry-delay 1 --max-time 120 -o /dev/null -w \"frontend http://localhost:3000 -> [%{http_code}]\\\\n\" \"http://localhost:3000\")",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'Fix CORS to allow Vercel preview deployments and dev origins' -m 'Login was blocked from Vercel preview URLs because the CORS allowlist *)",
+      "Bash(git fetch *)",
+      "Bash(curl -s --max-time 90 -i https://elios-server.onrender.com/api/v1/health)",
+      "Bash(curl -s -o /dev/null --max-time 2 http://localhost:4000/api/v1/health)",
+      "Bash(break)",
+      "Bash(curl -s -i --max-time 20 http://localhost:4000/api/v1/admin/stats -H 'Authorization: Bearer __TRACKED_VAR__')",
+      "Bash(rm -f server/_introspect.js /tmp/admin_token.txt /tmp/token_err.txt 2>/dev/null *)",
+      "Bash(git commit -m 'Shorten quotation transaction to survive low DB pool limit' -m 'Sending a quotation is an interactive transaction; it previously re-fetched *)",
+      "Bash(git push *)",
+      "Bash(git commit -m 'Raise interactive transaction timeout for all request transactions' -m 'Render confirmed P2028: the default 5s interactive-transaction timeout trips *)",
+      "PowerShell(npm --prefix \"C:\\\\Users\\\\Aashi\\\\my-app\\\\server\" run build)",
+      "Bash(echo \"---SERVER TSC EXIT: $?---\")",
+      "Bash(echo \"---FRONTEND TSC EXIT: $?---\")",
+      "Bash(echo \"---SERVER COMPILE EXIT: $?  \\(prisma migrate deploy intentionally skipped — would hit live DB\\)---\")"
     ]
   }
 }

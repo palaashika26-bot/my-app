@@ -275,6 +275,16 @@ export const authRepository = {
     });
   },
 
+  // Set the user's new password and consume the reset token in a single
+  // transaction, so a crash between the two writes can never leave one applied
+  // without the other (e.g. token spent but password unchanged).
+  async applyPasswordReset(email: string, passwordHash: string, tokenId: string) {
+    return prisma.$transaction([
+      prisma.user.update({ where: { email }, data: { passwordHash } }),
+      prisma.passwordReset.update({ where: { id: tokenId }, data: { usedAt: new Date() } }),
+    ]);
+  },
+
   async updateUserPassword(email: string, passwordHash: string) {
     return prisma.user.update({
       where: { email },

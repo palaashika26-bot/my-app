@@ -432,8 +432,8 @@ export const authService = {
     const user = await authRepository.findUserByEmail(record.email);
     if (!user) throw new ApiError(400, "Account not found");
 
-    await authRepository.updateUserPassword(record.email, passwordHash);
-    await authRepository.markPasswordResetTokenUsed(record.id);
+    // Update the password and consume the token atomically (single transaction)
+    await authRepository.applyPasswordReset(record.email, passwordHash, record.id);
 
     // 7. Revoke all existing sessions so the user must log in again
     await authRepository.deleteAllUserRefreshTokens(user.id);

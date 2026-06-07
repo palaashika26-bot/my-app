@@ -1,6 +1,10 @@
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Direct (non-pooler) connection used only by `prisma migrate deploy` and
+  // introspection. The pooled `url` (pgbouncer, port 6543) can't hold the
+  // advisory locks migrations require, so deploys use this 5432 connection.
+  directUrl = env("DIRECT_URL")
 }
 
 generator client {

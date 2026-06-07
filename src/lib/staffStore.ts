@@ -14,50 +14,11 @@ export interface StaffMember {
   createdAt: string;
 }
 
+// Demo staff accounts have been removed. Staff are managed through the real
+// backend (`/api/v1/admin/staff`); no credentials live in client-side source.
+// Any entries a user adds at runtime are still read from localStorage below.
 function seedStaff(): StaffMember[] {
-  const createdAt = new Date().toISOString();
-  return [
-    {
-      id: 'st-seed-sourcing',
-      name: 'Meera Nair',
-      email: 'sourcing.staff@elioswholesale.in',
-      phone: '+91 22 4000 1001',
-      role: 'sourcing-logistics',
-      password: 'Demo@1234',
-      lastLogin: null,
-      createdAt,
-    },
-    {
-      id: 'st-seed-warehouse',
-      name: 'Vikram Desai',
-      email: 'warehouse.staff@elioswholesale.in',
-      phone: '+91 22 4000 1002',
-      role: 'warehouse-qc',
-      password: 'Demo@1234',
-      lastLogin: null,
-      createdAt,
-    },
-    {
-      id: 'st-seed-logistics',
-      name: 'Rohit Menon',
-      email: 'logistics.staff@elioswholesale.in',
-      phone: '+91 22 4000 1003',
-      role: 'sourcing-logistics',
-      password: 'Demo@1234',
-      lastLogin: null,
-      createdAt,
-    },
-    {
-      id: 'st-seed-qc',
-      name: 'Ananya Bose',
-      email: 'qc.staff@elioswholesale.in',
-      phone: '+91 22 4000 1004',
-      role: 'warehouse-qc',
-      password: 'Demo@1234',
-      lastLogin: null,
-      createdAt,
-    },
-  ];
+  return [];
 }
 
 export function getStaffRegistry(): StaffMember[] {
@@ -92,17 +53,8 @@ export function findStaffByEmail(email: string): StaffMember | undefined {
   return getStaffRegistry().find((s) => s.email.toLowerCase() === e);
 }
 
-export function authenticateStaff(email: string, password: string): StaffMember | null {
-  const registry = getStaffRegistry();
-
-  const member = registry.find(
-    (s) => s.email.toLowerCase() === email.toLowerCase().trim()
-  );
-
-  if (!member) return null;
-  if (member.password !== password.trim()) return null;
-  return member;
-}
+// authenticateStaff() was removed: client-side password checking is insecure and
+// enabled a login bypass. All authentication now goes through the backend API.
 
 export function touchStaffLastLogin(id: string) {
   const list = getStaffRegistry();

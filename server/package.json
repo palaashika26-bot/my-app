@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon --exec ts-node src/server.ts",
-    "build": "prisma generate && tsc",
+    "build": "prisma migrate deploy && prisma generate && tsc",
     "postinstall": "prisma generate",
     "start": "node dist/server.js",
     "create-admin": "ts-node prisma/createAdmin.ts",

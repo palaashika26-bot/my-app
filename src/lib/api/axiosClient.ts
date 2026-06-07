@@ -3,6 +3,26 @@ import { resolveApiBaseUrl } from '../apiBase';
 
 const TOKEN_KEY = 'elios_access_token';
 
+// The access token is mirrored into a cookie (not only localStorage) so the
+// Next.js Edge middleware can cryptographically verify the JWT — localStorage is
+// invisible to middleware. The cookie is not httpOnly (client JS writes it), but
+// its integrity comes from the JWT signature, which the middleware verifies
+// against JWT_ACCESS_SECRET; a tampered cookie fails verification.
+const TOKEN_COOKIE_MAX_AGE = 24 * 60 * 60; // seconds; matches the access-token lifetime
+
+export function setAccessToken(token: string): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(TOKEN_KEY, token);
+  const secure = window.location.protocol === 'https:' ? ';secure' : '';
+  document.cookie = `${TOKEN_KEY}=${token};path=/;max-age=${TOKEN_COOKIE_MAX_AGE};samesite=lax${secure}`;
+}
+
+export function clearAccessToken(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(TOKEN_KEY);
+  document.cookie = `${TOKEN_KEY}=;path=/;max-age=0`;
+}
+
 // ── Shared interceptors ──────────────────────────────────────────────────────
 const tokenInterceptor = (config: any) => {
   if (typeof window !== 'undefined') {
@@ -22,7 +42,7 @@ const unauthorizedInterceptor = (error: any) => {
     const hadToken = !!localStorage.getItem(TOKEN_KEY);
     const hasStaleSession = !!localStorage.getItem('bk_role');
 
-    localStorage.removeItem(TOKEN_KEY);
+    clearAccessToken();
     if (hasStaleSession) {
       localStorage.removeItem('bk_role');
       localStorage.removeItem('bk_user');

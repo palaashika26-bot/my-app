@@ -70,6 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('bk_user');
       localStorage.removeItem('elios_access_token'); // clear JWT on explicit logout
       document.cookie = 'bk_role=;path=/;max-age=0';
+      document.cookie = 'elios_access_token=;path=/;max-age=0'; // clear the middleware-verified token cookie
     } catch {
       /* ignore */
     }

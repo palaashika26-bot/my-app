@@ -3,11 +3,27 @@ import {
   Role,
 } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const passwordHash = await bcrypt.hash("Demo@1234", 10);
+  // Never seed demo data into a production database.
+  if (process.env.NODE_ENV === "production") {
+    console.error(
+      "❌ Refusing to seed: NODE_ENV=production. The seed script is for local/dev only."
+    );
+    process.exit(1);
+  }
+
+  // Password is taken from SEED_PASSWORD; if unset, a strong random one is
+  // generated and printed below. No credentials are hardcoded in source.
+  const seedPassword =
+    process.env.SEED_PASSWORD || crypto.randomBytes(12).toString("base64url");
+  const passwordHash = await bcrypt.hash(seedPassword, 12);
+  console.log(
+    `\n🔑 Seed user password: ${seedPassword}\n   (set SEED_PASSWORD to choose your own)\n`
+  );
 
   await prisma.$transaction(
     async (tx) => {
