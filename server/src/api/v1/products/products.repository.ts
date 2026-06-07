@@ -1,5 +1,6 @@
 import prisma from "../../../config/prisma";
 import { ApiError } from "../../../utils/ApiError";
+import { Prisma } from "@prisma/client";
 
 interface ProductFilters {
   categorySlug?: string;
@@ -27,7 +28,11 @@ export const productsRepository = {
     }
 
     if (search) {
-      where.name = { contains: search, mode: "insensitive" };
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { tags: { contains: search, mode: "insensitive" } },
+        { brand: { contains: search, mode: "insensitive" } },
+      ];
     }
 
     const [products, total] = await Promise.all([
@@ -75,5 +80,33 @@ export const productsRepository = {
     }
 
     return product;
+  },
+
+  async create(data: Record<string, unknown>) {
+    return prisma.product.create({
+      data: data as Prisma.ProductCreateInput,
+      include: {
+        category: true,
+        supplier: true,
+      },
+    });
+  },
+
+  async update(id: string, data: Record<string, unknown>) {
+    return prisma.product.update({
+      where: { id },
+      data: data as Prisma.ProductUpdateInput,
+      include: {
+        category: true,
+        supplier: true,
+      },
+    });
+  },
+
+  async softDelete(id: string) {
+    return prisma.product.update({
+      where: { id },
+      data: { deletedAt: new Date(), isActive: false },
+    });
   },
 };

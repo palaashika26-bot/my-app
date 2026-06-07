@@ -4,42 +4,9 @@ import AdminLayout from '@/components/AdminLayout';
 import { useToast } from '@/components/ui/Toast';
 import { Plus, Pencil, Trash2, X, Search, Tag, ImageIcon, Download, Upload } from 'lucide-react';
 import ImportProductsModal from '@/components/ImportProductsModal';
-
-// ── Category management ──────────────────────────────────────────────────────
-interface StripCategory {
-  id: string;
-  name: string;
-  image: string;
-  productIds: string[];
-}
-
-const CATEGORIES_LS_KEY = 'catalog-categories';
-const CAT_IMG_PREFIX   = 'catalog-category-image-';
-
-const ADMIN_SEED_CATS: StripCategory[] = [
-  { id: 'sc-electronics', name: 'Electronics',   image: '', productIds: ['p01', 'p05', 'p06', 'p09', 'p12'] },
-  { id: 'sc-fashion',     name: 'Fashion',        image: '', productIds: ['p11', 'p13', 'p14', 'p15'] },
-  { id: 'sc-home',        name: 'Home & Kitchen', image: '', productIds: ['p03', 'p08', 'p10', 'p19'] },
-  { id: 'sc-beauty',      name: 'Beauty',         image: '', productIds: ['p17'] },
-  { id: 'sc-sports',      name: 'Sports',         image: '', productIds: ['p07', 'p18'] },
-  { id: 'sc-toys',        name: 'Toys',           image: '', productIds: ['p16'] },
-];
-
-function adminCatEmoji(name: string): string {
-  const l = name.toLowerCase();
-  if (l === 'all') return '🛍️';
-  if (l.includes('electron')) return '⚡';
-  if (l.includes('fashion') || l.includes('cloth')) return '👗';
-  if (l.includes('home') || l.includes('kitchen')) return '🏠';
-  if (l.includes('beauty')) return '💄';
-  if (l.includes('sport')) return '⚽';
-  if (l.includes('toy')) return '🧸';
-  if (l.includes('mobile') || l.includes('phone')) return '📱';
-  if (l.includes('jewel')) return '💎';
-  if (l.includes('bag') || l.includes('luggage')) return '🎒';
-  return '📦';
-}
-// ─────────────────────────────────────────────────────────────────────────────
+import { productsApi } from '@/lib/api/products.api';
+import type { CreateProductPayload } from '@/lib/api/products.api';
+import type { ApiProduct } from '@/lib/types/api.types';
 
 const SUBCATEGORIES: Record<string, string[]> = {
   Electronics: ['LED Lights & Strips', 'Power Adapters & Chargers', 'Cables & Connectors', 'Smart Home Devices', 'Batteries & Power Banks'],
@@ -63,9 +30,43 @@ const BG_OPTIONS = [
   'bg-pink-100','bg-amber-100','bg-green-100','bg-red-100','bg-sky-100',
 ];
 
+interface StripCategory {
+  id: string;
+  name: string;
+  image: string;
+  productIds: string[];
+}
+
+const CATEGORIES_LS_KEY = 'catalog-categories';
+const CAT_IMG_PREFIX   = 'catalog-category-image-';
+
+const ADMIN_SEED_CATS: StripCategory[] = [
+  { id: 'sc-electronics', name: 'Electronics',   image: '', productIds: [] },
+  { id: 'sc-fashion',     name: 'Fashion',        image: '', productIds: [] },
+  { id: 'sc-home',        name: 'Home & Kitchen', image: '', productIds: [] },
+  { id: 'sc-beauty',      name: 'Beauty',         image: '', productIds: [] },
+  { id: 'sc-sports',      name: 'Sports',         image: '', productIds: [] },
+  { id: 'sc-toys',        name: 'Toys',           image: '', productIds: [] },
+];
+
+function adminCatEmoji(name: string): string {
+  const l = name.toLowerCase();
+  if (l === 'all') return '\u{1F6CD}\uFE0F';
+  if (l.includes('electron')) return '\u26A1';
+  if (l.includes('fashion') || l.includes('cloth')) return '\u{1F457}';
+  if (l.includes('home') || l.includes('kitchen')) return '\u{1F3E0}';
+  if (l.includes('beauty')) return '\u{1F484}';
+  if (l.includes('sport')) return '\u26BD';
+  if (l.includes('toy')) return '\u{1F9F8}';
+  if (l.includes('mobile') || l.includes('phone')) return '\u{1F4F1}';
+  if (l.includes('jewel')) return '\u{1F48E}';
+  if (l.includes('bag') || l.includes('luggage')) return '\u{1F392}';
+  return '\u{1F4E6}';
+}
+
 interface Spec { key: string; value: string; }
 
-interface Product {
+interface CatalogProduct {
   id: string;
   emoji: string;
   name: string;
@@ -82,9 +83,9 @@ interface Product {
   fullDescription: string;
   keyFeatures: string[];
   specifications: Spec[];
-  weight?: string;
-  material?: string;
-  origin?: string;
+  weight: string;
+  material: string;
+  origin: string;
   tags: string;
   images: string[];
   videos: string[];
@@ -95,26 +96,9 @@ interface Product {
   categoryId: string;
 }
 
-const SEED_PRODUCTS: Product[] = [
-  { id: 'p01', emoji: '🔌', name: 'LED Strip Lights RGB 5m', category: 'Electronics', subcategory: 'LED Lights & Strips', brand: '', originCity: 'Yiwu', sku: '', priceCny: '¥35–55', moq: 50, sampleAvailable: false, samplePrice: '', shortDescription: '', fullDescription: '', keyFeatures: [], specifications: [], tags: 'led,lights,rgb', images: [], videos: [], bg: 'bg-[#f0eef8]', active: true, isNew: false, onSale: false, categoryId: 'sc-electronics' },
-  { id: 'p02', emoji: '📱', name: 'Silicone Phone Cases', category: 'Mobile Accessories', subcategory: 'Phone Cases & Covers', brand: '', originCity: 'Guangzhou', sku: '', priceCny: '¥8–15', moq: 200, sampleAvailable: false, samplePrice: '', shortDescription: '', fullDescription: '', keyFeatures: [], specifications: [], tags: 'phone,cases,mobile', images: [], videos: [], bg: 'bg-[#e4eeee]', active: true, isNew: false, onSale: true, categoryId: '' },
-  { id: 'p03', emoji: '🍶', name: 'Stainless Steel Bottles', category: 'Kitchenware', subcategory: 'Water Bottles & Flasks', brand: '', originCity: 'Yiwu', sku: '', priceCny: '¥18–28', moq: 100, sampleAvailable: false, samplePrice: '', shortDescription: '', fullDescription: '', keyFeatures: [], specifications: [], tags: 'bottles,steel,flask', images: [], videos: [], bg: 'bg-cyan-100', active: true, isNew: false, onSale: false, categoryId: 'sc-home' },
-  { id: 'p04', emoji: '🎧', name: 'Bluetooth Earbuds TWS', category: 'Mobile Accessories', subcategory: 'Earphones & Earbuds', brand: '', originCity: 'Shenzhen', sku: '', priceCny: '¥45–80', moq: 50, sampleAvailable: true, samplePrice: '¥120', shortDescription: '', fullDescription: '', keyFeatures: [], specifications: [], tags: 'earbuds,bluetooth,tws', images: [], videos: [], bg: 'bg-purple-100', active: true, isNew: true, onSale: false, categoryId: '' },
-  { id: 'p05', emoji: '🔋', name: 'Power Banks 10000mAh', category: 'Electronics', subcategory: 'Batteries & Power Banks', brand: '', originCity: 'Shenzhen', sku: '', priceCny: '¥65–95', moq: 30, sampleAvailable: false, samplePrice: '', shortDescription: '', fullDescription: '', keyFeatures: [], specifications: [], tags: 'powerbank,battery,charger', images: [], videos: [], bg: 'bg-emerald-100', active: true, isNew: false, onSale: false, categoryId: 'sc-electronics' },
-  { id: 'p06', emoji: '🖱️', name: 'Wireless Mouse', category: 'Electronics', subcategory: 'Smart Home Devices', brand: '', originCity: 'Guangzhou', sku: '', priceCny: '¥22–35', moq: 50, sampleAvailable: false, samplePrice: '', shortDescription: '', fullDescription: '', keyFeatures: [], specifications: [], tags: 'mouse,wireless,office', images: [], videos: [], bg: 'bg-slate-100', active: true, isNew: false, onSale: false, categoryId: 'sc-electronics' },
-  { id: 'p07', emoji: '💪', name: 'Resistance Bands Set', category: 'Sports & Fitness', subcategory: 'Exercise Equipment', brand: '', originCity: 'Yiwu', sku: '', priceCny: '¥15–25', moq: 100, sampleAvailable: false, samplePrice: '', shortDescription: '', fullDescription: '', keyFeatures: [], specifications: [], tags: 'fitness,bands,exercise', images: [], videos: [], bg: 'bg-rose-100', active: true, isNew: false, onSale: true, categoryId: 'sc-sports' },
-  { id: 'p08', emoji: '🧴', name: 'Soap Dispenser Pump', category: 'Kitchenware', subcategory: 'Kitchen Tools & Gadgets', brand: '', originCity: 'Yiwu', sku: '', priceCny: '¥12–20', moq: 100, sampleAvailable: false, samplePrice: '', shortDescription: '', fullDescription: '', keyFeatures: [], specifications: [], tags: 'soap,dispenser,kitchen', images: [], videos: [], bg: 'bg-teal-100', active: true, isNew: false, onSale: false, categoryId: 'sc-home' },
-  { id: 'p09', emoji: '🔌', name: 'USB-C Cables (Braided)', category: 'Electronics', subcategory: 'Cables & Connectors', brand: '', originCity: 'Shenzhen', sku: '', priceCny: '¥6–12', moq: 200, sampleAvailable: false, samplePrice: '', shortDescription: '', fullDescription: '', keyFeatures: [], specifications: [], tags: 'cable,usbc,charging', images: [], videos: [], bg: 'bg-indigo-100', active: true, isNew: false, onSale: true, categoryId: 'sc-electronics' },
-  { id: 'p10', emoji: '📦', name: 'Storage Box Organiser', category: 'Home & Decor', subcategory: 'Furniture & Storage', brand: '', originCity: 'Shanghai', sku: '', priceCny: '¥8–15', moq: 50, sampleAvailable: false, samplePrice: '', shortDescription: '', fullDescription: '', keyFeatures: [], specifications: [], tags: 'storage,organiser,box', images: [], videos: [], bg: 'bg-yellow-100', active: true, isNew: false, onSale: false, categoryId: 'sc-home' },
-  { id: 'p11', emoji: '🎒', name: 'Canvas Tote Bags', category: 'Bags & Luggage', subcategory: 'Handbags & Purses', brand: '', originCity: 'Guangzhou', sku: '', priceCny: '¥10–18', moq: 100, sampleAvailable: false, samplePrice: '', shortDescription: '', fullDescription: '', keyFeatures: [], specifications: [], tags: 'tote,bags,canvas', images: [], videos: [], bg: 'bg-pink-100', active: true, isNew: true, onSale: false, categoryId: 'sc-fashion' },
-  { id: 'p12', emoji: '🏮', name: 'Smart Plug WiFi 16A', category: 'Electronics', subcategory: 'Smart Home Devices', brand: '', originCity: 'Shenzhen', sku: '', priceCny: '¥18–28', moq: 50, sampleAvailable: false, samplePrice: '', shortDescription: '', fullDescription: '', keyFeatures: [], specifications: [], tags: 'smart,plug,wifi', images: [], videos: [], bg: 'bg-amber-100', active: true, isNew: true, onSale: false, categoryId: 'sc-electronics' },
-];
-
-const LS_KEY = 'bk-catalog-products';
-
-function emptyForm(): Omit<Product, 'id'> {
+function emptyForm(): Omit<CatalogProduct, 'id'> {
   return {
-    emoji: '📦', name: '', category: 'Electronics', subcategory: 'LED Lights & Strips',
+    emoji: '\u{1F4E6}', name: '', category: 'Electronics', subcategory: 'LED Lights & Strips',
     brand: '', originCity: 'Yiwu', sku: '',
     priceCny: '', moq: 50,
     sampleAvailable: false, samplePrice: '',
@@ -124,6 +108,70 @@ function emptyForm(): Omit<Product, 'id'> {
     images: [], videos: [],
     bg: 'bg-[#e4eeee]', active: true, isNew: false, onSale: false,
     categoryId: '',
+  };
+}
+
+function mapApiToCatalog(p: ApiProduct): CatalogProduct {
+  const specs = (p.specifications ?? []) as Spec[];
+  return {
+    id: p.id,
+    emoji: p.emoji || '\u{1F4E6}',
+    name: p.name,
+    category: p.category?.name || '',
+    subcategory: p.category?.parent?.name || p.category?.name || '',
+    brand: p.brand || '',
+    originCity: p.originCity || '',
+    sku: p.sku || '',
+    priceCny: p.priceRange || `\u00A5${p.basePrice}`,
+    moq: p.moq,
+    sampleAvailable: p.sampleAvailable,
+    samplePrice: p.samplePrice ? `\u00A5${p.samplePrice}` : '',
+    shortDescription: p.shortDescription || '',
+    fullDescription: p.fullDescription || '',
+    keyFeatures: (p.keyFeatures || []).length > 0 ? p.keyFeatures : [''],
+    specifications: specs.length > 0 ? specs : [{ key: '', value: '' }],
+    weight: p.weight || '',
+    material: p.material || '',
+    origin: p.originCity || '',
+    tags: p.tags || '',
+    images: p.images || [],
+    videos: p.videos || [],
+    bg: p.bgColor || 'bg-[#e4eeee]',
+    active: p.isActive,
+    isNew: p.isNew,
+    onSale: p.onSale,
+    categoryId: p.category?.id || '',
+  };
+}
+
+function formToPayload(form: Omit<CatalogProduct, 'id'>): CreateProductPayload {
+  const samplePriceNum = form.samplePrice ? parseFloat(form.samplePrice.replace('\u00A5', '')) : undefined;
+  const basePrice = parseFloat(form.priceCny.replace(/[^\d.]/g, '')) || 0;
+  return {
+    name: form.name.trim(),
+    emoji: form.emoji || null,
+    brand: form.brand || null,
+    sku: form.sku || null,
+    originCity: form.originCity || null,
+    priceRange: form.priceCny || null,
+    moq: form.moq,
+    basePrice,
+    sampleAvailable: form.sampleAvailable,
+    samplePrice: samplePriceNum || null,
+    shortDescription: form.shortDescription || null,
+    fullDescription: form.fullDescription || null,
+    keyFeatures: form.keyFeatures.filter(f => f.trim()),
+    specifications: form.specifications.filter(s => s.key || s.value).length > 0 ? form.specifications.filter(s => s.key || s.value) : null,
+    weight: form.weight || null,
+    material: form.material || null,
+    tags: form.tags || null,
+    images: form.images,
+    videos: form.videos,
+    bgColor: form.bg || null,
+    isNew: form.isNew,
+    onSale: form.onSale,
+    isActive: form.active,
+    categoryId: form.categoryId || null,
   };
 }
 
@@ -138,43 +186,42 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 
 export default function AdminCatalogPage() {
   const { addToast } = useToast();
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<CatalogProduct[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showImportModal, setShowImportModal] = useState(false);
   const [q, setQ] = useState('');
   const [modalMode, setModalMode] = useState<'add' | 'edit' | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<Omit<Product, 'id'>>(emptyForm());
-  const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
+  const [form, setForm] = useState<Omit<CatalogProduct, 'id'>>(emptyForm());
+  const [deleteTarget, setDeleteTarget] = useState<CatalogProduct | null>(null);
   const [saving, setSaving] = useState(false);
   const imgInputRef = useRef<HTMLInputElement>(null);
   const vidInputRef = useRef<HTMLInputElement>(null);
   const catImgRef   = useRef<HTMLInputElement>(null);
 
-  // ── Category management state ──────────────────────────────────────────────
-  const [categories,      setCategories]      = useState<StripCategory[]>([]);
-  const [catsLoaded,      setCatsLoaded]      = useState(false);
-  const [catModalMode,    setCatModalMode]    = useState<'add' | 'edit' | null>(null);
-  const [editingCatId,    setEditingCatId]    = useState<string | null>(null);
-  const [catForm,         setCatForm]         = useState<{ name: string; image: string; productIds: string[] }>({ name: '', image: '', productIds: [] });
+  const [categories, setCategories] = useState<StripCategory[]>([]);
+  const [catsLoaded, setCatsLoaded] = useState(false);
+  const [catModalMode, setCatModalMode] = useState<'add' | 'edit' | null>(null);
+  const [editingCatId, setEditingCatId] = useState<string | null>(null);
+  const [catForm, setCatForm] = useState<{ name: string; image: string; productIds: string[] }>({ name: '', image: '', productIds: [] });
   const [deleteCatTarget, setDeleteCatTarget] = useState<StripCategory | null>(null);
-  const [savingCat,       setSavingCat]       = useState(false);
+  const [savingCat, setSavingCat] = useState(false);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(LS_KEY);
-      setProducts(stored ? JSON.parse(stored) : SEED_PRODUCTS);
-    } catch {
-      setProducts(SEED_PRODUCTS);
-    }
+    let cancelled = false;
+    setLoading(true);
+    productsApi.getProducts({ limit: 100 })
+      .then(res => {
+        if (!cancelled) {
+          const data = res.data?.data || [];
+          setProducts(data.map(mapApiToCatalog));
+        }
+      })
+      .catch(() => { if (!cancelled) setProducts([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => {
-    if (products.length > 0) {
-      try { localStorage.setItem(LS_KEY, JSON.stringify(products)); } catch { /* ignore quota */ }
-    }
-  }, [products]);
-
-  // ── Category load ────────────────────────────────────────────────────────
   useEffect(() => {
     try {
       const stored = localStorage.getItem(CATEGORIES_LS_KEY);
@@ -191,7 +238,6 @@ export default function AdminCatalogPage() {
     setCatsLoaded(true);
   }, []);
 
-  // ── Category save ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!catsLoaded) return;
     try { localStorage.setItem(CATEGORIES_LS_KEY, JSON.stringify(categories)); } catch { /* quota */ }
@@ -206,7 +252,6 @@ export default function AdminCatalogPage() {
       p.tags.toLowerCase().includes(lq);
   });
 
-  // ── Category CRUD ────────────────────────────────────────────────────────
   function openAddCat() {
     setCatForm({ name: '', image: '', productIds: [] });
     setEditingCatId(null);
@@ -273,14 +318,13 @@ export default function AdminCatalogPage() {
     setSavingCat(false);
     setDeleteCatTarget(null);
   }
-  // ─────────────────────────────────────────────────────────────────────────
 
-  function setF<K extends keyof Omit<Product, 'id'>>(key: K, val: Omit<Product, 'id'>[K]) {
+  function setF<K extends keyof Omit<CatalogProduct, 'id'>>(key: K, val: Omit<CatalogProduct, 'id'>[K]) {
     setForm(f => ({ ...f, [key]: val }));
   }
 
   function openAdd() { setForm(emptyForm()); setEditingId(null); setModalMode('add'); }
-  function openEdit(p: Product) {
+  function openEdit(p: CatalogProduct) {
     setForm({
       emoji: p.emoji, name: p.name, category: p.category, subcategory: p.subcategory,
       brand: p.brand, originCity: p.originCity, sku: p.sku,
@@ -339,39 +383,46 @@ export default function AdminCatalogPage() {
   async function handleSave() {
     if (!form.name.trim() || !form.priceCny.trim()) return;
     setSaving(true);
-    await new Promise(r => setTimeout(r, 600));
-    let savedId = editingId || '';
-    if (modalMode === 'add') {
-      savedId = `p${String(Date.now()).slice(-8)}`;
-      setProducts(prev => [...prev, { ...form, id: savedId }]);
-      addToast({ type: 'success', title: 'Product added', description: `"${form.name}" has been added to the catalog.` });
-    } else if (modalMode === 'edit' && editingId) {
-      savedId = editingId;
-      setProducts(prev => prev.map(p => p.id === editingId ? { ...form, id: editingId } : p));
-      addToast({ type: 'success', title: 'Product updated', description: `"${form.name}" has been updated.` });
-    }
-    // Sync categoryId → category productIds
-    if (savedId) {
-      setCategories(prev => prev.map(c => {
-        if (c.id === form.categoryId) {
-          return c.productIds.includes(savedId) ? c : { ...c, productIds: [...c.productIds, savedId] };
-        } else {
-          return c.productIds.includes(savedId) ? { ...c, productIds: c.productIds.filter(x => x !== savedId) } : c;
+    try {
+      const payload = formToPayload(form);
+      if (modalMode === 'add') {
+        const res = await productsApi.createProduct(payload);
+        const saved = res.data?.data;
+        if (saved) {
+          setProducts(prev => [...prev, mapApiToCatalog(saved)]);
+          addToast({ type: 'success', title: 'Product added', description: `"${form.name}" has been added to the catalog.` });
         }
-      }));
+      } else if (modalMode === 'edit' && editingId) {
+        const res = await productsApi.updateProduct(editingId, payload);
+        const saved = res.data?.data;
+        if (saved) {
+          setProducts(prev => prev.map(p => p.id === editingId ? mapApiToCatalog(saved) : p));
+          addToast({ type: 'success', title: 'Product updated', description: `"${form.name}" has been updated.` });
+        }
+      }
+      closeModal();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || 'Failed to save product. Please try again.';
+      addToast({ type: 'error', title: 'Error', description: msg });
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
-    closeModal();
   }
 
   async function handleDelete() {
     if (!deleteTarget) return;
     setSaving(true);
-    await new Promise(r => setTimeout(r, 400));
-    setProducts(prev => prev.filter(p => p.id !== deleteTarget.id));
-    addToast({ type: 'success', title: 'Product deleted', description: `"${deleteTarget.name}" has been removed.` });
-    setSaving(false);
-    setDeleteTarget(null);
+    try {
+      await productsApi.deleteProduct(deleteTarget.id);
+      setProducts(prev => prev.filter(p => p.id !== deleteTarget.id));
+      addToast({ type: 'success', title: 'Product deleted', description: `"${deleteTarget.name}" has been removed.` });
+      setDeleteTarget(null);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || 'Failed to delete product. Please try again.';
+      addToast({ type: 'error', title: 'Error', description: msg });
+    } finally {
+      setSaving(false);
+    }
   }
 
   const subcatOptions = SUBCATEGORIES[form.category] || [];
@@ -400,9 +451,6 @@ export default function AdminCatalogPage() {
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════
-          MANAGE CATEGORIES
-      ══════════════════════════════════════════════ */}
       <div className="bg-card rounded-xl border border-border shadow-card p-5 mb-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -452,7 +500,6 @@ export default function AdminCatalogPage() {
         )}
       </div>
 
-      {/* Search — Fix 1: icon left, pl-10 */}
       <div className="relative mb-4 max-w-sm" style={{ position: 'relative' }}>
         <Search style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'grey', width: '16px', height: '16px' }} />
         <input value={q} onChange={e => setQ(e.target.value)} className="input-field" style={{ paddingLeft: '40px' }} placeholder="Search products, categories..." />
@@ -463,6 +510,12 @@ export default function AdminCatalogPage() {
         )}
       </div>
 
+      {loading ? (
+        <div className="bg-card rounded-xl border border-border shadow-card p-12 text-center">
+          <div className="animate-spin w-8 h-8 border-2 border-[#4A3B52] border-t-transparent rounded-full mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground">Loading products...</p>
+        </div>
+      ) : (
       <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -520,29 +573,25 @@ export default function AdminCatalogPage() {
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center">
-                  <p className="text-sm text-muted-foreground mb-3">No products found for &ldquo;{q}&rdquo;</p>
-                  <button onClick={() => setQ('')} className="btn-primary px-4 py-1.5 text-xs">Clear Search</button>
+                  <p className="text-sm text-muted-foreground mb-3">No products found{q ? ` for "${q}"` : ''}</p>
+                  {q && <button onClick={() => setQ('')} className="btn-primary px-4 py-1.5 text-xs">Clear Search</button>}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+      )}
 
-      {/* Add / Edit modal */}
       {modalMode && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center overflow-y-auto pt-4 md:pt-8 fade-in" onClick={closeModal}>
           <div className="bg-card rounded-2xl w-full max-w-2xl flex flex-col mb-4 mx-4" onClick={e => e.stopPropagation()}>
-            {/* Modal header */}
             <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border flex-shrink-0">
               <h3 className="font-700 text-lg">{modalMode === 'add' ? 'Add Product' : 'Edit Product'}</h3>
               <button onClick={closeModal} className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center"><X className="w-4 h-4" /></button>
             </div>
 
-            {/* Scrollable body */}
             <div className="overflow-y-auto flex-1 px-6 py-4 space-y-6">
-
-              {/* BASIC INFO */}
               <div>
                 <h4 className="text-xs font-700 text-muted-foreground uppercase tracking-wider mb-3">Basic Info</h4>
                 <div className="grid grid-cols-2 gap-3">
@@ -590,13 +639,12 @@ export default function AdminCatalogPage() {
                 </div>
               </div>
 
-              {/* PRICING */}
               <div>
                 <h4 className="text-xs font-700 text-muted-foreground uppercase tracking-wider mb-3">Pricing</h4>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-600 text-muted-foreground uppercase">Price Range CNY *</label>
-                    <input value={form.priceCny} onChange={e => setF('priceCny', e.target.value)} className="input-field mt-1" placeholder="¥10–20" />
+                    <input value={form.priceCny} onChange={e => setF('priceCny', e.target.value)} className="input-field mt-1" placeholder="\u00A510\u201320" />
                   </div>
                   <div>
                     <label className="text-xs font-600 text-muted-foreground uppercase">MOQ Units</label>
@@ -610,19 +658,18 @@ export default function AdminCatalogPage() {
                   </div>
                   {form.sampleAvailable && (
                     <div className="col-span-2">
-                      <label className="text-xs font-600 text-muted-foreground uppercase">Sample Price ¥ CNY</label>
-                      <input value={form.samplePrice} onChange={e => setF('samplePrice', e.target.value)} className="input-field mt-1" placeholder="e.g. ¥150" />
+                      <label className="text-xs font-600 text-muted-foreground uppercase">Sample Price \u00A5 CNY</label>
+                      <input value={form.samplePrice} onChange={e => setF('samplePrice', e.target.value)} className="input-field mt-1" placeholder="e.g. \u00A5150" />
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* PRODUCT DETAILS */}
               <div>
                 <h4 className="text-xs font-700 text-muted-foreground uppercase tracking-wider mb-3">Product Details</h4>
                 <div className="space-y-3">
                   <div>
-                    <label className="text-xs font-600 text-muted-foreground uppercase">Short Description <span className="text-muted-foreground/60">(1–2 lines, shown on card)</span></label>
+                    <label className="text-xs font-600 text-muted-foreground uppercase">Short Description <span className="text-muted-foreground/60">(1\u20132 lines, shown on card)</span></label>
                     <input value={form.shortDescription} onChange={e => setF('shortDescription', e.target.value)} className="input-field mt-1" placeholder="Brief product summary..." />
                   </div>
                   <div>
@@ -630,7 +677,6 @@ export default function AdminCatalogPage() {
                     <textarea value={form.fullDescription} onChange={e => setF('fullDescription', e.target.value)} rows={3} className="input-field mt-1" placeholder="Detailed product description..." />
                   </div>
 
-                  {/* Key Features */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="text-xs font-600 text-muted-foreground uppercase">Key Features <span className="text-muted-foreground/60">(up to 6)</span></label>
@@ -643,7 +689,7 @@ export default function AdminCatalogPage() {
                     <div className="space-y-2">
                       {form.keyFeatures.map((feat, i) => (
                         <div key={i} className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground w-4 flex-shrink-0">•</span>
+                          <span className="text-xs text-muted-foreground w-4 flex-shrink-0">\u2022</span>
                           <input value={feat} onChange={e => setFeature(i, e.target.value)} className="input-field flex-1 py-1.5 text-sm" placeholder={`Feature ${i + 1}`} />
                           <button type="button" onClick={() => removeFeature(i)} className="w-6 h-6 rounded hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-red-500 flex-shrink-0">
                             <X className="w-3 h-3" />
@@ -653,7 +699,6 @@ export default function AdminCatalogPage() {
                     </div>
                   </div>
 
-                  {/* Specifications */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="text-xs font-600 text-muted-foreground uppercase">Specifications</label>
@@ -681,7 +726,6 @@ export default function AdminCatalogPage() {
                 </div>
               </div>
 
-              {/* PRODUCT SPECIFICATIONS */}
               <div>
                 <h4 className="text-xs font-700 text-muted-foreground uppercase tracking-wider mb-3">Product Specifications</h4>
                 <div className="grid grid-cols-2 gap-3">
@@ -700,11 +744,9 @@ export default function AdminCatalogPage() {
                 </div>
               </div>
 
-              {/* MEDIA */}
               <div>
                 <h4 className="text-xs font-700 text-muted-foreground uppercase tracking-wider mb-3">Media</h4>
 
-                {/* Images */}
                 <div className="mb-3">
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-xs font-600 text-muted-foreground uppercase">Images <span className="text-muted-foreground/60">(up to 8, first = main)</span></label>
@@ -736,7 +778,6 @@ export default function AdminCatalogPage() {
                   )}
                 </div>
 
-                {/* Videos */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-xs font-600 text-muted-foreground uppercase">Videos <span className="text-muted-foreground/60">(up to 2, mp4/mov)</span></label>
@@ -753,7 +794,7 @@ export default function AdminCatalogPage() {
                         <div key={i} className="relative w-24 h-16 rounded-lg overflow-hidden border border-border bg-muted flex items-center justify-center">
                           <video src={vid} className="w-full h-full object-cover" />
                           <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                            <span className="text-white text-lg">▶</span>
+                            <span className="text-white text-lg">\u25B6</span>
                           </div>
                           <button type="button" onClick={() => setF('videos', form.videos.filter((_, idx) => idx !== i))}
                             className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-red-600">
@@ -771,7 +812,6 @@ export default function AdminCatalogPage() {
                 </div>
               </div>
 
-              {/* SETTINGS */}
               <div>
                 <h4 className="text-xs font-700 text-muted-foreground uppercase tracking-wider mb-3">Settings</h4>
                 <div className="space-y-3">
@@ -799,7 +839,6 @@ export default function AdminCatalogPage() {
               </div>
             </div>
 
-            {/* Modal footer */}
             <div className="flex gap-2 px-6 py-4 border-t border-border flex-shrink-0">
               <button onClick={closeModal} className="btn-secondary flex-1 py-2.5 text-sm">Cancel</button>
               <button onClick={handleSave} disabled={saving || !form.name.trim() || !form.priceCny.trim()} className="btn-primary flex-1 py-2.5 text-sm">
@@ -810,7 +849,6 @@ export default function AdminCatalogPage() {
         </div>
       )}
 
-      {/* ── Category Add / Edit Modal ── */}
       {catModalMode && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center overflow-y-auto pt-4 md:pt-8 fade-in" onClick={closeCatModal}>
           <div className="bg-card rounded-2xl w-full max-w-lg flex flex-col mb-4 mx-4" onClick={e => e.stopPropagation()}>
@@ -820,7 +858,6 @@ export default function AdminCatalogPage() {
             </div>
 
             <div className="overflow-y-auto flex-1 px-6 py-4 space-y-5">
-              {/* Name */}
               <div>
                 <label className="text-xs font-600 text-muted-foreground uppercase">Category Name *</label>
                 <input
@@ -831,7 +868,6 @@ export default function AdminCatalogPage() {
                 />
               </div>
 
-              {/* Image */}
               <div>
                 <label className="text-xs font-600 text-muted-foreground uppercase">Category Image</label>
                 <input ref={catImgRef} type="file" accept="image/*" onChange={handleCatImgUpload} className="hidden" />
@@ -856,7 +892,6 @@ export default function AdminCatalogPage() {
                 <p className="text-[11px] text-muted-foreground mt-1">Stored as base64 in localStorage key: catalog-category-image-{'{categoryId}'}</p>
               </div>
 
-              {/* Products checklist */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-600 text-muted-foreground uppercase">Products in this category</label>
@@ -897,7 +932,6 @@ export default function AdminCatalogPage() {
         </div>
       )}
 
-      {/* ── Delete Category Confirmation ── */}
       {deleteCatTarget && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center overflow-y-auto pt-4 md:pt-8 fade-in" onClick={() => setDeleteCatTarget(null)}>
           <div className="bg-card rounded-2xl w-full max-w-sm p-6 mb-4 mx-4" onClick={e => e.stopPropagation()}>
@@ -919,7 +953,6 @@ export default function AdminCatalogPage() {
         </div>
       )}
 
-      {/* Delete confirmation */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center overflow-y-auto pt-4 md:pt-8 fade-in" onClick={() => setDeleteTarget(null)}>
           <div className="bg-card rounded-2xl w-full max-w-sm p-6 mb-4 mx-4" onClick={e => e.stopPropagation()}>

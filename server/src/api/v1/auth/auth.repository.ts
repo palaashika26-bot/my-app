@@ -11,6 +11,12 @@ interface CreateUserData {
   role?: Role;
 }
 
+interface CreateGoogleUserData {
+  email: string;
+  firstName: string;
+  lastName: string;
+}
+
 interface CreateClientData {
   companyName: string;
   gstin?: string | null;
@@ -59,6 +65,26 @@ export const authRepository = {
         lastName: data.lastName,
         phone: data.phone,
         role: data.role ?? Role.CLIENT,
+      },
+    });
+  },
+
+  async createGoogleUser(data: CreateGoogleUserData) {
+    // Create a pre-verified user with no password set (Google users cannot
+    // authenticate via email/password). An empty hash means any password-based
+    // login attempt for this email will fail.
+    const placeholderHash = await import("bcryptjs").then((b) =>
+      b.default.hash(crypto.randomBytes(32).toString("hex"), 10)
+    );
+    return prisma.user.create({
+      data: {
+        email: data.email,
+        passwordHash: placeholderHash,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        role: Role.CLIENT,
+        isEmailVerified: true,
+        isApproved: true,
       },
     });
   },

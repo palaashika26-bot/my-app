@@ -1,5 +1,6 @@
 import { productsRepository } from "./products.repository";
 import { getPagination, buildPaginationMeta } from "../../../utils/pagination";
+import { ApiError } from "../../../utils/ApiError";
 
 interface ProductQuery {
   page?: string;
@@ -27,5 +28,32 @@ export const productsService = {
 
   async getProductById(id: string) {
     return productsRepository.findById(id);
+  },
+
+  async createProduct(data: Record<string, unknown>) {
+    // Auto-generate slug from name if not provided
+    if (!data.slug && data.name) {
+      data.slug = (data.name as string)
+        .toLowerCase()
+        .replace(/\s+/g, "-")
+        .replace(/[^a-z0-9-]/g, "");
+    }
+    return productsRepository.create(data);
+  },
+
+  async updateProduct(id: string, data: Record<string, unknown>) {
+    const existing = await productsRepository.findById(id).catch(() => null);
+    if (!existing) {
+      throw ApiError.notFound("Product not found");
+    }
+    return productsRepository.update(id, data);
+  },
+
+  async deleteProduct(id: string) {
+    const existing = await productsRepository.findById(id).catch(() => null);
+    if (!existing) {
+      throw ApiError.notFound("Product not found");
+    }
+    return productsRepository.softDelete(id);
   },
 };

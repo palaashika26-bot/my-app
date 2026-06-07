@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   login,
+  googleLogin,
   register,
   registerClient,
   verifyEmail,
@@ -12,6 +13,7 @@ import {
 } from "./auth.controller";
 import {
   loginSchema,
+  googleLoginSchema,
   registerSchema,
   registerClientSchema,
   resendVerificationSchema,
@@ -28,6 +30,9 @@ router.use(authLimiter);
 
 // POST /api/v1/auth/login
 router.post("/login", validate(loginSchema), asyncHandler(login));
+
+// POST /api/v1/auth/google  (Google Sign-In with ID token)
+router.post("/google", validate(googleLoginSchema), asyncHandler(googleLogin));
 
 // POST /api/v1/auth/register  (legacy / admin-created accounts)
 router.post("/register", validate(registerSchema), asyncHandler(register));

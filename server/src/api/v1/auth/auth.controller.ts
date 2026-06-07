@@ -3,7 +3,7 @@ import { authService } from "./auth.service";
 import { ApiResponse } from "../../../utils/ApiResponse";
 import { ApiError } from "../../../utils/ApiError";
 import config from "../../../config/env";
-import { RegisterClientInput } from "./auth.schema";
+import { RegisterClientInput, GoogleLoginInput } from "./auth.schema";
 
 const REFRESH_COOKIE_OPTIONS = {
   httpOnly: true,
@@ -21,6 +21,16 @@ export const login = async (req: Request, res: Response) => {
   res.cookie("refreshToken", refreshToken, REFRESH_COOKIE_OPTIONS);
 
   return ApiResponse.success(res, { user, accessToken }, "Login successful");
+};
+
+export const googleLogin = async (req: Request, res: Response) => {
+  const { credential } = req.body as GoogleLoginInput;
+
+  const { user, accessToken, refreshToken } = await authService.googleLogin(credential);
+
+  res.cookie("refreshToken", refreshToken, REFRESH_COOKIE_OPTIONS);
+
+  return ApiResponse.success(res, { user, accessToken }, "Google login successful");
 };
 
 export const register = async (req: Request, res: Response) => {

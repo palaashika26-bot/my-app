@@ -57,11 +57,16 @@ export const registerClientSchema = z
     path: ["confirmPassword"],
   });
 
+export const googleLoginSchema = z.object({
+  credential: z.string().min(1, "Google credential is required"),
+});
+
 export const resendVerificationSchema = z.object({
   email: z.string().email("Invalid email"),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
+export type GoogleLoginInput = z.infer<typeof googleLoginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type RegisterClientInput = z.infer<typeof registerClientSchema>;
 export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;

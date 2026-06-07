@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+// Each reference image as base64 must not exceed 7 MB (≈5 MB binary equivalent).
+// This catches oversized payloads before they hit the DB and prevents proxy
+// timeouts caused by large request bodies.
+const MAX_BASE64_IMAGE_BYTES = 7_000_000;
+
+function isUnderMaxSize(url: string): boolean {
+  return Buffer.byteLength(url, "utf8") <= MAX_BASE64_IMAGE_BYTES;
+}
+
 const requestItemBaseObject = z.object({
   type: z.enum(["CATALOG", "CUSTOM"]),
   productId: z.string().uuid("Invalid product ID").optional(),
@@ -21,7 +30,12 @@ export const requestItemSchema = requestItemBaseObject.refine(catalogRefine, {
 });
 
 const requestItemWithImagesBase = requestItemBaseObject.extend({
-  referenceImageUrls: z.array(z.string()).max(5).optional(),
+  referenceImageUrls: z
+    .array(
+      z.string().refine(isUnderMaxSize, "Each image must be under 5 MB after base64 decoding")
+    )
+    .max(5)
+    .optional(),
 });
 
 const requestTypeSchema = z.enum(["SOURCING", "QUOTATION", "SAMPLE"]).optional();

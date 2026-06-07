@@ -1,4 +1,6 @@
-import axiosClient from './axiosClient';
+import axiosClient, { uploadClient } from './axiosClient';
+
+// Upload-heavy endpoints (base64 images) use uploadClient with a longer timeout
 
 export interface RequestItemPayload {
   type: 'CATALOG' | 'CUSTOM';
@@ -40,7 +42,7 @@ export interface RespondToCounterItemPayload {
 
 export const requestsApi = {
   createRequest: (data: CreateRequestPayload) =>
-    axiosClient.post('/requests', data),
+    uploadClient.post('/requests', data),
 
   getRequests: (params?: { page?: number; limit?: number; status?: string }, signal?: AbortSignal) =>
     axiosClient.get('/requests', { params, signal }),

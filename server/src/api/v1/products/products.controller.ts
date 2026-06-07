@@ -2,7 +2,9 @@ import { Request, Response } from "express";
 import { parse } from "csv-parse/sync";
 import { productsService } from "./products.service";
 import { ApiResponse } from "../../../utils/ApiResponse";
+import { ApiError } from "../../../utils/ApiError";
 import prisma from "../../../config/prisma";
+import { CreateProductInput, UpdateProductInput } from "./products.schema";
 
 export const getProducts = async (req: Request, res: Response) => {
   const { page, limit, categorySlug, supplierId, search } = req.query as Record<string, string>;
@@ -28,6 +30,25 @@ export const getProductById = async (req: Request, res: Response) => {
   const { id } = req.params;
   const product = await productsService.getProductById(id);
   return ApiResponse.success(res, product, "Product fetched successfully");
+};
+
+export const createProduct = async (req: Request, res: Response) => {
+  const data = req.body as CreateProductInput;
+  const product = await productsService.createProduct(data);
+  return ApiResponse.success(res, product, "Product created successfully", 201);
+};
+
+export const updateProduct = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const data = req.body as UpdateProductInput;
+  const product = await productsService.updateProduct(id, data);
+  return ApiResponse.success(res, product, "Product updated successfully");
+};
+
+export const deleteProduct = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  await productsService.deleteProduct(id);
+  return ApiResponse.success(res, null, "Product deleted successfully");
 };
 
 export const importProductsFromCSV = async (req: Request, res: Response) => {

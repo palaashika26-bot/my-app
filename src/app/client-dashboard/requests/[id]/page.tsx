@@ -255,11 +255,11 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
   // Scroll to bottom on new messages
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
 
-  // Poll messages every 5 seconds
+  // Poll messages every 8 seconds
   useEffect(() => {
     if (!apiRequest) return;
     fetchMessages();
-    const interval = setInterval(fetchMessages, 15000);
+    const interval = setInterval(fetchMessages, 8000);
     return () => clearInterval(interval);
   }, [apiRequest, id]);
 

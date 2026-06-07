@@ -51,14 +51,32 @@ export interface ApiProduct {
   basePrice: string;       // Decimal comes as string from JSON
   currency: string;
   images: string[];
+  videos: string[];
   isActive: boolean;
+  brand?: string | null;
+  sku?: string | null;
+  originCity?: string | null;
+  priceRange?: string | null;
+  sampleAvailable: boolean;
+  samplePrice?: string | null;
+  shortDescription?: string | null;
+  fullDescription?: string | null;
+  keyFeatures: string[];
+  specifications?: { key: string; value: string }[] | null;
+  weight?: string | null;
+  material?: string | null;
+  tags?: string | null;
+  isNew: boolean;
+  onSale: boolean;
+  emoji?: string | null;
+  bgColor?: string | null;
   createdAt: string;
-  supplier: {
+  supplier?: {
     id: string;
     companyName: string;
     city?: string;
-  };
-  category: {
+  } | null;
+  category?: {
     id: string;
     name: string;
     slug: string;
@@ -67,7 +85,7 @@ export interface ApiProduct {
       name: string;
       slug: string;
     } | null;
-  };
+  } | null;
 }
 
 export interface ApiOrder {

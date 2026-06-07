@@ -295,18 +295,6 @@ export default function AdminLogisticsPage() {
         )}
       </div>
 
-      <div className="bg-card rounded-xl border border-border shadow-card p-5 mb-5">
-        <h3 className="font-700 mb-3">Network Map</h3>
-        <div className="aspect-[16/6] rounded-xl bg-gradient-to-br from-[#E8E1F5] via-[#F3EDF9] to-[#E8E1F5] flex items-center justify-center relative overflow-hidden">
-          <div className="absolute inset-0 opacity-30" style={{ backgroundImage: 'radial-gradient(circle at 30% 50%, #06B6D4 0%, transparent 12%), radial-gradient(circle at 70% 50%, #10B981 0%, transparent 12%)' }} />
-          <div className="relative text-center">
-            <div className="flex items-center justify-center gap-2 text-5xl"><span>🇨🇳</span><span className="text-3xl">──▶──</span><span>🇮🇳</span></div>
-            <p className="mt-2 text-sm font-600 text-foreground">{active} shipments • China → India</p>
-            <p className="text-xs text-muted-foreground">Live map integration coming soon</p>
-          </div>
-        </div>
-      </div>
-
       {/* Tracking Table — mock data + localStorage approved shipments */}
       <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
         <div className="overflow-x-auto"><table className="w-full text-sm min-w-[900px]">

@@ -62,6 +62,10 @@ const config = {
   VAPID_PUBLIC_KEY:  process.env.VAPID_PUBLIC_KEY  || "",
   VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY || "",
   VAPID_EMAIL:       process.env.VAPID_EMAIL        || "mailto:noreply@elioswholesale.in",
+
+  // Google OAuth
+  GOOGLE_CLIENT_ID:     process.env.GOOGLE_CLIENT_ID     || "",
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || "",
 };
 
 export default config;

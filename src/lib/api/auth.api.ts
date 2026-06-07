@@ -35,4 +35,7 @@ export const authApi = {
 
   acceptInvite: (data: { token: string; password: string }) =>
     axiosClient.post<ApiResponse<null>>('/auth/accept-invite', data),
+
+  googleLogin: (credential: string) =>
+    axiosClient.post<ApiResponse<AuthResponse>>('/auth/google', { credential }),
 };

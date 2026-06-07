@@ -135,9 +135,6 @@ model User {
   verifiedRequestPayments RequestPayment[] @relation("RequestPaymentVerifiedBy")
   pushSubscriptions  PushSubscription[]
   notifications      Notification[]
-
-  @@index([email])
-  @@map("users")
 }
 
 model PushSubscription {
@@ -221,6 +218,7 @@ model Supplier {
   products   Product[]
   orderItems OrderItem[]
 
+  @@index([country])
   @@map("suppliers")
 }
 
@@ -251,7 +249,28 @@ model Product {
   supplierId  String?
   categoryId  String?
   images      String[]
+  videos      String[]
   isActive    Boolean   @default(true)
+
+  // Admin catalog management fields
+  brand           String?
+  sku             String?
+  originCity      String?      // Chinese city of origin (Yiwu, Guangzhou, etc.)
+  priceRange      String?      // Display price range string (e.g. "¥35–55")
+  sampleAvailable Boolean     @default(false)
+  samplePrice     Decimal?    @db.Decimal(12, 2)
+  shortDescription String?
+  fullDescription  String?
+  keyFeatures     String[]
+  specifications  Json?        // Array of { key: string, value: string }
+  weight          String?
+  material        String?
+  tags            String?
+  isNew           Boolean     @default(false)
+  onSale          Boolean     @default(false)
+  emoji           String?
+  bgColor         String?      // Background color class for UI display
+
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
@@ -264,6 +283,8 @@ model Product {
 
   @@index([slug])
   @@index([supplierId])
+  @@index([categoryId])
+  @@index([isActive])
   @@map("products")
 }
 
@@ -507,6 +528,7 @@ model SourcingRequest {
   @@index([requestNumber])
   @@index([status])
   @@index([createdAt])
+  @@index([clientId, status])
   @@map("sourcing_requests")
 }
 
@@ -536,6 +558,7 @@ model RequestItem {
   product Product?        @relation(fields: [productId], references: [id])
 
   @@index([requestId])
+  @@index([status])
   @@map("request_items")
 }
 

@@ -5,7 +5,7 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
   },
-  productionBrowserSourceMaps: true,
+  productionBrowserSourceMaps: process.env.NODE_ENV === 'development',
   distDir: process.env.DIST_DIR || '.next',
 
   allowedDevOrigins: [
@@ -30,7 +30,7 @@ const nextConfig = {
   images: {
     remotePatterns: imageHosts,
     domains: ['localhost'],
-    minimumCacheTTL: 60,
+    minimumCacheTTL: 86400,
     qualities: [75, 85],
   },
 

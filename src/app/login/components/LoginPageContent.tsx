@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { useForm } from 'react-hook-form';
 import { Eye, EyeOff, ArrowRight, Loader2, Globe } from 'lucide-react';
@@ -9,8 +9,38 @@ import { eliosWholesale } from '@/lib/brandAssets';
 import { authApi } from '@/lib/api/auth.api';
 import { TOKEN_KEY } from '@/lib/api/axiosClient';
 import { authenticateStaff, touchStaffLastLogin } from '@/lib/staffStore';
+import { useGoogleLogin } from '@react-oauth/google';
 import type { StaffRoleId } from '@/lib/staffRoles';
 
+function GoogleSignInButton({ onSuccess, isLoading }: { onSuccess: (credential: string) => void; isLoading: boolean }) {
+  const login = useGoogleLogin({
+    flow: 'implicit',
+    scope: 'openid email profile',
+    onSuccess: (response) => onSuccess((response as any).id_token ?? ''),
+    onError: () => { /* handled by parent */ },
+  });
+
+  return (
+    <button
+      type="button"
+      onClick={() => login()}
+      disabled={isLoading}
+      className="w-full flex items-center justify-center gap-3 border border-border bg-white rounded-xl shadow-sm py-2.5 text-sm font-600 text-foreground hover:bg-muted transition-colors disabled:opacity-60"
+    >
+      {isLoading ? (
+        <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+      ) : (
+        <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
+          <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+          <path fill="#FBBC05" d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"/>
+          <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z"/>
+        </svg>
+      )}
+      {isLoading ? 'Signing in...' : 'Continue with Google'}
+    </button>
+  );
+}
 
 interface LoginFormValues {
   email: string;
@@ -27,7 +57,7 @@ function getRedirectPath(role: string, staffRoleId?: StaffRoleId | null): string
   return '/client-dashboard';
 }
 
-function LoginForm() {
+function LoginForm({ googleEnabled = false }: { googleEnabled?: boolean }) {
   const { addToast } = useToast();
   const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
@@ -35,6 +65,7 @@ function LoginForm() {
   const [needsVerification, setNeedsVerification] = useState(false);
   const [unverifiedEmail, setUnverifiedEmail] = useState('');
   const [isResending, setIsResending] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   // Wipe any stale staff localStorage keys so getStaffRegistry() re-seeds fresh
   useEffect(() => {
     localStorage.removeItem('bk_staff_registry');
@@ -159,11 +190,66 @@ function LoginForm() {
     }
   }
 
-  function handleGoogleSignIn() {
+  async function handleGoogleSuccess(credential: string) {
+    setIsGoogleLoading(true);
+    try {
+      const res = await authApi.googleLogin(credential);
+      const { user: apiUser, accessToken } = res.data.data;
+
+      localStorage.setItem(TOKEN_KEY, accessToken);
+
+      const frontendRole =
+        apiUser.role === 'ADMIN' ? 'admin' :
+        apiUser.role === 'STAFF' ? 'staff' :
+        'client';
+
+      const staffRoleId: StaffRoleId | undefined =
+        apiUser.role === 'STAFF'
+          ? ((apiUser.staffRole as StaffRoleId | undefined) ?? 'warehouse-qc')
+          : undefined;
+
+      login(frontendRole, {
+        userId: apiUser.id,
+        name: `${apiUser.firstName} ${apiUser.lastName}`,
+        firstName: apiUser.firstName,
+        lastName: apiUser.lastName,
+        email: apiUser.email,
+        phone: apiUser.phone,
+        company: apiUser.client?.companyName,
+        clientCity: apiUser.client?.city,
+        clientState: apiUser.client?.state,
+        clientGstin: apiUser.client?.gstin,
+        clientAddress: apiUser.client?.addressLine1,
+        clientPincode: apiUser.client?.pincode,
+        ...(staffRoleId && { staffRoleId }),
+      });
+
+      addToast({
+        type: 'success',
+        title: `Welcome back, ${apiUser.firstName}!`,
+        description: 'Redirecting...',
+      });
+
+      window.location.href = getRedirectPath(apiUser.role, staffRoleId);
+    } catch (err: unknown) {
+      const errMsg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+        || 'Google Sign-In failed. Please try again.';
+      addToast({
+        type: 'error',
+        title: 'Google Sign-In failed',
+        description: errMsg,
+      });
+    } finally {
+      setIsGoogleLoading(false);
+    }
+  }
+
+  function handleGoogleError() {
     addToast({
-      type: 'info',
-      title: 'Google Sign-In coming soon',
-      description: 'This feature is not available yet.',
+      type: 'error',
+      title: 'Google Sign-In failed',
+      description: 'Something went wrong. Please try again.',
     });
   }
 
@@ -280,19 +366,9 @@ function LoginForm() {
 
           <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
             {/* Google Sign In */}
-            <button
-              type="button"
-              onClick={handleGoogleSignIn}
-              className="w-full flex items-center justify-center gap-3 border border-border bg-white rounded-xl shadow-sm py-2.5 text-sm font-600 text-foreground hover:bg-muted transition-colors"
-            >
-              <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
-                <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
-                <path fill="#FBBC05" d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"/>
-                <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z"/>
-              </svg>
-              Continue with Google
-            </button>
+            {googleEnabled && (
+              <GoogleSignInButton onSuccess={handleGoogleSuccess} isLoading={isGoogleLoading} />
+            )}
 
             {/* OR divider */}
             <div className="relative flex items-center">
@@ -419,6 +495,6 @@ function LoginForm() {
   );
 }
 
-export default function LoginPageContent() {
-  return <LoginForm />;
+export default function LoginPageContent({ googleEnabled }: { googleEnabled?: boolean }) {
+  return <LoginForm googleEnabled={googleEnabled} />;
 }

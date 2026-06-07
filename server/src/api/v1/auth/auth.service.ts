@@ -1,12 +1,22 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { OAuth2Client } from "google-auth-library";
 import config from "../../../config/env";
 import { authRepository } from "./auth.repository";
 import { ApiError } from "../../../utils/ApiError";
 import { RegisterInput, RegisterClientInput } from "./auth.schema";
 import { sendEmail } from "../../../config/email";
 import { verificationEmailTemplate } from "../../../templates/verificationEmail";
+
+// Google OAuth client — lazy-init so a missing CLIENT_ID in dev does not crash
+let googleClient: OAuth2Client | null = null;
+function getGoogleClient(): OAuth2Client {
+  if (!googleClient) {
+    googleClient = new OAuth2Client(config.GOOGLE_CLIENT_ID, config.GOOGLE_CLIENT_SECRET);
+  }
+  return googleClient;
+}
 
 // ── Token helpers ─────────────────────────────────────────────────────────────
 
@@ -69,6 +79,65 @@ export const authService = {
     await authRepository.saveRefreshToken(user.id, refreshToken, expiresAt);
 
     // 7. Return safe user + tokens
+    return {
+      user: sanitizeUser(user as unknown as Record<string, unknown>),
+      accessToken,
+      refreshToken,
+    };
+  },
+
+  async googleLogin(credential: string) {
+    if (!config.GOOGLE_CLIENT_ID) {
+      throw new ApiError(501, "Google Sign-In is not configured");
+    }
+
+    // 1. Verify the Google ID token
+    const client = getGoogleClient();
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: config.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    if (!payload || !payload.email) {
+      throw new ApiError(400, "Invalid Google credential");
+    }
+
+    const googleEmail = payload.email;
+    const googleName = payload.name || payload.given_name || "Google User";
+    const googlePicture = payload.picture;
+
+    // 2. Check if user exists
+    let user = await authRepository.findUserByEmail(googleEmail);
+
+    if (user) {
+      // 3. Existing user — block deactivated accounts
+      if (user.deletedAt) throw new ApiError(401, "Account deactivated");
+      if (!user.isActive) throw new ApiError(401, "Account deactivated");
+    } else {
+      // 4. New user — create a CLIENT account pre-verified
+      const nameParts = googleName.split(" ");
+      const firstName = nameParts[0] || "Google";
+      const lastName = nameParts.slice(1).join(" ") || "User";
+
+      const created = await authRepository.createGoogleUser({
+        email: googleEmail,
+        firstName,
+        lastName,
+      });
+
+      await authRepository.createClientForUser(created.id, `${firstName} ${lastName}`);
+
+      user = await authRepository.findUserByEmail(googleEmail);
+      if (!user) throw new ApiError(500, "Failed to create user");
+    }
+
+    // 5. Generate tokens
+    const accessToken = generateAccessToken(user.id, user.role);
+    const refreshToken = generateRefreshToken(user.id);
+
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await authRepository.saveRefreshToken(user.id, refreshToken, expiresAt);
+
     return {
       user: sanitizeUser(user as unknown as Record<string, unknown>),
       accessToken,
