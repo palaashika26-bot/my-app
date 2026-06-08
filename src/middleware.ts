@@ -23,11 +23,22 @@ interface AccessPayload {
   exp?: number;
 }
 
-// Verifies the HMAC-SHA256 signature and expiry. Returns the payload only when
-// the signature is valid and the token is unexpired; otherwise null.
-async function verifyAccessToken(token: string, secret: string): Promise<AccessPayload | null> {
+type VerifyResult =
+  | { status: 'valid' | 'expired'; payload: AccessPayload }
+  | { status: 'invalid' };
+
+// Verifies the HMAC-SHA256 signature, then checks expiry. A correctly-signed but
+// expired token returns 'expired' (NOT 'invalid') so the caller can let the
+// request through and allow the client to silently refresh the access token via
+// the httpOnly `refreshToken` cookie. That refresh cookie lives on the API
+// origin (the backend), so it is invisible to this Edge middleware — the
+// middleware therefore cannot refresh on its own and must defer to the client.
+// The backend stays the real gate: it re-validates every API call and rejects
+// truly-expired tokens, and the client redirects to /login if the refresh token
+// is also gone. A bad signature or malformed token returns 'invalid'.
+async function verifyAccessToken(token: string, secret: string): Promise<VerifyResult> {
   const parts = token.split('.');
-  if (parts.length !== 3) return null;
+  if (parts.length !== 3) return { status: 'invalid' };
   const [headerB64, payloadB64, sigB64] = parts;
   try {
     const key = await crypto.subtle.importKey(
@@ -43,13 +54,15 @@ async function verifyAccessToken(token: string, secret: string): Promise<AccessP
       base64UrlToBytes(sigB64),
       new TextEncoder().encode(`${headerB64}.${payloadB64}`),
     );
-    if (!valid) return null;
+    if (!valid) return { status: 'invalid' };
 
     const payload = JSON.parse(new TextDecoder().decode(base64UrlToBytes(payloadB64))) as AccessPayload;
-    if (typeof payload.exp === 'number' && Date.now() >= payload.exp * 1000) return null;
-    return payload;
+    if (typeof payload.exp === 'number' && Date.now() >= payload.exp * 1000) {
+      return { status: 'expired', payload };
+    }
+    return { status: 'valid', payload };
   } catch {
-    return null;
+    return { status: 'invalid' };
   }
 }
 
@@ -78,10 +91,18 @@ export async function middleware(request: NextRequest) {
   }
 
   const token = request.cookies.get(ACCESS_TOKEN_COOKIE)?.value;
-  const payload = token ? await verifyAccessToken(token, secret) : null;
-  const role = payload?.role ?? null; // 'ADMIN' | 'STAFF' | 'CLIENT' (from the signed JWT)
+  const result: VerifyResult = token
+    ? await verifyAccessToken(token, secret)
+    : { status: 'invalid' };
 
-  // No valid, unexpired, correctly-signed token → not authenticated.
+  // Absent token or a token whose signature doesn't verify → not authenticated.
+  // An 'expired' (but correctly-signed) token is allowed through so the client
+  // can refresh it on load; see verifyAccessToken above.
+  if (result.status === 'invalid') {
+    return redirectToLogin(request, pathname);
+  }
+
+  const role = result.payload.role ?? null; // 'ADMIN' | 'STAFF' | 'CLIENT' (from the signed JWT)
   if (!role) {
     return redirectToLogin(request, pathname);
   }
