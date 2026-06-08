@@ -63,6 +63,16 @@ export const sendQuotationSchema = z.object({
   advanceAmountINR: z.number().positive().optional(),
 });
 
+// Logistics estimate captured with the quotation (Stage 2). All optional/nullable
+// so staff can save partial data or clear a field. pricePerKg arrives as a string
+// from the UI and is coerced to a Decimal in the repository.
+export const logisticsSchema = z.object({
+  weight: z.string().max(100).optional().nullable(),
+  mode: z.string().max(100).optional().nullable(),
+  pricePerKg: z.string().max(50).optional().nullable(),
+  note: z.string().max(2000).optional().nullable(),
+});
+
 export const rejectRequestSchema = z.object({
   reason: z.string().max(500).optional(),
 });
@@ -110,6 +120,7 @@ export const sendMessageSchema = z.object({
 export type CreateRequestInput = z.infer<typeof createRequestSchema>;
 export type CreateRequestInputV2 = z.infer<typeof createRequestSchemaV2>;
 export type SendQuotationInput = z.infer<typeof sendQuotationSchema>;
+export type LogisticsInput = z.infer<typeof logisticsSchema>;
 export type RespondToQuotationInput = z.infer<typeof respondToQuotationSchema>;
 export type RespondToCounterInput = z.infer<typeof respondToCounterSchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;

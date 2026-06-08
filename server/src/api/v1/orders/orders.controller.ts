@@ -4,10 +4,7 @@ import { ApiResponse } from "../../../utils/ApiResponse";
 import { ApiError } from "../../../utils/ApiError";
 import prisma from "../../../config/prisma";
 import { disputesRepository } from "../disputes/disputes.repository";
-import {
-  createNotificationsForAdminAndStaff,
-  createNotificationForClient,
-} from "../disputes/disputes.controller";
+import { notifyUser, notifyAdminsAndStaff } from "../../../utils/notify";
 
 export const getOrders = async (req: Request, res: Response) => {
   const { page, limit } = req.query as Record<string, string>;
@@ -263,7 +260,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
   }).then((o) => {
     if (!o?.client?.userId) return;
     const displayLabel = status; // already a display string
-    createNotificationForClient(o.client.userId, {
+    notifyUser(o.client.userId, {
       type: "order",
       title: `🔄 Order Status Updated — ${o.orderNumber}`,
       message: `Your order status has been updated to: ${displayLabel}`,
@@ -292,6 +289,24 @@ export const updateDeliveryPreference = async (req: Request, res: Response) => {
   }
 
   const order = await ordersService.updateDeliveryPreference(id, deliveryPreference, deliveryAddress);
+
+  // Stage 8 — notify admin + staff of the client's delivery choice so it surfaces
+  // in their bell. Only meaningful when a CLIENT makes the choice.
+  if (req.user?.role === "CLIENT") {
+    const prefLabel = deliveryPreference === "self_pickup" ? "Self Pickup" : "Deliver to Address";
+    const addrText =
+      deliveryPreference !== "self_pickup" && order.deliveryAddress
+        ? ` — ${order.deliveryAddress}`
+        : "";
+    await notifyAdminsAndStaff({
+      type: "order",
+      title: `🚚 Delivery Choice — ${order.orderNumber}`,
+      message: `Client chose "${prefLabel}" for order ${order.orderNumber}.${addrText}`,
+      relatedType: "ORDER",
+      relatedId: id,
+    });
+  }
+
   return ApiResponse.success(res, { deliveryPreference: order.deliveryPreference, deliveryAddress: order.deliveryAddress }, "Delivery preference saved");
 };
 
@@ -434,6 +449,35 @@ export const uploadWarehousePhotos = async (req: Request, res: Response) => {
   }
 
   await ordersService.upsertWarehouseReport(id, updateData);
+
+  // Stage 7 — notify the client (and admin/staff) that new product photos are ready.
+  const orderForNotif = await prisma.order.findUnique({
+    where: { id },
+    select: { orderNumber: true, client: { select: { userId: true } } },
+  });
+  if (orderForNotif) {
+    const orderNumber = orderForNotif.orderNumber;
+    const clientUserId = orderForNotif.client?.userId;
+    await Promise.all([
+      clientUserId
+        ? notifyUser(clientUserId, {
+            type: "order",
+            title: `📸 New Product Photos — ${orderNumber}`,
+            message: `Warehouse uploaded new product photos for order ${orderNumber}. Please review and approve.`,
+            relatedType: "ORDER",
+            relatedId: id,
+          })
+        : Promise.resolve(),
+      notifyAdminsAndStaff({
+        type: "order",
+        title: `📸 Warehouse Photos Uploaded — ${orderNumber}`,
+        message: `New product photos were uploaded for order ${orderNumber}.`,
+        relatedType: "ORDER",
+        relatedId: id,
+      }),
+    ]);
+  }
+
   return ApiResponse.success(res, { photoUrls: merged }, "Photos uploaded");
 };
 
@@ -538,7 +582,7 @@ export const cancelOrder = async (req: Request, res: Response) => {
   });
 
   // Notify all admin and staff
-  await createNotificationsForAdminAndStaff({
+  await notifyAdminsAndStaff({
     type: "ORDER_CANCELLED",
     title: "Order Cancelled",
     message: `Order #${order.orderNumber} has been cancelled by client.`,
@@ -568,6 +612,7 @@ export const getOrderDisputes = async (req: Request, res: Response) => {
       type: true,
       reason: true,
       videoProofUrl: true,
+      attachments: true,
       status: true,
       adminNote: true,
       createdAt: true,
@@ -616,7 +661,7 @@ export const createDispute = async (req: Request, res: Response) => {
     throw ApiError.badRequest("Dispute window of 5 days has passed");
   }
 
-  const { type, reason, videoProofUrl } = req.body;
+  const { type, reason, videoProofUrl, attachments } = req.body;
 
   if (!type || !["REPLACEMENT", "ISSUE"].includes(type)) {
     throw ApiError.badRequest("type must be REPLACEMENT or ISSUE");
@@ -625,7 +670,13 @@ export const createDispute = async (req: Request, res: Response) => {
     throw ApiError.badRequest("reason is required");
   }
 
-  // Video proof is optional — client attaches files via UI but is not required to
+  // Proof files are optional. Accept a real array of data URLs (photos/videos);
+  // keep videoProofUrl for legacy single-file back-compat.
+  const attachmentList: string[] = Array.isArray(attachments)
+    ? attachments.filter(
+        (a: unknown): a is string => typeof a === "string" && a.length > 0
+      )
+    : [];
 
   const dispute = await disputesRepository.create({
     orderId: id,
@@ -633,6 +684,7 @@ export const createDispute = async (req: Request, res: Response) => {
     type,
     reason: reason.trim(),
     videoProofUrl: videoProofUrl ?? undefined,
+    attachments: attachmentList,
   });
 
   const notifType =
@@ -641,7 +693,7 @@ export const createDispute = async (req: Request, res: Response) => {
     type === "REPLACEMENT" ? "Replacement Request" : "Issue Reported";
   const notifMsg = `Client raised a ${type === "REPLACEMENT" ? "Replacement" : "Issue"} request on Order #${order.orderNumber}`;
 
-  await createNotificationsForAdminAndStaff({
+  await notifyAdminsAndStaff({
     type: notifType,
     title: notifTitle,
     message: notifMsg,

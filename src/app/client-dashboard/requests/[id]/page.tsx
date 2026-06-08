@@ -115,6 +115,15 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
 
   function applyApiRequest(req: any) {
     setApiRequest(req);
+    // Hydrate the persisted Stage 2 logistics estimate (replaces localStorage).
+    if (req.logisticsWeight != null || req.logisticsMode != null || req.logisticsPricePerKg != null || req.logisticsNote != null) {
+      setLogistics({
+        weight: req.logisticsWeight ?? '',
+        mode: req.logisticsMode ?? '',
+        pricePerKg: req.logisticsPricePerKg != null ? String(req.logisticsPricePerKg) : '',
+        note: req.logisticsNote ?? '',
+      });
+    }
     const apiLineItems: RequestLineItem[] = (req.items ?? []).map((item: any) => ({
       id: item.id,
       name: item.productName,
@@ -204,11 +213,6 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
       fetchPayments(abortController.signal);
     };
     window.addEventListener('focus', onFocus);
-
-    const savedLogistics = localStorage.getItem(`logistics-estimate-${id}`);
-    if (savedLogistics) {
-      try { setLogistics(JSON.parse(savedLogistics)); } catch {}
-    }
 
     return () => {
       abortController.abort();

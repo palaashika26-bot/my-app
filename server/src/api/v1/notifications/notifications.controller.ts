@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { notificationsService } from "./notifications.service";
 import { ApiResponse } from "../../../utils/ApiResponse";
 import { ApiError } from "../../../utils/ApiError";
+import prisma from "../../../config/prisma";
 
 export const getNotifications = async (req: Request, res: Response) => {
   if (!req.user) throw ApiError.unauthorized();
@@ -14,11 +15,24 @@ export const getNotifications = async (req: Request, res: Response) => {
   return ApiResponse.success(res, notifications, "Notifications fetched");
 };
 
-// No-op — in a future phase these would update a real Notification row
-export const markAsRead = async (_req: Request, res: Response) => {
+// Mark a single persisted notification as read. Scoped to the caller's own rows.
+// Synthetic/derived ids (e.g. `ord-…`) simply match nothing → count 0, no error,
+// so the bell's derived items degrade gracefully.
+export const markAsRead = async (req: Request, res: Response) => {
+  if (!req.user) throw ApiError.unauthorized();
+  const { id } = req.params;
+  await prisma.notification.updateMany({
+    where: { id, userId: req.user.userId },
+    data: { read: true },
+  });
   return ApiResponse.success(res, null, "Marked as read");
 };
 
-export const markAllAsRead = async (_req: Request, res: Response) => {
+export const markAllAsRead = async (req: Request, res: Response) => {
+  if (!req.user) throw ApiError.unauthorized();
+  await prisma.notification.updateMany({
+    where: { userId: req.user.userId, read: false },
+    data: { read: true },
+  });
   return ApiResponse.success(res, null, "All marked as read");
 };

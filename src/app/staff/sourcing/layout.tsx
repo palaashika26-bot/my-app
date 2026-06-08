@@ -105,7 +105,7 @@ export default function StaffSourcingLayout({ children }: { children: React.Reac
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const unreadCount = notifs.filter((n) => !readIds.has(n.id)).length;
+  const unreadCount = notifs.filter((n) => !readIds.has(n.id) && !n.read).length;
 
   function openNotifs() {
     const opening = !notifOpen;
@@ -257,7 +257,7 @@ export default function StaffSourcingLayout({ children }: { children: React.Reac
                     <p className="px-4 py-4 text-sm text-muted-foreground">No notifications</p>
                   ) : (
                     notifs.map((n) => {
-                      const isUnread = !readIds.has(n.id);
+                      const isUnread = !readIds.has(n.id) && !n.read;
                       const href =
                         n.relatedType === 'ORDER' || n.title?.includes('Order')
                           ? `/staff/sourcing/orders/${n.relatedId}`

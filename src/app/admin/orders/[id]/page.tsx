@@ -60,19 +60,52 @@ async function apiFetch(path: string, options: RequestInit = {}) {
   });
 }
 
+// Canonical shipment stages — value is the backend snake_case key, label is shown in the UI.
+const STAGE_DISPLAY: Record<string, string> = {
+  order_placed: 'Order Placed',
+  payment_confirmed: 'Payment Confirmed',
+  sourcing: 'Sourcing',
+  at_china_warehouse: 'At China Warehouse',
+  china_consolidation_warehouse: 'China Consolidation Warehouse',
+  repacking_warehouse: 'Repacking Warehouse',
+  shipped_from_china: 'Shipped from China',
+  in_transit: 'In Transit',
+  arrived_india_warehouse: 'Arrived India Warehouse',
+  out_for_delivery: 'Out for Delivery',
+  completed: 'Completed',
+};
+
+// Backend-persisted tracking via the /api/tracking/[orderId] BFF → Express /tracking/:orderId.
+// NOTE: orderId MUST be the Order UUID (DB id), not the public orderNumber.
 async function getTrackingUpdates(orderId: string) {
-  const raw = typeof window !== 'undefined' ? localStorage.getItem(`tracking-updates-${orderId}`) : null;
-  return raw ? JSON.parse(raw) : [];
+  try {
+    const res = await apiFetch(`/api/tracking/${orderId}`);
+    if (!res.ok) return [];
+    const json = await res.json();
+    const rows: any[] = json?.data ?? [];
+    return rows
+      .map((r) => ({
+        id: r.id,
+        location: STAGE_DISPLAY[r.stage] ?? r.stage ?? 'Update',
+        message: r.statusNote ?? '',
+        stage: '',
+        addedBy: 'Elios Team',
+        addedByRole: 'Sourcing & Logistics',
+        timestamp: r.updatedAt ?? new Date().toISOString(),
+      }))
+      .reverse(); // backend returns oldest→newest; show newest first
+  } catch {
+    return [];
+  }
 }
 
-async function addTrackingUpdate(orderId: string, update: any) {
-  const existing = JSON.parse(
-    (typeof window !== 'undefined' ? localStorage.getItem(`tracking-updates-${orderId}`) : null) || '[]'
-  );
-  const newUpdate = { id: Date.now().toString(), ...update, timestamp: new Date().toISOString() };
-  existing.unshift(newUpdate);
-  localStorage.setItem(`tracking-updates-${orderId}`, JSON.stringify(existing));
-  return newUpdate;
+async function addTrackingUpdate(orderId: string, update: { stage: string; statusNote: string }) {
+  const res = await apiFetch(`/api/tracking/${orderId}`, {
+    method: 'POST',
+    body: JSON.stringify({ stage: update.stage, statusNote: update.statusNote }),
+  });
+  if (!res.ok) throw new Error('Failed to save tracking update');
+  return res.json();
 }
 
 const stages = ['Order Placed','Payment Confirmed','Sourcing','At China Warehouse','China Consolidation Warehouse','Repacking Warehouse','Shipped from China','In Transit','Arrived India Warehouse','Out for Delivery','Completed'];
@@ -402,15 +435,10 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
   }, [id]);
 
   useEffect(() => {
-    const publicId = apiOrder?.orderNumber ?? mockOrder?.orderId;
-    if (!publicId) return;
-    const key = `tracking-updates-${publicId}`;
-    const existing = localStorage.getItem(key);
-    if (!existing && publicId === 'BK-ORD-2024-0268') {
-      localStorage.setItem(key, JSON.stringify(DEMO_SEED_UPDATES));
-    }
-    getTrackingUpdates(publicId).then(setTrackingUpdates);
-  }, [id, apiOrder?.orderNumber, mockOrder?.orderId]);
+    const orderUuid = apiOrder?.id;
+    if (!orderUuid) return;
+    getTrackingUpdates(orderUuid).then(setTrackingUpdates);
+  }, [apiOrder?.id]);
 
   useEffect(() => {
     const saved = localStorage.getItem(`order-assignment-${id}`);
@@ -571,23 +599,30 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
       addToast({ type: 'warning', title: 'Required fields missing', description: 'Please enter both location and status message.' });
       return;
     }
+    if (!trackingStage) {
+      addToast({ type: 'warning', title: 'Stage required', description: 'Please select the shipment stage.' });
+      return;
+    }
+    if (!apiOrder?.id) {
+      addToast({ type: 'warning', title: 'Demo order', description: 'Tracking updates can only be saved on live orders.' });
+      return;
+    }
     setTrackingSubmitting(true);
-    const publicId = apiOrder?.orderNumber ?? mockOrder?.orderId ?? id;
-    const update = { location: trackingLocation.trim(), message: trackingMessage.trim(), stage: trackingStage, addedBy: actorName, addedByRole: role === 'admin' ? 'Admin' : 'Staff' };
-    await addTrackingUpdate(publicId, update);
+    const statusNote = `${trackingLocation.trim()} — ${trackingMessage.trim()}`;
     try {
-      const clientNotifs = JSON.parse(localStorage.getItem('notifications-client') || '[]');
-      clientNotifs.unshift({ id: `tracking-${Date.now()}`, title: 'Shipment Update', message: `${trackingLocation.trim()}: ${trackingMessage.trim()}`, link: `/client-dashboard/orders/${id}`, time: 'Just now', read: false, type: 'order', group: 'Today' });
-      localStorage.setItem('notifications-client', JSON.stringify(clientNotifs));
-    } catch {}
-    const updated = await getTrackingUpdates(publicId);
-    setTrackingUpdates(updated);
-    setTrackingLocation('');
-    setTrackingMessage('');
-    setTrackingStage('');
-    setTrackingSubmitting(false);
-    setTrackingSuccess(true);
-    setTimeout(() => setTrackingSuccess(false), 4000);
+      await addTrackingUpdate(apiOrder.id, { stage: trackingStage, statusNote });
+      const updated = await getTrackingUpdates(apiOrder.id);
+      setTrackingUpdates(updated);
+      setTrackingLocation('');
+      setTrackingMessage('');
+      setTrackingStage('');
+      setTrackingSuccess(true);
+      setTimeout(() => setTrackingSuccess(false), 4000);
+    } catch {
+      addToast({ type: 'error', title: 'Failed to add update', description: 'Could not save the tracking update. Please try again.' });
+    } finally {
+      setTrackingSubmitting(false);
+    }
   }
 
   function assignStaff() {

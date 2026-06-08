@@ -2,6 +2,7 @@ import prisma from "../../../config/prisma";
 import { Prisma } from "@prisma/client";
 import { ApiError } from "../../../utils/ApiError";
 import { generateRequestNumber } from "../../../utils/generateRequestNumber";
+import { notifyUser } from "../../../utils/notify";
 
 // Interactive transactions default to a 5s timeout. On Render the round-trip to
 // the Supabase pooler is slow enough that updating items + request + activity
@@ -141,6 +142,36 @@ export const requestsRepository = {
     return request;
   },
 
+  // Stage 2 — persist the logistics estimate on the request (replaces localStorage).
+  async updateLogistics(
+    id: string,
+    data: {
+      weight?: string | null;
+      mode?: string | null;
+      pricePerKg?: string | null;
+      note?: string | null;
+    }
+  ) {
+    const text = (v?: string | null) =>
+      v == null || `${v}`.trim() === "" ? null : `${v}`.trim();
+    const priceNum =
+      data.pricePerKg != null && `${data.pricePerKg}`.trim() !== ""
+        ? Number(data.pricePerKg)
+        : null;
+
+    return prisma.sourcingRequest.update({
+      where: { id },
+      data: {
+        logisticsWeight: text(data.weight),
+        logisticsMode: text(data.mode),
+        logisticsPricePerKg:
+          priceNum != null && !Number.isNaN(priceNum) ? priceNum : null,
+        logisticsNote: text(data.note),
+      },
+      include: fullInclude,
+    });
+  },
+
   async sendQuotation(
     requestId: string,
     items: { id: string; quotedRMB: number }[],
@@ -188,7 +219,7 @@ export const requestsRepository = {
   },
 
   async approveRequest(requestId: string, staffId: string, isAutoConverted = false) {
-    return runTxn(async (tx) => {
+    const result = await runTxn(async (tx) => {
       const request = await tx.sourcingRequest.findUnique({
         where: { id: requestId },
         include: {
@@ -265,6 +296,22 @@ export const requestsRepository = {
 
       return { request: updatedRequest, order };
     });
+
+    // Stage 5 — the order now exists. Notify the client in-app that their request
+    // converted to an order. Runs post-commit so a rolled-back txn writes nothing.
+    // No order status change here (conversion keeps the order at CONFIRMED).
+    const clientUserId = (result.request as any).client?.userId as string | undefined;
+    if (clientUserId) {
+      await notifyUser(clientUserId, {
+        type: "order",
+        title: `🎉 Order Created — ${result.order.orderNumber}`,
+        message: `Your request ${result.request.requestNumber} has been converted to order ${result.order.orderNumber}. Sourcing will begin shortly.`,
+        relatedType: "ORDER",
+        relatedId: result.order.id,
+      }).catch(() => {});
+    }
+
+    return result;
   },
 
   async rejectRequest(requestId: string, staffId: string, reason?: string) {

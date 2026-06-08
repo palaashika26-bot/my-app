@@ -134,7 +134,7 @@ export default function StaffWarehouseLayout({ children }: { children: React.Rea
     }
   }
 
-  const unreadCount = notifs.filter((n) => !readIds.has(n.id)).length;
+  const unreadCount = notifs.filter((n) => !readIds.has(n.id) && !n.read).length;
 
   function openNotifs() {
     const opening = !notifOpen;
@@ -304,7 +304,7 @@ export default function StaffWarehouseLayout({ children }: { children: React.Rea
                     <p className="px-4 py-4 text-sm text-muted-foreground">No notifications</p>
                   ) : (
                     notifs.map((n) => {
-                      const isUnread = !readIds.has(n.id);
+                      const isUnread = !readIds.has(n.id) && !n.read;
                       const href = n.relatedType === 'ORDER'
                         ? `/staff/warehouse/orders/${n.relatedId}`
                         : '/staff/warehouse';

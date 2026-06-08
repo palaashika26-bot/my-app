@@ -533,6 +533,12 @@ model SourcingRequest {
   notes            String?
   referenceNote    String?
   staffNotes       String?
+  // Logistics estimate captured with the quotation (Stage 2). Request-level,
+  // nullable — persisted here instead of browser localStorage.
+  logisticsWeight     String?
+  logisticsMode       String?
+  logisticsPricePerKg Decimal? @db.Decimal(12, 2)
+  logisticsNote       String?
   quotedAt         DateTime?
   approvedAt       DateTime?
   rejectedAt       DateTime?
@@ -646,6 +652,9 @@ model Dispute {
   type          DisputeType
   reason        String
   videoProofUrl String?
+  // Multiple photo/video proof attachments (data URLs). Replaces packing many
+  // files into the single videoProofUrl; legacy rows keep using videoProofUrl.
+  attachments   String[]
   status        DisputeStatus @default(OPEN)
   adminNote     String?
   createdAt     DateTime      @default(now())

@@ -3,51 +3,7 @@ import { disputesRepository } from "./disputes.repository";
 import { ApiResponse } from "../../../utils/ApiResponse";
 import { ApiError } from "../../../utils/ApiError";
 import prisma from "../../../config/prisma";
-
-async function createNotificationsForAdminAndStaff(data: {
-  type: string;
-  title: string;
-  message: string;
-  relatedType: string;
-  relatedId: string;
-}) {
-  const recipients = await prisma.user.findMany({
-    where: { role: { in: ["ADMIN", "STAFF"] }, isActive: true },
-    select: { id: true },
-  });
-  await prisma.notification.createMany({
-    data: recipients.map((u) => ({
-      userId: u.id,
-      type: data.type,
-      title: data.title,
-      message: data.message,
-      relatedType: data.relatedType,
-      relatedId: data.relatedId,
-    })),
-  });
-}
-
-async function createNotificationForClient(
-  clientUserId: string,
-  data: {
-    type: string;
-    title: string;
-    message: string;
-    relatedType: string;
-    relatedId: string;
-  }
-) {
-  await prisma.notification.create({
-    data: {
-      userId: clientUserId,
-      type: data.type,
-      title: data.title,
-      message: data.message,
-      relatedType: data.relatedType,
-      relatedId: data.relatedId,
-    },
-  });
-}
+import { notifyUser } from "../../../utils/notify";
 
 export const getAllDisputes = async (req: Request, res: Response) => {
   if (req.user?.role === "CLIENT") throw ApiError.forbidden("Clients cannot view all disputes");
@@ -101,7 +57,7 @@ export const updateDisputeStatus = async (req: Request, res: Response) => {
         : status === "RESOLVED"
         ? "has been resolved"
         : "has been rejected";
-    await createNotificationForClient(clientUser.id, {
+    await notifyUser(clientUser.id, {
       type: "DISPUTE_UPDATED",
       title: `${dispute.type === "REPLACEMENT" ? "Replacement" : "Issue"} Request Update`,
       message: `Your ${typeLabel} request on Order #${dispute.order.orderNumber} ${statusLabel}.${adminNote ? ` Note: ${adminNote}` : ""}`,
@@ -118,5 +74,3 @@ export const getOpenDisputeCount = async (req: Request, res: Response) => {
   const count = await disputesRepository.countOpen();
   return ApiResponse.success(res, { count }, "Open dispute count fetched");
 };
-
-export { createNotificationsForAdminAndStaff, createNotificationForClient };

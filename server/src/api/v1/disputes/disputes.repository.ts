@@ -8,6 +8,7 @@ export const disputesRepository = {
     type: "REPLACEMENT" | "ISSUE";
     reason: string;
     videoProofUrl?: string;
+    attachments?: string[];
   }) {
     return prisma.dispute.create({ data: data as any });
   },

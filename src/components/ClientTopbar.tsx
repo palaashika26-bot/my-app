@@ -51,7 +51,7 @@ export default function ClientTopbar({ onMenuOpen }: ClientTopbarProps) {
   const displayEmail = user?.email ?? '';
   const displayInitials = initialsFromName(displayName);
 
-  const unreadCount = notifications.filter((n) => !readIds.has(n.id)).length;
+  const unreadCount = notifications.filter((n) => !readIds.has(n.id) && !n.read).length;
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -192,7 +192,7 @@ export default function ClientTopbar({ onMenuOpen }: ClientTopbarProps) {
                   {notifications.length === 0 ? (
                     <p className="px-4 py-4 text-sm text-muted-foreground">No notifications yet</p>
                   ) : notifications.map((notif) => {
-                    const isUnread = !readIds.has(notif.id);
+                    const isUnread = !readIds.has(notif.id) && !notif.read;
                     const href =
                       notif.relatedType === 'ORDER'
                         ? `/client-dashboard/orders/${notif.relatedId}`

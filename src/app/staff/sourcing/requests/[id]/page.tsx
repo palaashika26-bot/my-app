@@ -114,6 +114,14 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
         const req = r.data?.data;
         if (req) {
           setApiRequest(req);
+          // Hydrate the Stage 2 logistics estimate from the persisted request.
+          if (req.logisticsWeight != null) setLogisticsWeight(req.logisticsWeight);
+          if (req.logisticsMode != null) setLogisticsMode(req.logisticsMode);
+          if (req.logisticsPricePerKg != null) setLogisticsPricePerKg(String(req.logisticsPricePerKg));
+          if (req.logisticsNote != null) setLogisticsNote(req.logisticsNote);
+          if (req.logisticsWeight != null || req.logisticsMode != null || req.logisticsPricePerKg != null || req.logisticsNote != null) {
+            setLogisticsSaved(true);
+          }
           const apiLineItems: RequestLineItem[] = (req.items ?? []).map((item: any) => ({
             id: item.id,
             name: item.productName,
@@ -190,17 +198,6 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
 
   useEffect(() => {
     fetchRequest();
-    const savedLogistics = localStorage.getItem(`logistics-estimate-${id}`);
-    if (savedLogistics) {
-      try {
-        const l = JSON.parse(savedLogistics);
-        setLogisticsWeight(l.weight ?? '');
-        setLogisticsMode(l.mode ?? 'Standard Air');
-        setLogisticsPricePerKg(l.pricePerKg ?? '');
-        setLogisticsNote(l.note ?? DEFAULT_LOGISTICS_NOTE);
-        setLogisticsSaved(true);
-      } catch {}
-    }
   }, [id]);
 
   if (!apiLoading && !apiRequest && !mockReq) return notFound();
@@ -407,15 +404,25 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
     addToast({ type: 'info', title: 'Info requested from client' });
   }
 
-  function saveLogistics() {
-    localStorage.setItem(`logistics-estimate-${id}`, JSON.stringify({
-      weight: logisticsWeight,
-      mode: logisticsMode,
-      pricePerKg: logisticsPricePerKg,
-      note: logisticsNote,
-    }));
-    setLogisticsSaved(true);
-    addToast({ type: 'success', title: 'Logistics saved', description: 'Logistics estimate is now visible to client.' });
+  async function saveLogistics() {
+    if (!apiRequest) {
+      // Demo/mock request — no backend row to persist to.
+      setLogisticsSaved(true);
+      addToast({ type: 'success', title: 'Logistics saved' });
+      return;
+    }
+    try {
+      await requestsApi.updateLogistics(id, {
+        weight: logisticsWeight,
+        mode: logisticsMode,
+        pricePerKg: logisticsPricePerKg,
+        note: logisticsNote,
+      });
+      setLogisticsSaved(true);
+      addToast({ type: 'success', title: 'Logistics saved', description: 'Logistics estimate is now visible to client.' });
+    } catch {
+      addToast({ type: 'error', title: 'Save failed', description: 'Could not save the logistics estimate. Please try again.' });
+    }
   }
 
   function postMsg() {

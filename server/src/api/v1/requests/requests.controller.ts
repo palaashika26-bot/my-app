@@ -38,6 +38,12 @@ export const sendQuotation = async (req: Request, res: Response) => {
   return ApiResponse.success(res, request, "Quotation sent successfully");
 };
 
+export const updateLogistics = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const request = await requestsService.updateLogistics(id, req.body);
+  return ApiResponse.success(res, request, "Logistics estimate saved");
+};
+
 export const approveRequest = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await requestsService.approveAndConvert(id, req.user!.userId, req.user!.role);

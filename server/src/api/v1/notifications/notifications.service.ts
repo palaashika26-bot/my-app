@@ -319,11 +319,44 @@ export const notificationsService = {
       }
     }
 
+    // ── Hybrid: merge in real rows from the Notification table ────────────────
+    // The block above derives items on-the-fly (synthetic ids like `ord-…`,
+    // always read:false). Persisted rows written by notify.ts (tracking,
+    // disputes, warehouse, delivery, conversion, …) live in the Notification
+    // table and carry a real uuid id + real read-state. Pull them in so those
+    // stages actually surface in the bell.
+    const dbRows = await prisma.notification.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+    for (const n of dbRows) {
+      notifications.push({
+        id: n.id,
+        title: n.title,
+        message: n.message,
+        type: n.type,
+        relatedType: n.relatedType ?? null,
+        relatedId: n.relatedId ?? null,
+        read: n.read,
+        createdAt: n.createdAt.toISOString(),
+      });
+    }
+
+    // Dedupe by id. Derived synthetic ids are prefixed (`ord-`/`req-`/`inq-`/
+    // `msg-`) so they never collide with table uuids; this just guards against
+    // any accidental repeats. Keep the first occurrence.
+    const byId = new Map<string, (typeof notifications)[number]>();
+    for (const n of notifications) {
+      if (!byId.has(n.id)) byId.set(n.id, n);
+    }
+    const merged = Array.from(byId.values());
+
     // Sort by date desc and cap at limit
-    notifications.sort(
+    merged.sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
 
-    return notifications.slice(0, limit);
+    return merged.slice(0, limit);
   },
 };

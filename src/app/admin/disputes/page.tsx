@@ -14,6 +14,7 @@ interface Dispute {
   type: DisputeType;
   reason: string;
   videoProofUrl: string | null;
+  attachments: string[] | null;
   status: DisputeStatus;
   adminNote: string | null;
   createdAt: string;
@@ -56,6 +57,54 @@ function TypeBadge({ type }: { type: DisputeType }) {
   return type === 'REPLACEMENT'
     ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-600 bg-amber-100 text-amber-800 border border-amber-300"><RefreshCw className="w-3 h-3" /> Replacement</span>
     : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-600 bg-orange-100 text-orange-800 border border-orange-300"><Flag className="w-3 h-3" /> Issue</span>;
+}
+
+// Resolve the list of proof attachments for a dispute.
+// Prefers the new `attachments[]` column; falls back to the legacy single
+// `videoProofUrl` (which older rows may have packed as a JSON array string).
+function getProofUrls(d: Dispute): string[] {
+  if (d.attachments && d.attachments.length > 0) {
+    return d.attachments.filter(a => typeof a === 'string' && a.length > 0);
+  }
+  const v = d.videoProofUrl;
+  if (!v) return [];
+  if (v.startsWith('[')) {
+    try {
+      const arr = JSON.parse(v);
+      if (Array.isArray(arr)) {
+        return arr
+          .map((x) => (typeof x === 'string' ? x : x?.data))
+          .filter((s): s is string => typeof s === 'string' && s.length > 0);
+      }
+    } catch {}
+  }
+  return [v];
+}
+
+function ProofItem({ url, idx }: { url: string; idx: number }) {
+  const isImage = url.startsWith('data:image/') || /\.(png|jpe?g|gif|webp|avif)(\?|$)/i.test(url);
+  const isVideo = url.startsWith('data:video/') || /\.(mp4|webm|mov|m4v|ogg)(\?|$)/i.test(url);
+  if (isImage) {
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer" className="block group">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt={`Attachment ${idx + 1}`} className="w-full h-32 object-cover rounded-xl border border-border group-hover:opacity-90 transition-opacity" />
+      </a>
+    );
+  }
+  if (isVideo) {
+    return <video src={url} controls className="w-full h-32 rounded-xl border border-border bg-black object-cover" />;
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-muted/30 text-sm font-600 hover:bg-muted transition-colors"
+    >
+      <Play className="w-4 h-4 text-[#4A3B52]" /> View attachment {idx + 1}
+    </a>
+  );
 }
 
 const STATUS_TABS: { label: string; value: string }[] = [
@@ -267,19 +316,22 @@ export default function DisputesPage() {
                   <p className="text-sm bg-muted/30 rounded-xl p-4 leading-relaxed">{selected.reason}</p>
                 </div>
 
-                {selected.videoProofUrl && (
-                  <div>
-                    <p className="text-xs font-600 text-muted-foreground mb-1.5">Video Proof</p>
-                    <a
-                      href={selected.videoProofUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-muted/30 text-sm font-600 hover:bg-muted transition-colors"
-                    >
-                      <Play className="w-4 h-4 text-[#4A3B52]" /> View Video Proof
-                    </a>
-                  </div>
-                )}
+                {(() => {
+                  const proofs = getProofUrls(selected);
+                  if (proofs.length === 0) return null;
+                  return (
+                    <div>
+                      <p className="text-xs font-600 text-muted-foreground mb-1.5">
+                        Proof {proofs.length > 1 ? `(${proofs.length} files)` : ''}
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {proofs.map((url, idx) => (
+                          <ProofItem key={idx} url={url} idx={idx} />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {selected.adminNote && (
                   <div>

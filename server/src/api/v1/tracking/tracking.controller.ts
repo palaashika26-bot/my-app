@@ -6,10 +6,7 @@ import {
 } from "./tracking.service";
 import { ordersService } from "../orders/orders.service";
 import prisma from "../../../config/prisma";
-import {
-  createNotificationsForAdminAndStaff,
-  createNotificationForClient,
-} from "../disputes/disputes.controller";
+import { notifyUser, notifyAdminsAndStaff } from "../../../utils/notify";
 
 // ── Stage key → DB enum ────────────────────────────────────────────────────────
 const STAGE_TO_DB_STATUS: Record<string, string> = {
@@ -110,7 +107,7 @@ export const postTrackingUpdate = async (
       await Promise.all([
         // Client: shipment stage update
         clientUserId
-          ? createNotificationForClient(clientUserId, {
+          ? notifyUser(clientUserId, {
               ...notifBase,
               title: `📦 Shipment Update — ${orderNumber}`,
               message: `Your order has reached: ${displayStatus}${noteText}`,
@@ -118,7 +115,7 @@ export const postTrackingUpdate = async (
           : Promise.resolve(),
 
         // Admin + Staff: shipment stage was posted
-        createNotificationsForAdminAndStaff({
+        notifyAdminsAndStaff({
           ...notifBase,
           title: `🔔 Tracking Updated — ${orderNumber}`,
           message: `Stage set to "${displayStatus}"${noteText}`,

@@ -22,9 +22,43 @@ async function apiFetch(path: string, options: RequestInit = {}) {
 
 // ─── Backend-ready tracking functions ─────────────────────────────────────────
 
+// Canonical shipment stages — value is the backend snake_case key, label is shown in the UI.
+const STAGE_DISPLAY: Record<string, string> = {
+  order_placed: 'Order Placed',
+  payment_confirmed: 'Payment Confirmed',
+  sourcing: 'Sourcing',
+  at_china_warehouse: 'At China Warehouse',
+  china_consolidation_warehouse: 'China Consolidation Warehouse',
+  repacking_warehouse: 'Repacking Warehouse',
+  shipped_from_china: 'Shipped from China',
+  in_transit: 'In Transit',
+  arrived_india_warehouse: 'Arrived India Warehouse',
+  out_for_delivery: 'Out for Delivery',
+  completed: 'Completed',
+};
+
+// Backend-persisted tracking via the /api/tracking/[orderId] BFF (read-only for clients).
+// NOTE: orderId MUST be the Order UUID (DB id), not the public orderNumber.
 async function getTrackingUpdates(orderId: string) {
-  const raw = typeof window !== 'undefined' ? localStorage.getItem(`tracking-updates-${orderId}`) : null;
-  return raw ? JSON.parse(raw) : [];
+  try {
+    const res = await apiFetch(`/api/tracking/${orderId}`);
+    if (!res.ok) return [];
+    const json = await res.json();
+    const rows: any[] = json?.data ?? [];
+    return rows
+      .map((r) => ({
+        id: r.id,
+        location: STAGE_DISPLAY[r.stage] ?? r.stage ?? 'Update',
+        message: r.statusNote ?? '',
+        stage: '',
+        addedBy: 'Elios Team',
+        addedByRole: 'Sourcing & Logistics',
+        timestamp: r.updatedAt ?? new Date().toISOString(),
+      }))
+      .reverse();
+  } catch {
+    return [];
+  }
 }
 import StatusBadge from '@/components/ui/StatusBadge';
 import dynamic from 'next/dynamic';
@@ -370,10 +404,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   // Load tracking updates + seed demo data for BK-ORD-2024-0268
   useEffect(() => {
-    if (!order) return;
-    const key = `tracking-updates-${order.orderId}`;
-    getTrackingUpdates(order.orderId).then(setTrackingUpdates);
-  }, [id, order?.orderId]);
+    if (!order?.id) return;
+    getTrackingUpdates(order.id).then(setTrackingUpdates);
+  }, [order?.id]);
 
   function sendChatMessage() {
     const now = Date.now();
@@ -626,10 +659,11 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     if (replacementSubmitting || !replacementReason.trim()) return;
     setReplacementSubmitting(true);
     try {
-      const videoProofUrl = replacementFiles.length > 0 ? serializeFiles(replacementFiles) : undefined;
+      const attachments = replacementFiles.map(f => f.dataUrl);
+      const videoProofUrl = attachments.length > 0 ? attachments[0] : undefined;
       const res = await apiFetch(`/api/orders/${id}/disputes`, {
         method: 'POST',
-        body: JSON.stringify({ type: 'REPLACEMENT', reason: replacementReason.trim(), videoProofUrl }),
+        body: JSON.stringify({ type: 'REPLACEMENT', reason: replacementReason.trim(), videoProofUrl, attachments }),
       });
       const data = await res.json();
       if (data.success) {
@@ -652,11 +686,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     if (issueSubmitting || !issueType || !issueDescription.trim()) return;
     setIssueSubmitting(true);
     try {
-      const videoProofUrl = issueFiles.length > 0 ? serializeFiles(issueFiles) : undefined;
+      const attachments = issueFiles.map(f => f.dataUrl);
+      const videoProofUrl = attachments.length > 0 ? attachments[0] : undefined;
       const reason = `${issueType}: ${issueDescription.trim()}`;
       const res = await apiFetch(`/api/orders/${id}/disputes`, {
         method: 'POST',
-        body: JSON.stringify({ type: 'ISSUE', reason, videoProofUrl }),
+        body: JSON.stringify({ type: 'ISSUE', reason, videoProofUrl, attachments }),
       });
       const data = await res.json();
       if (data.success) {

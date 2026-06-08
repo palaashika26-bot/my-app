@@ -4,6 +4,7 @@ import {
   getRequests,
   getRequestById,
   sendQuotation,
+  updateLogistics,
   approveRequest,
   rejectRequest,
   cancelRequest,
@@ -19,6 +20,7 @@ import { authorize } from "../../../middleware/authorize";
 import {
   createRequestSchemaV2,
   sendQuotationSchema,
+  logisticsSchema,
   rejectRequestSchema,
   cancelRequestSchema,
   respondToQuotationSchema,
@@ -46,6 +48,15 @@ router.post(
   authorize(["ADMIN", "STAFF"]),
   validate(sendQuotationSchema),
   asyncHandler(sendQuotation)
+);
+
+// PATCH /api/v1/requests/:id/logistics — staff/admin save the Stage 2 logistics estimate
+router.patch(
+  "/:id/logistics",
+  authenticate,
+  authorize(["ADMIN", "STAFF"]),
+  validate(logisticsSchema),
+  asyncHandler(updateLogistics)
 );
 
 router.post(

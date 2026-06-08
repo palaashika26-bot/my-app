@@ -3,8 +3,9 @@ import { ApiError } from "../../../utils/ApiError";
 import { getPagination, buildPaginationMeta } from "../../../utils/pagination";
 import { requestsRepository } from "./requests.repository";
 import { sendEmail } from "../../../config/email";
+import { notifyAdminsAndStaff } from "../../../utils/notify";
 import { quotationEmailTemplate } from "../../../templates/quotationEmail";
-import type { CreateRequestInput, CreateRequestInputV2, SendQuotationInput, RespondToQuotationInput, RespondToCounterInput } from "./requests.schema";
+import type { CreateRequestInput, CreateRequestInputV2, SendQuotationInput, RespondToQuotationInput, RespondToCounterInput, LogisticsInput } from "./requests.schema";
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
@@ -132,6 +133,15 @@ export const requestsService = {
       clientId = client.id;
     }
     return requestsRepository.findById(id, clientId);
+  },
+
+  async updateLogistics(requestId: string, data: LogisticsInput) {
+    const existing = await prisma.sourcingRequest.findUnique({
+      where: { id: requestId },
+      select: { id: true },
+    });
+    if (!existing) throw ApiError.notFound("Request not found");
+    return requestsRepository.updateLogistics(requestId, data);
   },
 
   async sendQuotation(
@@ -263,6 +273,25 @@ export const requestsService = {
       clientUserId,
       data.items
     );
+
+    // In-app bell for admin + staff — every client response (accept / partial /
+    // counter / reject) surfaces in the bell. Emails below stay for accept/counter.
+    const responseLabel: Record<string, string> = {
+      ACCEPTED: "accepted the quotation — awaiting payment",
+      PARTIALLY_ACCEPTED: "partially accepted the quotation — awaiting payment",
+      REVIEWING: "submitted a counter offer — please review",
+      REJECTED: "rejected the quotation",
+    };
+    const label = responseLabel[updated.status];
+    if (label) {
+      await notifyAdminsAndStaff({
+        type: "request",
+        title: `📝 Quotation Response — ${existing.requestNumber}`,
+        message: `${client.companyName} ${label}.`,
+        relatedType: "REQUEST",
+        relatedId: requestId,
+      });
+    }
 
     // Notify staff when client accepts or partially accepts
     if (updated.status === "ACCEPTED" || updated.status === "PARTIALLY_ACCEPTED") {

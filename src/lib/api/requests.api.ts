@@ -28,6 +28,13 @@ export interface SendQuotationPayload {
   advanceAmountINR?: number;
 }
 
+export interface LogisticsPayload {
+  weight?: string | null;
+  mode?: string | null;
+  pricePerKg?: string | null;
+  note?: string | null;
+}
+
 export interface RespondItemPayload {
   id: string;
   response: 'ACCEPTED' | 'REJECTED' | 'COUNTERED';
@@ -52,6 +59,9 @@ export const requestsApi = {
 
   sendQuotation: (id: string, data: SendQuotationPayload) =>
     axiosClient.post(`/requests/${id}/quotation`, data),
+
+  updateLogistics: (id: string, data: LogisticsPayload) =>
+    axiosClient.patch(`/requests/${id}/logistics`, data),
 
   approveRequest: (id: string) =>
     axiosClient.post(`/requests/${id}/approve`),
