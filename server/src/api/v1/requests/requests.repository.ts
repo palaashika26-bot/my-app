@@ -160,13 +160,60 @@ export const requestsRepository = {
     const where: Record<string, unknown> = { id };
     if (clientId) where.clientId = clientId;
 
+    // Resilient read for the detail endpoint. `fullInclude` nests two REQUIRED
+    // user relations — client.user AND activities.user — and Prisma 500s the
+    // whole query ("Inconsistent query result: Field user is required to return
+    // data, got null") when either points at a deleted User (legacy orphaned
+    // rows). `fullInclude` is shared by create + the post-mutation re-fetches,
+    // so rather than change it in place we decouple here: pull the request
+    // without nesting those users, then look the users up separately and stitch
+    // them back (orphan -> user: null, which both detail pages tolerate via
+    // optional chaining). Same pattern as findAll; items.product is an optional
+    // relation so it stays nested safely.
     const request = await prisma.sourcingRequest.findFirst({
       where,
-      include: fullInclude,
+      include: {
+        client: true, // all client scalars incl. userId; user stitched below
+        items: { include: itemInclude },
+        activities: { orderBy: { createdAt: "desc" as const } }, // user stitched below
+      },
     });
 
     if (!request) throw ApiError.notFound("Request not found");
-    return request;
+
+    // Resolve the client's owner and each activity author in parallel. Selects
+    // mirror fullInclude exactly so the response shape is unchanged.
+    const activityUserIds = [...new Set(request.activities.map((a) => a.userId))];
+    const [clientUser, activityUsers] = await Promise.all([
+      request.client
+        ? prisma.user.findUnique({
+            where: { id: request.client.userId },
+            select: { firstName: true, lastName: true, email: true, phone: true },
+          })
+        : Promise.resolve(null),
+      activityUserIds.length
+        ? prisma.user.findMany({
+            where: { id: { in: activityUserIds } },
+            select: { id: true, firstName: true, lastName: true, role: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const activityUserById = new Map(activityUsers.map((u) => [u.id, u]));
+
+    return {
+      ...request,
+      client: request.client ? { ...request.client, user: clientUser } : null,
+      activities: request.activities.map((a) => {
+        const u = activityUserById.get(a.userId);
+        return {
+          ...a,
+          user: u
+            ? { firstName: u.firstName, lastName: u.lastName, role: u.role }
+            : null,
+        };
+      }),
+    };
   },
 
   // Stage 2 — persist the logistics estimate on the request (replaces localStorage).
