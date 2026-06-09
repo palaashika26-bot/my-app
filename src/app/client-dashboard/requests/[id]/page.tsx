@@ -569,7 +569,7 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
                                       <input
                                         type="number" min="1" autoFocus
                                         className="input-field text-xs py-1 px-2 w-full mt-0.5"
-                                        placeholder="₹ price"
+                                        placeholder="Price"
                                         value={counterInputs[line.id] ?? ''}
                                         onChange={e => setCounterInputs(prev => ({ ...prev, [line.id]: e.target.value }))}
                                       />

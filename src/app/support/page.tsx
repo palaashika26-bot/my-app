@@ -1,8 +1,10 @@
-﻿'use client';
-import React, { useState, useRef } from 'react';
+'use client';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import ClientLayout from '@/components/ClientLayout';
 import { useToast } from '@/components/ui/Toast';
-import { MessageCircle, Mail, Phone, ChevronDown, MessageSquare, Paperclip, X, FileText, Play } from 'lucide-react';
+import { supportApi, type SupportTicketListItem } from '@/lib/api/support.api';
+import { MessageCircle, Mail, Phone, ChevronDown, Paperclip, X, FileText, Play, ChevronRight } from 'lucide-react';
 
 const faqs = [
   { q: 'How long does sourcing take?',         a: 'Typically 7–12 days from quotation acceptance until the goods reach our China warehouse.' },
@@ -15,12 +17,17 @@ const faqs = [
   { q: 'What if items get damaged?',           a: 'We have insurance coverage and a strict QC process at our China warehouse.' },
 ];
 
-interface Attachment {
-  name: string;
-  type: 'image' | 'video' | 'pdf';
-  base64: string;
-  size: number;
-}
+const statusStyle: Record<string, string> = {
+  OPEN: 'bg-yellow-100 text-yellow-700',
+  IN_PROGRESS: 'bg-blue-100 text-blue-700',
+  RESOLVED: 'bg-emerald-100 text-emerald-700',
+  CLOSED: 'bg-muted text-muted-foreground',
+};
+const statusLabel: Record<string, string> = {
+  OPEN: 'Open', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved', CLOSED: 'Closed',
+};
+
+interface Attachment { name: string; type: 'image' | 'video' | 'pdf'; base64: string; size: number; }
 
 function toBase64(file: File): Promise<string> {
   return new Promise((res, rej) => {
@@ -33,11 +40,25 @@ function toBase64(file: File): Promise<string> {
 
 export default function SupportPage() {
   const { addToast } = useToast();
+  const router = useRouter();
   const [open, setOpen] = useState<number | null>(0);
   const [form, setForm] = useState({ subject: '', category: 'General', desc: '' });
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [tickets, setTickets] = useState<SupportTicketListItem[]>([]);
+  const [loadingTickets, setLoadingTickets] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadTickets = useCallback(async () => {
+    try {
+      const res = await supportApi.list();
+      if (res.data.success) setTickets(res.data.data ?? []);
+    } catch { /* ignore */ }
+    finally { setLoadingTickets(false); }
+  }, []);
+
+  useEffect(() => { loadTickets(); }, [loadTickets]);
 
   async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(e.target.files || []);
@@ -60,14 +81,26 @@ export default function SupportPage() {
     e.target.value = '';
   }
 
-  function submitTicket() {
-    const ticketId = `TKT-${Date.now()}`;
-    if (attachments.length > 0) {
-      localStorage.setItem(`support-client-attachments-${ticketId}`, JSON.stringify(attachments));
+  async function submitTicket() {
+    if (!form.subject.trim()) { addToast({ type: 'warning', title: 'Please add a subject' }); return; }
+    if (!form.desc.trim()) { addToast({ type: 'warning', title: 'Please describe your issue' }); return; }
+    setSubmitting(true);
+    try {
+      await supportApi.create({
+        subject: form.subject.trim(),
+        category: form.category,
+        description: form.desc.trim(),
+        attachments: attachments.map(a => a.base64),
+      });
+      addToast({ type: 'success', title: 'Ticket submitted', description: 'Our team will respond shortly.' });
+      setForm({ subject: '', category: 'General', desc: '' });
+      setAttachments([]);
+      loadTickets();
+    } catch {
+      addToast({ type: 'error', title: 'Could not submit', description: 'Please try again in a moment.' });
+    } finally {
+      setSubmitting(false);
     }
-    addToast({ type: 'success', title: 'Ticket submitted', description: 'Our team will respond within 4 hours.' });
-    setForm({ subject: '', category: 'General', desc: '' });
-    setAttachments([]);
   }
 
   return (
@@ -88,21 +121,6 @@ export default function SupportPage() {
       </div>
 
       <div className="grid lg:grid-cols-2 gap-5">
-        <div className="bg-card rounded-xl border border-border shadow-card p-5">
-          <h3 className="font-700 mb-3">Frequently Asked Questions</h3>
-          <div className="divide-y divide-border">
-            {faqs.map((f, i) => (
-              <div key={i} className="py-3">
-                <button onClick={() => setOpen(open === i ? null : i)} className="w-full flex items-center justify-between text-left">
-                  <span className="text-sm font-500">{f.q}</span>
-                  <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${open === i ? 'rotate-180' : ''}`} />
-                </button>
-                {open === i && <p className="mt-2 text-sm text-muted-foreground">{f.a}</p>}
-              </div>
-            ))}
-          </div>
-        </div>
-
         <div className="space-y-5">
           <div className="bg-card rounded-xl border border-border shadow-card p-5">
             <h3 className="font-700 mb-3">Submit a Ticket</h3>
@@ -147,15 +165,49 @@ export default function SupportPage() {
                   <Paperclip className="w-4 h-4" />
                 </button>
                 {attachments.length > 0 && <span className="text-xs text-muted-foreground">{attachments.length}/3</span>}
-                <button onClick={submitTicket} className="btn-primary flex-1 py-2 text-sm">Submit Ticket</button>
+                <button onClick={submitTicket} disabled={submitting} className="btn-primary flex-1 py-2 text-sm disabled:opacity-50">{submitting ? 'Submitting…' : 'Submit Ticket'}</button>
               </div>
             </div>
           </div>
 
-          <div className="bg-gradient-to-br from-[#E8E1F5] to-card rounded-xl border border-border shadow-card p-5 flex items-center gap-3">
-            <MessageSquare className="w-10 h-10 text-[#4A3B52]" />
-            <div className="flex-1"><p className="font-700">Chat with our team</p><p className="text-xs text-muted-foreground">Live chat (English / Hindi)</p></div>
-            <span className="badge bg-yellow-100 text-yellow-700">Coming soon</span>
+          <div className="bg-card rounded-xl border border-border shadow-card p-5">
+            <h3 className="font-700 mb-3">My Tickets</h3>
+            {loadingTickets ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">Loading…</p>
+            ) : tickets.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">No tickets yet.</p>
+            ) : (
+              <div className="divide-y divide-border">
+                {tickets.map(t => (
+                  <button key={t.id} onClick={() => router.push(`/support/${t.id}`)} className="w-full flex items-center justify-between gap-3 py-3 text-left hover:bg-muted/30 -mx-2 px-2 rounded-lg transition-colors">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-tabular text-xs font-600 text-primary">{t.ticketNumber}</span>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-600 ${statusStyle[t.status]}`}>{statusLabel[t.status]}</span>
+                        {t.unreadCount > 0 && <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-700 bg-yellow-100 text-yellow-700">{t.unreadCount}</span>}
+                      </div>
+                      <p className="text-sm font-500 truncate mt-0.5">{t.subject}</p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-card rounded-xl border border-border shadow-card p-5">
+          <h3 className="font-700 mb-3">Frequently Asked Questions</h3>
+          <div className="divide-y divide-border">
+            {faqs.map((f, i) => (
+              <div key={i} className="py-3">
+                <button onClick={() => setOpen(open === i ? null : i)} className="w-full flex items-center justify-between text-left">
+                  <span className="text-sm font-500">{f.q}</span>
+                  <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${open === i ? 'rotate-180' : ''}`} />
+                </button>
+                {open === i && <p className="mt-2 text-sm text-muted-foreground">{f.a}</p>}
+              </div>
+            ))}
           </div>
         </div>
       </div>

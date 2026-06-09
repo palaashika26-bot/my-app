@@ -1,37 +1,20 @@
-﻿'use client';
-import React, { useState, useRef } from 'react';
+'use client';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import ClientLayout from '@/components/ClientLayout';
 import { useToast } from '@/components/ui/Toast';
-import { mockOrders } from '@/lib/mockData';
-import { ChevronDown, AlertOctagon, CheckCircle2, XCircle, Clock, Paperclip, X, FileText, Play } from 'lucide-react';
+import { supportApi, type SupportTicketListItem } from '@/lib/api/support.api';
+import { ordersApi } from '@/lib/api/orders.api';
+import { ChevronDown, Paperclip, X, FileText, Play, ChevronRight, Clock, CheckCircle2, XCircle, AlertOctagon } from 'lucide-react';
 
-interface Complaint {
-  id: string;
-  orderId: string;
-  date: string;
-  issueType: string;
-  status: 'Under Review' | 'Resolved' | 'Rejected' | 'Processing';
-  hasAttachments?: boolean;
-}
-
-const initialComplaints: Complaint[] = [
-  { id: 'BK-COMP-2026-0012', orderId: 'BK-ORD-2024-0261', date: '10 May 2026', issueType: 'Damaged goods',  status: 'Under Review' },
-  { id: 'BK-COMP-2026-0008', orderId: 'BK-ORD-2024-0248', date: '02 May 2026', issueType: 'Missing items',  status: 'Resolved' },
-  { id: 'BK-COMP-2026-0003', orderId: 'BK-ORD-2024-0215', date: '15 Apr 2026', issueType: 'Quality issue',  status: 'Resolved' },
-];
-
-const statusStyle: Record<Complaint['status'], string> = {
-  'Under Review': 'bg-yellow-100 text-yellow-700',
-  'Resolved':     'bg-emerald-100 text-emerald-700',
-  'Rejected':     'bg-red-100 text-red-700',
-  'Processing':   'bg-[#e4eeee] text-[#6b8f90]',
+const statusStyle: Record<string, string> = {
+  OPEN: 'bg-yellow-100 text-yellow-700',
+  IN_PROGRESS: 'bg-blue-100 text-blue-700',
+  RESOLVED: 'bg-emerald-100 text-emerald-700',
+  CLOSED: 'bg-muted text-muted-foreground',
 };
-const statusIcon: Record<Complaint['status'], React.ElementType> = {
-  'Under Review': Clock,
-  'Resolved':     CheckCircle2,
-  'Rejected':     XCircle,
-  'Processing':   AlertOctagon,
-};
+const statusLabel: Record<string, string> = { OPEN: 'Open', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved', CLOSED: 'Closed' };
+const statusIcon: Record<string, React.ElementType> = { OPEN: Clock, IN_PROGRESS: AlertOctagon, RESOLVED: CheckCircle2, CLOSED: XCircle };
 
 const issueTypes = ['Damaged goods', 'Missing items', 'Wrong items', 'Quality issue', 'Packaging issue', 'Other'];
 
@@ -42,86 +25,85 @@ const policyFaqs = [
   { q: 'What if my items are damaged in transit?', a: 'Photograph the damaged goods (and the packaging) immediately and raise a complaint here. Our insurance covers transit damage and we process replacements priority.' },
 ];
 
-interface Attachment {
-  name: string;
-  type: 'image' | 'video' | 'pdf';
-  base64: string;
-  size: number;
-}
-
-const IMAGE_PDF_LIMIT = 5  * 1024 * 1024;
-const VIDEO_LIMIT     = 50 * 1024 * 1024;
+interface Attachment { name: string; type: 'image' | 'video' | 'pdf'; base64: string; size: number; }
+const IMAGE_PDF_LIMIT = 5 * 1024 * 1024;
+const VIDEO_LIMIT = 50 * 1024 * 1024;
 const MAX_FILES = 5;
 
 function toBase64(file: File): Promise<string> {
-  return new Promise((res, rej) => {
-    const reader = new FileReader();
-    reader.onload = () => res(reader.result as string);
-    reader.onerror = rej;
-    reader.readAsDataURL(file);
-  });
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(file); });
 }
-
-function fmtSize(bytes: number) {
-  return bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+function fmtSize(bytes: number) { return bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`; }
 
 export default function AfterSalesPage() {
   const { addToast } = useToast();
-  const [complaints, setComplaints] = useState<Complaint[]>(initialComplaints);
-  const [orderId,    setOrderId]    = useState(mockOrders[0]?.orderId || '');
-  const [issueType,  setIssueType]  = useState(issueTypes[0]);
-  const [desc,       setDesc]       = useState('');
+  const router = useRouter();
+  const [orders, setOrders] = useState<{ id: string; orderNumber: string }[]>([]);
+  const [orderId, setOrderId] = useState('');
+  const [issueType, setIssueType] = useState(issueTypes[0]);
+  const [desc, setDesc] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [lightbox,   setLightbox]   = useState<string | null>(null);
-  const [openFaq,    setOpenFaq]    = useState<number | null>(0);
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [submitting, setSubmitting] = useState(false);
+  const [complaints, setComplaints] = useState<SupportTicketListItem[]>([]);
+  const [loadingList, setLoadingList] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadComplaints = useCallback(async () => {
+    try {
+      const res = await supportApi.list();
+      if (res.data.success) setComplaints((res.data.data ?? []).filter(t => t.orderId));
+    } catch { /* ignore */ }
+    finally { setLoadingList(false); }
+  }, []);
+
+  useEffect(() => {
+    loadComplaints();
+    ordersApi.getOrders({ limit: 100 }).then(res => {
+      if (res.data.success) {
+        const list = (res.data.data ?? []).map((o: any) => ({ id: o.id, orderNumber: o.orderNumber }));
+        setOrders(list);
+        if (list[0]) setOrderId(list[0].orderNumber);
+      }
+    }).catch(() => {});
+  }, [loadComplaints]);
 
   async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(e.target.files || []);
-    if (attachments.length + picked.length > MAX_FILES) {
-      addToast({ type: 'warning', title: `Max ${MAX_FILES} attachments per complaint` });
-      e.target.value = '';
-      return;
-    }
+    if (attachments.length + picked.length > MAX_FILES) { addToast({ type: 'warning', title: `Max ${MAX_FILES} attachments per complaint` }); e.target.value = ''; return; }
     const results: Attachment[] = [];
     for (const file of picked) {
       const isVideo = file.type.startsWith('video/');
-      const limit   = isVideo ? VIDEO_LIMIT : IMAGE_PDF_LIMIT;
-      const limitLbl = isVideo ? '50 MB' : '5 MB';
-      if (file.size > limit) {
-        addToast({ type: 'warning', title: `"${file.name}" exceeds ${limitLbl} and was skipped` });
-        continue;
-      }
+      const limit = isVideo ? VIDEO_LIMIT : IMAGE_PDF_LIMIT;
+      if (file.size > limit) { addToast({ type: 'warning', title: `"${file.name}" exceeds ${isVideo ? '50 MB' : '5 MB'} and was skipped` }); continue; }
       const base64 = await toBase64(file);
-      const type   = file.type.startsWith('image/') ? 'image' : isVideo ? 'video' : 'pdf';
+      const type = file.type.startsWith('image/') ? 'image' : isVideo ? 'video' : 'pdf';
       results.push({ name: file.name, type, base64, size: file.size });
     }
     setAttachments(prev => [...prev, ...results].slice(0, MAX_FILES));
     e.target.value = '';
   }
 
-  function removeAttachment(i: number) {
-    setAttachments(prev => prev.filter((_, j) => j !== i));
-  }
-
   async function submit() {
     if (!desc.trim()) { addToast({ type: 'warning', title: 'Please add a description' }); return; }
     setSubmitting(true);
-    await new Promise(r => setTimeout(r, 800));
-    const newId = `BK-COMP-2026-${String(Math.floor(1000 + Math.random() * 9000))}`;
-    const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-    if (attachments.length > 0) {
-      try {
-        localStorage.setItem(`aftersales-attachments-${orderId}-${newId}`, JSON.stringify(attachments));
-      } catch {
-        addToast({ type: 'warning', title: 'Storage full — attachments not saved locally', description: 'Complaint still submitted.' });
-      }
+    try {
+      await supportApi.create({
+        subject: `${issueType}${orderId ? ` — ${orderId}` : ''}`,
+        category: issueType,
+        description: desc.trim(),
+        orderId: orderId || null,
+        attachments: attachments.map(a => a.base64),
+      });
+      addToast({ type: 'success', title: 'Complaint submitted', description: 'Our team will contact you shortly.' });
+      setDesc(''); setAttachments([]);
+      loadComplaints();
+    } catch {
+      addToast({ type: 'error', title: 'Could not submit', description: 'Please try again in a moment.' });
+    } finally {
+      setSubmitting(false);
     }
-    setComplaints([{ id: newId, orderId, date: today, issueType, status: 'Under Review', hasAttachments: attachments.length > 0 }, ...complaints]);
-    addToast({ type: 'success', title: 'Complaint submitted', description: `${newId} — our team will contact you within 24 hours.` });
-    setDesc(''); setAttachments([]); setSubmitting(false);
   }
 
   return (
@@ -136,7 +118,8 @@ export default function AfterSalesPage() {
             <div>
               <label className="text-xs font-600 text-muted-foreground uppercase">Order ID</label>
               <select value={orderId} onChange={e => setOrderId(e.target.value)} className="input-field mt-1">
-                {mockOrders.map(o => <option key={o.id} value={o.orderId}>{o.orderId} — {o.itemNames}</option>)}
+                {orders.length === 0 && <option value="">No orders found</option>}
+                {orders.map(o => <option key={o.id} value={o.orderNumber}>{o.orderNumber}</option>)}
               </select>
             </div>
             <div>
@@ -151,21 +134,15 @@ export default function AfterSalesPage() {
             </div>
 
             <div>
-              <label className="text-xs font-600 text-muted-foreground uppercase block mb-1">
-                Upload Photos / Videos / Docs
-              </label>
-              <p className="text-[10px] text-muted-foreground mb-2">
-                Images &amp; PDFs up to 5 MB · Videos up to 50 MB · Max {MAX_FILES} files
-              </p>
+              <label className="text-xs font-600 text-muted-foreground uppercase block mb-1">Upload Photos / Videos / Docs</label>
+              <p className="text-[10px] text-muted-foreground mb-2">Images &amp; PDFs up to 5 MB · Videos up to 50 MB · Max {MAX_FILES} files</p>
 
               {attachments.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-2">
                   {attachments.map((a, i) => (
                     <div key={i} className="flex items-center gap-1.5 bg-muted/40 rounded-lg px-2 py-1.5 border border-border">
                       {a.type === 'image' ? (
-                        <button type="button" onClick={() => setLightbox(a.base64)}>
-                          <img src={a.base64} alt={a.name} className="w-9 h-9 object-cover rounded cursor-zoom-in" />
-                        </button>
+                        <button type="button" onClick={() => setLightbox(a.base64)}><img src={a.base64} alt={a.name} className="w-9 h-9 object-cover rounded cursor-zoom-in" /></button>
                       ) : a.type === 'video' ? (
                         <div className="w-9 h-9 bg-slate-200 rounded flex items-center justify-center"><Play className="w-4 h-4 text-slate-600" /></div>
                       ) : (
@@ -175,58 +152,49 @@ export default function AfterSalesPage() {
                         <span className="text-[10px] font-500 max-w-[90px] truncate">{a.name}</span>
                         <span className="text-[9px] text-muted-foreground">{fmtSize(a.size)}</span>
                       </div>
-                      <button type="button" onClick={() => removeAttachment(i)} className="ml-0.5 text-muted-foreground hover:text-foreground"><X className="w-3 h-3" /></button>
+                      <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))} className="ml-0.5 text-muted-foreground hover:text-foreground"><X className="w-3 h-3" /></button>
                     </div>
                   ))}
                 </div>
               )}
 
               <input ref={fileInputRef} type="file" style={{ display: 'none' }} accept="image/*,video/mp4,video/mov,video/quicktime,video/avi,video/webm,.pdf" multiple onChange={handleFiles} />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={attachments.length >= MAX_FILES}
-                className="btn-secondary px-3 py-1.5 text-xs inline-flex items-center gap-1.5 disabled:opacity-40"
-              >
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={attachments.length >= MAX_FILES} className="btn-secondary px-3 py-1.5 text-xs inline-flex items-center gap-1.5 disabled:opacity-40">
                 <Paperclip className="w-3.5 h-3.5" /> Attach Files
                 {attachments.length > 0 && <span className="ml-1 text-muted-foreground">{attachments.length}/{MAX_FILES}</span>}
               </button>
             </div>
 
-            <button onClick={submit} disabled={submitting} className="btn-primary w-full py-2.5 text-sm">
-              {submitting ? 'Submitting…' : 'Submit Complaint'}
-            </button>
+            <button onClick={submit} disabled={submitting} className="btn-primary w-full py-2.5 text-sm disabled:opacity-50">{submitting ? 'Submitting…' : 'Submit Complaint'}</button>
           </div>
         </div>
 
         <div className="bg-card rounded-xl border border-border shadow-card p-5">
           <h3 className="font-700 mb-3">My Complaints</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-[10px] uppercase text-muted-foreground border-b border-border">
-                <tr><th className="text-left py-2 font-600">Complaint ID</th><th className="text-left font-600">Order</th><th className="text-left font-600">Date</th><th className="text-left font-600">Status</th></tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {complaints.map(c => {
-                  const Icon = statusIcon[c.status];
-                  return (
-                    <tr key={c.id}>
-                      <td className="py-3 font-tabular font-600 text-primary">
-                        <div className="flex items-center gap-1.5">
-                          {c.id}
-                          {c.hasAttachments && <span className="text-[10px] text-[#7a9e9f]" title="Has attachments">📎</span>}
-                        </div>
-                      </td>
-                      <td className="font-tabular text-xs text-muted-foreground">{c.orderId}</td>
-                      <td className="text-xs text-muted-foreground font-tabular">{c.date}</td>
-                      <td><span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-600 ${statusStyle[c.status]}`}><Icon className="w-3 h-3" /> {c.status}</span></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {complaints.length === 0 && <p className="text-center text-sm text-muted-foreground py-6">No complaints raised yet.</p>}
-          </div>
+          {loadingList ? (
+            <p className="text-center text-sm text-muted-foreground py-6">Loading…</p>
+          ) : complaints.length === 0 ? (
+            <p className="text-center text-sm text-muted-foreground py-6">No complaints raised yet.</p>
+          ) : (
+            <div className="divide-y divide-border">
+              {complaints.map(c => {
+                const Icon = statusIcon[c.status];
+                return (
+                  <button key={c.id} onClick={() => router.push(`/support/${c.id}`)} className="w-full flex items-center justify-between gap-3 py-3 text-left hover:bg-muted/30 -mx-2 px-2 rounded-lg transition-colors">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-tabular text-xs font-600 text-primary">{c.ticketNumber}</span>
+                        {c.unreadCount > 0 && <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-700 bg-yellow-100 text-yellow-700">{c.unreadCount}</span>}
+                      </div>
+                      <p className="text-sm font-500 truncate mt-0.5">{c.subject}</p>
+                      <p className="text-[11px] text-muted-foreground font-tabular">{c.orderId}</p>
+                    </div>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-600 ${statusStyle[c.status]} flex-shrink-0`}><Icon className="w-3 h-3" /> {statusLabel[c.status]}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 

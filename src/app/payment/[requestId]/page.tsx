@@ -408,7 +408,7 @@ export default function PaymentPage({ params }: { params: Promise<{ requestId: s
                           {paymentMode === 'advance' && (
                             <>
                               <div className="mt-2 relative">
-                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">₹</span>
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">₹</span>
                                 <input
                                   type="number"
                                   min={1}
@@ -416,7 +416,7 @@ export default function PaymentPage({ params }: { params: Promise<{ requestId: s
                                   value={customAdvanceInput}
                                   onChange={e => setCustomAdvanceInput(e.target.value)}
                                   placeholder="Enter amount"
-                                  className="input-field w-full pl-6 text-sm"
+                                  className="input-field w-full pl-8 text-sm"
                                   onClick={e => e.stopPropagation()}
                                 />
                               </div>

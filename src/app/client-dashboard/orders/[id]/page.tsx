@@ -1332,8 +1332,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
       {/* Repackaged Product Photo Gallery Modal */}
       {repackOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto pt-4 md:pt-8 fade-in" onClick={() => setRepackOpen(false)} role="dialog" aria-modal="true">
-          <div className="bg-card rounded-2xl w-full max-w-3xl mb-4 mx-4 shadow-card-lg" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto fade-in" onClick={() => setRepackOpen(false)} role="dialog" aria-modal="true">
+          <div className="bg-card rounded-2xl w-full max-w-3xl my-auto max-h-[90vh] overflow-y-auto shadow-card-lg" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-border sticky top-0 bg-card z-10">
               <div>
                 <div className="flex items-center gap-2"><Camera className="w-5 h-5 text-[#4A3B52]" /><h3 className="font-700">Repackaged Product Photos</h3></div>
