@@ -9,6 +9,7 @@ export const disputesRepository = {
     reason: string;
     videoProofUrl?: string;
     attachments?: string[];
+    attachmentThumbs?: string[];
   }) {
     return prisma.dispute.create({ data: data as any });
   },

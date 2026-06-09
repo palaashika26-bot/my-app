@@ -450,6 +450,8 @@ model Payment {
   amountINR         Decimal       @db.Decimal(12, 2)
   status            PaymentStatus @default(PENDING)
   proofImageBase64  String?
+  proofUrl          String?
+  proofThumbUrl     String?
   proofFileName     String?
   submittedAt       DateTime?
   verifiedAt        DateTime?
@@ -575,7 +577,9 @@ model RequestItem {
   quotedRMB          Decimal?          @db.Decimal(12, 2)
   quotedINR          Decimal?          @db.Decimal(12, 2)
   imageUrl           String?
+  imageThumbUrl      String?
   referenceImageUrls String[]
+  referenceThumbUrls String[]
   status             RequestItemStatus @default(PENDING)
   clientResponse     String?
   counterPriceINR    Decimal?          @db.Decimal(12, 2)
@@ -627,6 +631,8 @@ model RequestPayment {
   amountINR        Decimal       @db.Decimal(12, 2)
   status           PaymentStatus @default(SUBMITTED)
   proofImageBase64 String?
+  proofUrl         String?
+  proofThumbUrl    String?
   proofFileName    String?
   submittedAt      DateTime?
   verifiedAt       DateTime?
@@ -655,6 +661,7 @@ model Dispute {
   // Multiple photo/video proof attachments (data URLs). Replaces packing many
   // files into the single videoProofUrl; legacy rows keep using videoProofUrl.
   attachments   String[]
+  attachmentThumbs String[]
   status        DisputeStatus @default(OPEN)
   adminNote     String?
   createdAt     DateTime      @default(now())

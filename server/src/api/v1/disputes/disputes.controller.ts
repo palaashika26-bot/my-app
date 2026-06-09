@@ -4,12 +4,20 @@ import { ApiResponse } from "../../../utils/ApiResponse";
 import { ApiError } from "../../../utils/ApiError";
 import prisma from "../../../config/prisma";
 import { notifyUser } from "../../../utils/notify";
+import { signImageFields } from "../../../config/storage";
+
+// Dispute proof fields that may hold object-storage paths needing signed read URLs.
+const DISPUTE_IMAGE_SPEC = {
+  singles: ["videoProofUrl"] as string[],
+  arrays: ["attachments", "attachmentThumbs"] as string[],
+};
 
 export const getAllDisputes = async (req: Request, res: Response) => {
   if (req.user?.role === "CLIENT") throw ApiError.forbidden("Clients cannot view all disputes");
 
   const { status, orderId } = req.query as Record<string, string>;
   const disputes = await disputesRepository.findAll(status, orderId);
+  await signImageFields(disputes, DISPUTE_IMAGE_SPEC);
   return ApiResponse.success(res, disputes, "Disputes fetched");
 };
 
@@ -27,6 +35,7 @@ export const getDisputeById = async (req: Request, res: Response) => {
     }
   }
 
+  await signImageFields(dispute, DISPUTE_IMAGE_SPEC);
   return ApiResponse.success(res, dispute, "Dispute fetched");
 };
 

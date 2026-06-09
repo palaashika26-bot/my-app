@@ -5,6 +5,7 @@ import { ApiError } from "../../../utils/ApiError";
 import prisma from "../../../config/prisma";
 import { disputesRepository } from "../disputes/disputes.repository";
 import { notifyUser, notifyAdminsAndStaff } from "../../../utils/notify";
+import { signImageFields } from "../../../config/storage";
 
 export const getOrders = async (req: Request, res: Response) => {
   const { page, limit } = req.query as Record<string, string>;
@@ -613,6 +614,7 @@ export const getOrderDisputes = async (req: Request, res: Response) => {
       reason: true,
       videoProofUrl: true,
       attachments: true,
+      attachmentThumbs: true,
       status: true,
       adminNote: true,
       createdAt: true,
@@ -620,6 +622,10 @@ export const getOrderDisputes = async (req: Request, res: Response) => {
     },
   });
 
+  await signImageFields(disputes, {
+    singles: ["videoProofUrl"],
+    arrays: ["attachments", "attachmentThumbs"],
+  });
   return ApiResponse.success(res, disputes, "Order disputes fetched");
 };
 
@@ -661,7 +667,7 @@ export const createDispute = async (req: Request, res: Response) => {
     throw ApiError.badRequest("Dispute window of 5 days has passed");
   }
 
-  const { type, reason, videoProofUrl, attachments } = req.body;
+  const { type, reason, videoProofUrl, attachments, attachmentThumbs } = req.body;
 
   if (!type || !["REPLACEMENT", "ISSUE"].includes(type)) {
     throw ApiError.badRequest("type must be REPLACEMENT or ISSUE");
@@ -672,11 +678,12 @@ export const createDispute = async (req: Request, res: Response) => {
 
   // Proof files are optional. Accept a real array of data URLs (photos/videos);
   // keep videoProofUrl for legacy single-file back-compat.
-  const attachmentList: string[] = Array.isArray(attachments)
-    ? attachments.filter(
-        (a: unknown): a is string => typeof a === "string" && a.length > 0
-      )
-    : [];
+  const toStringList = (v: unknown): string[] =>
+    Array.isArray(v)
+      ? v.filter((a: unknown): a is string => typeof a === "string" && a.length > 0)
+      : [];
+  const attachmentList = toStringList(attachments);
+  const attachmentThumbList = toStringList(attachmentThumbs);
 
   const dispute = await disputesRepository.create({
     orderId: id,
@@ -685,6 +692,7 @@ export const createDispute = async (req: Request, res: Response) => {
     reason: reason.trim(),
     videoProofUrl: videoProofUrl ?? undefined,
     attachments: attachmentList,
+    attachmentThumbs: attachmentThumbList,
   });
 
   const notifType =

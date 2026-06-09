@@ -560,6 +560,7 @@ export const requestsRepository = {
         targetPriceINR?: number;
         notes?: string;
         referenceImageUrls?: string[];
+        referenceThumbUrls?: string[];
       }[];
     }
   ) {
@@ -583,6 +584,7 @@ export const requestsRepository = {
             targetPriceINR: item.targetPriceINR ?? null,
             notes: item.notes,
             referenceImageUrls: item.referenceImageUrls ?? [],
+            referenceThumbUrls: item.referenceThumbUrls ?? [],
           })),
         },
       },
