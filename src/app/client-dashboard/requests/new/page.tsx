@@ -108,10 +108,10 @@ export default function NewRequestPage() {
         })),
       };
 
-      const response = await Promise.race([
-        requestsApi.createRequest(payload),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
-      ]);
+      // No client-side race timeout here: createRequest goes through uploadClient
+      // (120s) because the payload carries base64 reference images. The old 8s
+      // race fired "failed" while the POST actually succeeded on the server.
+      const response = await requestsApi.createRequest(payload);
       const request = (response as any)?.data?.data;
       if (request) {
         requestsCache.set(request.id, request);
@@ -121,6 +121,10 @@ export default function NewRequestPage() {
           description: `${request.requestNumber} created. Our team will contact you within 24 hours.`,
         });
         router.push(`/client-dashboard/requests/${request.id}`);
+      } else {
+        // 2xx but an unexpected body shape — don't claim success, but don't claim
+        // a hard failure either (the request may exist); send them to their list.
+        addToast({ type: 'error', title: 'Could not confirm submission', description: 'Please check My Requests before resubmitting.' });
       }
     } catch {
       addToast({ type: 'error', title: 'Failed to submit request', description: 'Please try again.' });

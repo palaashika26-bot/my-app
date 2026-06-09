@@ -54,8 +54,10 @@ export const requestsApi = {
   getRequests: (params?: { page?: number; limit?: number; status?: string }, signal?: AbortSignal) =>
     axiosClient.get('/requests', { params, signal }),
 
+  // uploadClient (120s), not axiosClient (30s): a single request inlines each
+  // item's base64 referenceImageUrls, so the response can be large and slow.
   getRequestById: (id: string, signal?: AbortSignal) =>
-    axiosClient.get(`/requests/${id}`, { signal }),
+    uploadClient.get(`/requests/${id}`, { signal }),
 
   sendQuotation: (id: string, data: SendQuotationPayload) =>
     axiosClient.post(`/requests/${id}/quotation`, data),
