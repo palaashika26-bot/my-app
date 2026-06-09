@@ -117,11 +117,13 @@ export const requestsRepository = {
         skip,
         take,
         include: {
-          client: {
-            include: {
-              user: { select: { firstName: true, lastName: true, email: true } },
-            },
-          },
+          // Don't nest the required `user` relation here. Some legacy client
+          // rows point at a deleted User, and Prisma then 500s the whole
+          // findMany ("Inconsistent query result: Field user is required to
+          // return data, got null"). Select the client scalars the list needs
+          // plus userId, and stitch the users in separately below so an
+          // orphaned client just yields user: null instead of throwing.
+          client: { select: { id: true, companyName: true, userId: true } },
           items: { select: { id: true, productName: true, status: true } },
         },
         orderBy: { createdAt: "desc" },
@@ -129,7 +131,29 @@ export const requestsRepository = {
       prisma.sourcingRequest.count({ where }),
     ]);
 
-    return [requests, total] as const;
+    const userIds = [
+      ...new Set(
+        requests
+          .map((r) => r.client?.userId)
+          .filter((id): id is string => Boolean(id))
+      ),
+    ];
+    const users = userIds.length
+      ? await prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, firstName: true, lastName: true, email: true },
+        })
+      : [];
+    const userById = new Map(users.map((u) => [u.id, u]));
+
+    const requestsWithUser = requests.map((r) => ({
+      ...r,
+      client: r.client
+        ? { ...r.client, user: userById.get(r.client.userId) ?? null }
+        : null,
+    }));
+
+    return [requestsWithUser, total] as const;
   },
 
   async findById(id: string, clientId?: string) {
