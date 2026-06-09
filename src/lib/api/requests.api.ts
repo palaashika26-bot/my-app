@@ -1,6 +1,8 @@
-import axiosClient, { uploadClient } from './axiosClient';
+import axiosClient from './axiosClient';
 
-// Upload-heavy endpoints (base64 images) use uploadClient with a longer timeout
+// Images are uploaded directly to object storage (see src/lib/upload.ts); request
+// bodies and responses now carry only short storage URLs, so the standard client
+// (30s) is sufficient everywhere — no upload-heavy timeout needed.
 
 export interface RequestItemPayload {
   type: 'CATALOG' | 'CUSTOM';
@@ -12,6 +14,7 @@ export interface RequestItemPayload {
   targetPriceINR?: number;
   notes?: string;
   referenceImageUrls?: string[];
+  referenceThumbUrls?: string[];
 }
 
 export interface CreateRequestPayload {
@@ -49,15 +52,13 @@ export interface RespondToCounterItemPayload {
 
 export const requestsApi = {
   createRequest: (data: CreateRequestPayload) =>
-    uploadClient.post('/requests', data),
+    axiosClient.post('/requests', data),
 
   getRequests: (params?: { page?: number; limit?: number; status?: string }, signal?: AbortSignal) =>
     axiosClient.get('/requests', { params, signal }),
 
-  // uploadClient (120s), not axiosClient (30s): a single request inlines each
-  // item's base64 referenceImageUrls, so the response can be large and slow.
   getRequestById: (id: string, signal?: AbortSignal) =>
-    uploadClient.get(`/requests/${id}`, { signal }),
+    axiosClient.get(`/requests/${id}`, { signal }),
 
   sendQuotation: (id: string, data: SendQuotationPayload) =>
     axiosClient.post(`/requests/${id}/quotation`, data),

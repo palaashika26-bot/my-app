@@ -6,7 +6,9 @@ export const paymentsRepository = {
     orderId: string;
     type: "ADVANCE" | "BALANCE";
     amountINR: number;
-    proofImageBase64: string;
+    proofUrl?: string;
+    proofThumbUrl?: string;
+    proofImageBase64?: string;
     proofFileName?: string;
     notes?: string;
   }) {
@@ -16,6 +18,8 @@ export const paymentsRepository = {
         type: data.type,
         amountINR: data.amountINR,
         status: "SUBMITTED",
+        proofUrl: data.proofUrl,
+        proofThumbUrl: data.proofThumbUrl,
         proofImageBase64: data.proofImageBase64,
         proofFileName: data.proofFileName,
         notes: data.notes,
@@ -33,6 +37,8 @@ export const paymentsRepository = {
         type: true,
         amountINR: true,
         status: true,
+        proofUrl: true,
+        proofThumbUrl: true,
         proofImageBase64: true,
         proofFileName: true,
         submittedAt: true,
@@ -114,7 +120,9 @@ export const paymentsRepository = {
     requestId: string;
     type: "ADVANCE" | "FULL";
     amountINR: number;
-    proofImageBase64: string;
+    proofUrl?: string;
+    proofThumbUrl?: string;
+    proofImageBase64?: string;
     proofFileName?: string;
     notes?: string;
   }) {
@@ -124,6 +132,8 @@ export const paymentsRepository = {
         type: data.type as any,
         amountINR: data.amountINR,
         status: "SUBMITTED",
+        proofUrl: data.proofUrl,
+        proofThumbUrl: data.proofThumbUrl,
         proofImageBase64: data.proofImageBase64,
         proofFileName: data.proofFileName,
         notes: data.notes,
@@ -141,6 +151,8 @@ export const paymentsRepository = {
         type: true,
         amountINR: true,
         status: true,
+        proofUrl: true,
+        proofThumbUrl: true,
         proofImageBase64: true,
         proofFileName: true,
         submittedAt: true,

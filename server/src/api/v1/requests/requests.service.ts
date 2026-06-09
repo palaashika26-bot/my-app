@@ -5,6 +5,7 @@ import { requestsRepository } from "./requests.repository";
 import { sendEmail } from "../../../config/email";
 import { notifyAdminsAndStaff } from "../../../utils/notify";
 import { quotationEmailTemplate } from "../../../templates/quotationEmail";
+import { signRequestImages } from "../../../config/storage";
 import type { CreateRequestInput, CreateRequestInputV2, SendQuotationInput, RespondToQuotationInput, RespondToCounterInput, LogisticsInput } from "./requests.schema";
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
@@ -63,6 +64,7 @@ export const requestsService = {
         targetPriceINR: item.targetPriceINR,
         notes: item.notes,
         referenceImageUrls: (item as any).referenceImageUrls ?? [],
+        referenceThumbUrls: (item as any).referenceThumbUrls ?? [],
       })),
     });
 
@@ -94,6 +96,9 @@ export const requestsService = {
       }).catch(() => {});
     }
 
+    // Convert any storage-path image fields to signed read URLs before returning
+    // (the new-request page caches and renders this response immediately).
+    await signRequestImages(request);
     return request;
   },
 
@@ -132,7 +137,7 @@ export const requestsService = {
       if (!client) throw ApiError.forbidden("No client profile linked to this account");
       clientId = client.id;
     }
-    return requestsRepository.findById(id, clientId);
+    return signRequestImages(await requestsRepository.findById(id, clientId));
   },
 
   async updateLogistics(requestId: string, data: LogisticsInput) {

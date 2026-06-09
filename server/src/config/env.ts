@@ -72,6 +72,14 @@ const config = {
   // Password reset
   RESET_PASSWORD_TOKEN_SECRET: process.env.RESET_PASSWORD_TOKEN_SECRET || "",
   RESET_PASSWORD_EXPIRES_IN: process.env.RESET_PASSWORD_EXPIRES_IN || "1h",
+
+  // Supabase Storage — object storage for images (request reference images,
+  // payment proofs, dispute attachments). Optional at boot so local dev without
+  // storage configured doesn't crash; the storage helper (config/storage.ts)
+  // throws a clear error only if a storage operation is attempted while unset.
+  SUPABASE_URL: process.env.SUPABASE_URL || "",
+  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+  SUPABASE_STORAGE_BUCKET: process.env.SUPABASE_STORAGE_BUCKET || "uploads",
 };
 
 export default config;

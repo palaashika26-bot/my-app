@@ -3,6 +3,7 @@ import { ApiError } from "../../../utils/ApiError";
 import { paymentsRepository } from "./payments.repository";
 import { requestsRepository } from "../requests/requests.repository";
 import { sendEmail } from "../../../config/email";
+import { signImageFields } from "../../../config/storage";
 import type { SubmitPaymentInput, SubmitRequestPaymentInput, VerifyPaymentInput } from "./payments.schema";
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
@@ -39,6 +40,8 @@ export const paymentsService = {
       orderId: data.orderId,
       type: data.type,
       amountINR: data.amountINR,
+      proofUrl: data.proofUrl,
+      proofThumbUrl: data.proofThumbUrl,
       proofImageBase64: data.proofImageBase64,
       proofFileName: data.proofFileName,
       notes: data.notes,
@@ -148,7 +151,9 @@ export const paymentsService = {
       if (!order) throw ApiError.notFound("Order not found");
     }
 
-    return paymentsRepository.findByOrderId(orderId);
+    const payments = await paymentsRepository.findByOrderId(orderId);
+    await signImageFields(payments, { singles: ["proofUrl", "proofThumbUrl"] });
+    return payments;
   },
 
   // ── Request payment flow ──────────────────────────────────────────────────
@@ -175,6 +180,8 @@ export const paymentsService = {
       requestId: data.requestId,
       type: data.type,
       amountINR: data.amountINR,
+      proofUrl: data.proofUrl,
+      proofThumbUrl: data.proofThumbUrl,
       proofImageBase64: data.proofImageBase64,
       proofFileName: data.proofFileName,
       notes: data.notes,
@@ -221,7 +228,9 @@ export const paymentsService = {
       if (!request) throw ApiError.notFound("Request not found");
     }
 
-    return paymentsRepository.findByRequestId(requestId);
+    const payments = await paymentsRepository.findByRequestId(requestId);
+    await signImageFields(payments, { singles: ["proofUrl", "proofThumbUrl"] });
+    return payments;
   },
 
   async verifyRequestPayment(

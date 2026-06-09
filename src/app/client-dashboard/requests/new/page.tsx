@@ -6,14 +6,20 @@ import ClientLayout from '@/components/ClientLayout';
 import { useToast } from '@/components/ui/Toast';
 import { requestsApi } from '@/lib/api/requests.api';
 import { requestsCache } from '@/lib/api/requestsCache';
+import { uploadFiles, MAX_UPLOAD_BYTES } from '@/lib/upload';
 import { Camera, Upload, ArrowLeft, ArrowRight, Plus, X, Check, ImageIcon } from 'lucide-react';
 
+interface RefImage {
+  preview: string;   // object URL for in-form display (not persisted)
+  url: string;       // uploaded storage path (persisted)
+  thumbUrl?: string; // uploaded thumbnail storage path
+}
 interface Item {
   name: string;
   desc: string;
   qty: string;
   url: string;
-  refImages: string[]; // base64 data URLs
+  refImages: RefImage[];
 }
 
 export default function NewRequestPage() {
@@ -30,6 +36,7 @@ export default function NewRequestPage() {
   const [chinaAddress, setChinaAddress] = useState('');
   const [agree, setAgree] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadingItem, setUploadingItem] = useState<number | null>(null);
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   function updateItem(i: number, key: keyof Item, val: any) {
@@ -38,41 +45,44 @@ export default function NewRequestPage() {
   function addItem() { if (items.length < 5) setItems([...items, { name: '', desc: '', qty: '', url: '', refImages: [] }]); }
   function removeItem(i: number) { if (items.length > 1) setItems(items.filter((_, idx) => idx !== i)); }
 
-  // 5MB per image. With max 5 images that is ~34MB once base64-encoded, which
-  // stays under the backend's 50MB JSON body limit.
-  const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
-  function handleRefImages(itemIdx: number, e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleRefImages(itemIdx: number, e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
     const current = items[itemIdx].refImages;
-    const remaining = 5 - current.length;
-    const toAdd = files.slice(0, remaining);
+    const toAdd = files.slice(0, 5 - current.length);
+    if (toAdd.length === 0) return;
 
-    const oversized = toAdd.filter(f => f.size > MAX_IMAGE_SIZE);
-    if (oversized.length > 0) {
-      addToast({ type: 'error', title: 'Image too large. Max 5MB per image.' });
-      e.target.value = '';
+    if (toAdd.some(f => !ALLOWED_TYPES.includes(f.type))) {
+      addToast({ type: 'error', title: 'Only JPG, PNG or WEBP images are allowed' });
+      return;
+    }
+    if (toAdd.some(f => f.size > MAX_UPLOAD_BYTES)) {
+      addToast({ type: 'error', title: 'Image too large', description: 'Max 15MB per image.' });
       return;
     }
 
-    Promise.all(
-      toAdd.map(file => new Promise<string>((resolve, reject) => {
-        const ALLOWED = ['image/jpeg', 'image/png', 'image/webp'];
-        if (!ALLOWED.includes(file.type)) { reject(new Error('Invalid type')); return; }
-        const reader = new FileReader();
-        reader.onload = ev => resolve(ev.target?.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      }))
-    ).then(dataUrls => {
-      updateItem(itemIdx, 'refImages', [...current, ...dataUrls]);
-    }).catch(() => {
-      addToast({ type: 'error', title: 'Some images could not be added', description: 'Only JPG/PNG accepted.' });
-    });
-    e.target.value = '';
+    // Upload straight to object storage; only the returned storage paths are kept
+    // (a local object URL is used purely for the in-form preview).
+    setUploadingItem(itemIdx);
+    try {
+      const uploaded = await uploadFiles(toAdd, 'request-item');
+      const withPreview: RefImage[] = uploaded.map((u, i) => ({
+        ...u,
+        preview: URL.createObjectURL(toAdd[i]),
+      }));
+      updateItem(itemIdx, 'refImages', [...current, ...withPreview]);
+    } catch {
+      addToast({ type: 'error', title: 'Upload failed', description: 'Please check your connection and try again.' });
+    } finally {
+      setUploadingItem(null);
+    }
   }
 
   function removeRefImage(itemIdx: number, imgIdx: number) {
+    const img = items[itemIdx].refImages[imgIdx];
+    if (img?.preview) URL.revokeObjectURL(img.preview);
     const next = items[itemIdx].refImages.filter((_, i) => i !== imgIdx);
     updateItem(itemIdx, 'refImages', next);
   }
@@ -104,7 +114,8 @@ export default function NewRequestPage() {
           quantity: Math.max(1, parseInt(it.qty) || 1),
           unit: 'PCS' as const,
           notes: it.url.trim() ? `Reference URL: ${it.url.trim()}` : undefined,
-          referenceImageUrls: it.refImages.length > 0 ? it.refImages : undefined,
+          referenceImageUrls: it.refImages.length > 0 ? it.refImages.map(im => im.url) : undefined,
+          referenceThumbUrls: it.refImages.length > 0 ? it.refImages.map(im => im.thumbUrl ?? im.url) : undefined,
         })),
       };
 
@@ -173,9 +184,9 @@ export default function NewRequestPage() {
                 <div>
                   <p className="text-xs font-600 text-muted-foreground mb-2">Reference Images (optional)</p>
                   <div className="flex flex-wrap gap-2 mb-2">
-                    {it.refImages.map((src, imgIdx) => (
+                    {it.refImages.map((img, imgIdx) => (
                       <div key={imgIdx} className="relative">
-                        <img src={src} alt={`ref-${imgIdx}`} className="w-16 h-16 rounded-lg object-cover border border-border" />
+                        <img src={img.preview} alt={`ref-${imgIdx}`} className="w-16 h-16 rounded-lg object-cover border border-border" />
                         <button type="button" onClick={() => removeRefImage(i, imgIdx)}
                           className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center">
                           <X className="w-3 h-3" />
@@ -183,10 +194,16 @@ export default function NewRequestPage() {
                       </div>
                     ))}
                     {it.refImages.length < 5 && (
-                      <button type="button" onClick={() => fileInputRefs.current[i]?.click()}
-                        className="w-16 h-16 rounded-lg border-2 border-dashed border-border flex flex-col items-center justify-center gap-1 text-muted-foreground hover:border-[#4A3B52]/50 hover:text-[#4A3B52] transition-colors">
-                        <ImageIcon className="w-5 h-5" />
-                        <span className="text-[10px]">Add</span>
+                      <button type="button" disabled={uploadingItem === i} onClick={() => fileInputRefs.current[i]?.click()}
+                        className="w-16 h-16 rounded-lg border-2 border-dashed border-border flex flex-col items-center justify-center gap-1 text-muted-foreground hover:border-[#4A3B52]/50 hover:text-[#4A3B52] transition-colors disabled:opacity-50">
+                        {uploadingItem === i ? (
+                          <span className="w-5 h-5 border-2 border-[#4A3B52]/30 border-t-[#4A3B52] rounded-full animate-spin" />
+                        ) : (
+                          <>
+                            <ImageIcon className="w-5 h-5" />
+                            <span className="text-[10px]">Add</span>
+                          </>
+                        )}
                       </button>
                     )}
                   </div>

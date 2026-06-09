@@ -1,5 +1,6 @@
 import prisma from "../../../config/prisma";
 import { ApiError } from "../../../utils/ApiError";
+import { signImageFields } from "../../../config/storage";
 
 interface OrderFilters {
   clientId?: string;
@@ -133,6 +134,8 @@ export const ordersRepository = {
               type: true,
               amountINR: true,
               status: true,
+              proofUrl: true,
+              proofThumbUrl: true,
               proofImageBase64: true,
               submittedAt: true,
               verifiedAt: true,
@@ -149,10 +152,12 @@ export const ordersRepository = {
       throw ApiError.notFound(`Order with id "${id}" not found`);
     }
 
-    return {
-      ...order,
-      requestPayments: sourcingRequest?.payments ?? [],
-    };
+    const requestPayments = sourcingRequest?.payments ?? [];
+    // Convert object-storage paths (order item images copied from request
+    // reference images; request-payment proofs) to short-lived signed read URLs.
+    await signImageFields(order.items, { singles: ["imageUrl"] });
+    await signImageFields(requestPayments, { singles: ["proofUrl", "proofThumbUrl"] });
+    return { ...order, requestPayments };
   },
 
   async getGSTInvoice(id: string) {
