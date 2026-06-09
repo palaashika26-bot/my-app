@@ -53,15 +53,17 @@ function AllRequestsContent() {
 
   useEffect(() => {
     const abortController = new AbortController();
-    // 25s, not 5s: the Render free instance sleeps on inactivity and can take
-    // ~50s to wake, so a short timeout shows an empty list on the first load
-    // (especially on slower mobile networks) even though requests exist.
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 25000));
-    Promise.race([
-      requestsApi.getRequests({ limit: 50 }, abortController.signal),
-      timeout,
-    ])
-      .then((r: any) => {
+
+    async function load(attempt = 0) {
+      // 25s, not 5s: the Render free instance sleeps on inactivity and can take
+      // ~50s to wake, so a short timeout shows an empty list on the first load
+      // (especially on slower mobile networks) even though requests exist.
+      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 25000));
+      try {
+        const r: any = await Promise.race([
+          requestsApi.getRequests({ limit: 50 }, abortController.signal),
+          timeout,
+        ]);
         if (abortController.signal.aborted) return;
         const apiData = r.data?.data ?? [];
         requestsCache.setList(apiData);
@@ -76,12 +78,18 @@ function AllRequestsContent() {
           source: undefined,
         }));
         setRequests(mapped);
-      })
-      .catch(() => {
-        // API failed — show empty list, never fall back to mock data
-        setRequests([]);
-      })
-      .finally(() => { if (!abortController.signal.aborted) setLoading(false); });
+        setLoading(false);
+      } catch {
+        if (abortController.signal.aborted) return;
+        // First failure is often the Render free instance still waking up — retry
+        // once (keeping the loading state on) before giving up to an empty list.
+        if (attempt === 0) { load(1); return; }
+        setRequests([]); // API failed — show empty list, never fall back to mock data
+        setLoading(false);
+      }
+    }
+
+    load();
     return () => abortController.abort();
   }, []);
 
@@ -114,7 +122,20 @@ function AllRequestsContent() {
               {['Request ID', 'Date', 'Items', 'Status', 'Budget', 'Action'].map(h => <th key={h} className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{h}</th>)}
             </tr></thead>
             <tbody className="divide-y divide-border">
-              {filtered.length === 0 ? (
+              {loading ? (
+                // Skeleton rows while loading — avoids a false "No requests" flash
+                // during the (possibly cold-start) fetch, which can take 20-30s.
+                [0, 1, 2, 3].map(i => (
+                  <tr key={`skeleton-${i}`} className="animate-pulse">
+                    <td className="px-4 py-3.5"><div className="h-4 w-24 bg-muted rounded" /></td>
+                    <td className="px-4 py-3.5"><div className="h-4 w-20 bg-muted rounded" /></td>
+                    <td className="px-4 py-3.5"><div className="h-4 w-32 bg-muted rounded" /></td>
+                    <td className="px-4 py-3.5"><div className="h-5 w-16 bg-muted rounded-full" /></td>
+                    <td className="px-4 py-3.5"><div className="h-4 w-16 bg-muted rounded" /></td>
+                    <td className="px-4 py-3.5"><div className="h-7 w-14 bg-muted rounded-lg" /></td>
+                  </tr>
+                ))
+              ) : filtered.length === 0 ? (
                 <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">No requests in this filter.</td></tr>
               ) : filtered.map(r => (
                 <tr key={r.id} className="table-row-hover">

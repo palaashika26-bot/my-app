@@ -154,7 +154,10 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
   }
 
   function fetchRequestData(signal?: AbortSignal) {
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000));
+    // 120s, matching uploadClient: the request payload inlines each item's base64
+    // referenceImageUrls and can be large. The old 5s race always lost that race,
+    // so live data was silently dropped and the page only ever showed cache.
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 120000));
     return Promise.race([
       requestsApi.getRequestById(id, signal),
       timeout,

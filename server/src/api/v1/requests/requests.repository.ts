@@ -16,7 +16,10 @@ const RMB_TO_INR = 11.5;
 
 const itemInclude = {
   product: {
-    select: { id: true, name: true, slug: true, images: true },
+    // `images` (Product.images String[]) is intentionally omitted: no request
+    // detail page reads it, and it needlessly bloats the single-request payload,
+    // which already carries each item's base64 referenceImageUrls.
+    select: { id: true, name: true, slug: true },
   },
 };
 

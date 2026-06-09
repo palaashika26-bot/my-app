@@ -47,6 +47,7 @@ function AdminRequestsContent() {
   const [requests, setRequests] = useState<DisplayRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [tab, setTab] = useState('All Requests');
   const [q, setQ] = useState('');
   const [clientFilter, setClientFilter] = useState('All');
@@ -59,9 +60,13 @@ function AdminRequestsContent() {
 
   useEffect(() => {
     const ac = new AbortController();
-    setLoading(true);
-    requestsApi.getRequests({ limit: 50 }, ac.signal)
-      .then((r) => {
+
+    async function load(attempt = 0) {
+      setLoading(true);
+      setError(null);
+      try {
+        const r = await requestsApi.getRequests({ limit: 50 }, ac.signal);
+        if (ac.signal.aborted) return;
         const apiData = r.data?.data ?? [];
         const mapped: DisplayRequest[] = apiData.map((req: any) => ({
           id: req.id,
@@ -76,15 +81,20 @@ function AdminRequestsContent() {
           source: undefined,
         }));
         setRequests(mapped);
-      })
-      .catch((e) => {
-        if (e?.code !== 'ERR_CANCELED') {
-          setError('Failed to load requests.');
-        }
-      })
-      .finally(() => setLoading(false));
+        setLoading(false);
+      } catch (e: any) {
+        if (ac.signal.aborted || e?.code === 'ERR_CANCELED') return;
+        // First failure is often the Render free instance cold-starting — retry
+        // once (keeping loading on) so a slow wake-up isn't shown as "no requests".
+        if (attempt === 0) { load(1); return; }
+        setError('Failed to load requests. The server may be waking up — please retry.');
+        setLoading(false);
+      }
+    }
+
+    load();
     return () => ac.abort();
-  }, []);
+  }, [reloadKey]);
 
   const uniqueClients = useMemo(() => ['All', ...new Set(requests.map(r => r.client).filter(Boolean))], [requests]);
 
@@ -112,6 +122,15 @@ function AdminRequestsContent() {
         <div className="relative md:col-span-2"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none z-10" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search Request ID, client, items..." className="input-field !pl-10" /></div>
         <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="input-field">{uniqueClients.map(c => <option key={c} value={c}>{c}</option>)}</select>
       </div>
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-red-700 min-w-0">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            <p className="text-sm font-600 truncate">{error}</p>
+          </div>
+          <button onClick={() => setReloadKey(k => k + 1)} className="btn-secondary px-3 py-1.5 text-xs font-600 whitespace-nowrap flex-shrink-0">Retry</button>
+        </div>
+      )}
       {Object.values(selected).some(Boolean) && (
         <div className="bg-[#f5f4f7] border border-[#e8e4f0] rounded-xl p-3 mb-4 flex items-center gap-2 flex-wrap">
           <p className="text-sm font-600 text-[#5c5470]">{Object.values(selected).filter(Boolean).length} selected</p>
@@ -139,7 +158,7 @@ function AdminRequestsContent() {
             {filtered.length === 0 ? (
               <tr>
                 <td colSpan={perms.canSeeRequestBudget ? 8 : 7} className="py-10 text-center text-muted-foreground text-sm">
-                  {loading ? '' : 'No requests match.'}
+                  {loading ? 'Loading requests…' : error ? '' : 'No requests match.'}
                 </td>
               </tr>
             ) : (
