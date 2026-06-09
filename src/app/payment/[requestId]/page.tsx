@@ -77,7 +77,12 @@ export default function PaymentPage({ params }: { params: Promise<{ requestId: s
   const modeInitialized = useRef(false);
 
   useEffect(() => {
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000));
+    // 120s, matching the request detail page. The old 5s race lost to slow /
+    // cold-start backend responses, dropping live data into the localStorage
+    // fallback — which never holds server-created requests, so a valid but slow
+    // response wrongly rendered "Request not found". The axios client's own 30s
+    // timeout remains the real ceiling for genuine failures.
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 120000));
     Promise.race([
       requestsApi.getRequestById(requestId),
       timeout,
