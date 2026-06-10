@@ -39,7 +39,7 @@
     "warning": "🚨 CRITICAL: DO NOT REMOVE OR MODIFY ABOVE DEPENDENCIES - Required for Next.js 15 TypeScript app functionality"
   },
   "scripts": {
-    "dev": "node node_modules/next/dist/bin/next dev -p 3000 -H 0.0.0.0",
+    "dev": "node node_modules/next/dist/bin/next dev -H 0.0.0.0",
     "build": "node node_modules/next/dist/bin/next build",
     "start": "node node_modules/next/dist/bin/next dev -p 3000 -H 0.0.0.0",
     "lint": "node node_modules/next/dist/bin/next lint",

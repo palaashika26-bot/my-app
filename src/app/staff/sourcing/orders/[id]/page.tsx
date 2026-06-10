@@ -516,6 +516,14 @@ export default function SourcingOrderDetailPage({ params }: { params: Promise<{ 
           <div className="flex flex-wrap items-center gap-3">
             <span className="font-tabular font-700 text-lg">{initial.orderId}</span>
             <StatusBadge status={status as any} />
+            {apiOrder?.deliveryPreference && (
+              <span
+                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-600 bg-[#e4eeee] text-[#4a7a7b] border border-[#bcd9d9]"
+                title={apiOrder.deliveryPreference !== 'self_pickup' && apiOrder.deliveryAddress ? apiOrder.deliveryAddress : undefined}
+              >
+                {apiOrder.deliveryPreference === 'self_pickup' ? '🏬 Self Pickup' : '🚚 Deliver to Address'}
+              </span>
+            )}
           </div>
           <p className="text-xs text-muted-foreground mt-1">Placed: {initial.date} • ETA: {initial.estimatedDelivery}</p>
         </div>

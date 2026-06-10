@@ -1,6 +1,16 @@
--- New logistics module: standalone shipping requests with admin quote, client
--- accept/reject/counter, payment, fulfillment phases, warehouse slip/cargo, and
--- chat. Additive only — new enums + tables. No changes to existing tables' data.
+-- Full logistics module: standalone shipping requests with admin quote, client
+-- accept/reject/counter, payment, fulfillment phases, warehouse slip/cargo, chat.
+--
+-- This SUPERSEDES the earlier standalone-logistics objects from migration
+-- 20260610100000_add_support_tickets_and_logistics (the LogisticsStatus
+-- PENDING.. enum + logistics_requests/logistics_messages tables). Those are
+-- dropped here — their data is disposable test data — and recreated in this
+-- richer shape. The support_tickets tables from that migration are NOT touched.
+
+-- DropSupersededLogistics (idempotent; logistics_messages FK-references logistics_requests)
+DROP TABLE IF EXISTS "logistics_messages";
+DROP TABLE IF EXISTS "logistics_requests";
+DROP TYPE IF EXISTS "LogisticsStatus";
 
 -- CreateEnum
 CREATE TYPE "LogisticsStatus" AS ENUM ('SUBMITTED', 'QUOTED', 'COUNTERED', 'ACCEPTED', 'REJECTED', 'PAYMENT_PENDING', 'CONFIRMED', 'CANCELLED');

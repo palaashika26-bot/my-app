@@ -140,6 +140,13 @@ enum LogisticsDeliveryMode {
   DELIVERY
 }
 
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
@@ -171,6 +178,7 @@ model User {
   verifiedRequestPayments RequestPayment[] @relation("RequestPaymentVerifiedBy")
   verifiedLogisticsPayments LogisticsPayment[] @relation("LogisticsPaymentVerifiedBy")
   logisticsMessages       LogisticsMessage[]
+  supportTicketMessages   SupportTicketMessage[]
   pushSubscriptions  PushSubscription[]
   notifications      Notification[]
 }
@@ -249,6 +257,7 @@ model Client {
   orders            Order[]
   sourcingRequests  SourcingRequest[]
   logisticsRequests LogisticsRequest[]
+  supportTickets    SupportTicket[]
   disputes          Dispute[]
 
   @@map("clients")
@@ -787,6 +796,46 @@ model LogisticsMessage {
 
   @@index([logisticsRequestId, createdAt])
   @@map("logistics_messages")
+}
+
+model SupportTicket {
+  id              String              @id @default(uuid())
+  ticketNumber    String              @unique
+  clientId        String
+  orderId         String?
+  category        String
+  subject         String
+  description     String
+  status          SupportTicketStatus @default(OPEN)
+  priority        String?
+  clientLastReadAt DateTime?
+  staffLastReadAt  DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  client   Client                 @relation(fields: [clientId], references: [id])
+  messages SupportTicketMessage[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("support_tickets")
+}
+
+model SupportTicketMessage {
+  id          String   @id @default(uuid())
+  ticketId    String
+  senderId    String
+  senderRole  String
+  text        String
+  attachments String[]
+  createdAt   DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender User          @relation(fields: [senderId], references: [id])
+
+  @@index([ticketId, createdAt])
+  @@map("support_ticket_messages")
 }
 
 model Dispute {

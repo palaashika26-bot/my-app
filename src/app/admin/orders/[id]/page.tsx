@@ -722,6 +722,14 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
           <div className="flex flex-wrap items-center gap-3">
             <span className="font-tabular font-700 text-lg">{displayOrderId}</span>
             <StatusBadge status={status as any} />
+            {apiOrder?.deliveryPreference && (
+              <span
+                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-600 bg-[#e4eeee] text-[#4a7a7b] border border-[#bcd9d9]"
+                title={apiOrder.deliveryPreference !== 'self_pickup' && apiOrder.deliveryAddress ? apiOrder.deliveryAddress : undefined}
+              >
+                {apiOrder.deliveryPreference === 'self_pickup' ? '🏬 Self Pickup' : '🚚 Deliver to Address'}
+              </span>
+            )}
           </div>
           <p className="text-xs text-muted-foreground mt-1">Placed: {displayDate} • ETA: {displayEta}</p>
         </div>
@@ -1334,7 +1342,6 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
               <div className="flex justify-between"><span className="text-muted-foreground">Tracking #</span><span className="font-tabular font-500">{apiOrder?.shipment?.trackingNumber ?? carrier.trackingNo}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">ETA</span><span className="font-tabular font-500">{displayEta}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Current</span><span className="font-500">{loc.label}</span></div>
-              <Link href={`/admin/shipments/tracking/${id}`} className="btn-primary block text-center mt-3 py-2 text-xs">Open Live Tracking</Link>
             </div>
           </div>
         </div>
