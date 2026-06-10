@@ -118,6 +118,14 @@ export const logisticsService = {
       throw ApiError.badRequest("Cannot quote a request that is already confirmed or cancelled");
     }
 
+    // Validate required quote fields
+    if (!data.carrier || data.carrier.trim() === "") {
+      throw ApiError.badRequest("Carrier name is required for the quote");
+    }
+    if (data.estimatedPriceINR === null || data.estimatedPriceINR === undefined || data.estimatedPriceINR <= 0) {
+      throw ApiError.badRequest("Estimated price must be greater than zero");
+    }
+
     const updated = await logisticsRepository.quote(id, data);
 
     await notifyUser(existing.client.userId, {

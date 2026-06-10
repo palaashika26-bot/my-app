@@ -94,6 +94,21 @@ export default function ClientLogisticsDetailPage({ params }: { params: Promise<
     return () => ac.abort();
   }, [fetchReq, fetchMessages]);
 
+  // Debug: Log quote data availability
+  useEffect(() => {
+    if (req) {
+      console.log('[Logistics Quote Debug]', {
+        requestId: req.id,
+        status: req.status,
+        carrier: req.carrier,
+        estimatedPriceINR: req.estimatedPriceINR,
+        shippingMode: req.shippingMode,
+        hasQuote: req.carrier && req.estimatedPriceINR != null,
+        hasPrice: req.estimatedPriceINR != null,
+      });
+    }
+  }, [req]);
+
   if (notFoundState) return notFound();
   if (loading) {
     return (
@@ -228,7 +243,7 @@ export default function ClientLogisticsDetailPage({ params }: { params: Promise<
   }
 
   const clientInitials = user?.name ? getInitials(user.name) : 'CL';
-  const hasQuote = req.carrier && req.estimatedPriceINR != null;
+  const hasQuote = req.estimatedPriceINR != null; // Only check for price, carrier might be optional
   const showWarehouseSections = req.status === 'CONFIRMED';
   const slipAlreadyUploaded = !!req.slipUploadedAt;
 
@@ -265,8 +280,8 @@ export default function ClientLogisticsDetailPage({ params }: { params: Promise<
         <div className="bg-[#f5f4f7] border border-[#e8e4f0] rounded-xl p-5 mb-5">
           <p className="text-xs font-700 text-[#5c5470] mb-3 uppercase tracking-wide">Quote from Admin</p>
           <div className="grid sm:grid-cols-2 gap-3 text-sm mb-4">
-            <div><p className="text-[10px] uppercase text-muted-foreground">Carrier</p><p className="font-600">{req.carrier}</p></div>
-            <div><p className="text-[10px] uppercase text-muted-foreground">Mode</p><p className="font-600">{req.shippingMode || req.shippingMethod}</p></div>
+            <div><p className="text-[10px] uppercase text-muted-foreground">Carrier</p><p className="font-600">{req.carrier || '(Not specified)'}</p></div>
+            <div><p className="text-[10px] uppercase text-muted-foreground">Mode</p><p className="font-600">{req.shippingMode || req.shippingMethod || '—'}</p></div>
             <div><p className="text-[10px] uppercase text-muted-foreground">Estimated Price</p><p className="font-700 text-lg">₹{Number(req.estimatedPriceINR).toLocaleString('en-IN')}</p></div>
             <div><p className="text-[10px] uppercase text-muted-foreground">Price per KG</p><p className="font-600">{req.pricePerKgCNY ? `¥${Number(req.pricePerKgCNY)}` : '—'}</p></div>
             <div><p className="text-[10px] uppercase text-muted-foreground">ETA</p><p className="font-600">{req.eta || '—'}</p></div>

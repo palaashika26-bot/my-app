@@ -242,7 +242,13 @@
       "PowerShell(npm --prefix \"C:\\\\Users\\\\Aashi\\\\my-app\\\\server\" run build)",
       "Bash(echo \"---SERVER TSC EXIT: $?---\")",
       "Bash(echo \"---FRONTEND TSC EXIT: $?---\")",
-      "Bash(echo \"---SERVER COMPILE EXIT: $?  \\(prisma migrate deploy intentionally skipped — would hit live DB\\)---\")"
+      "Bash(echo \"---SERVER COMPILE EXIT: $?  \\(prisma migrate deploy intentionally skipped — would hit live DB\\)---\")",
+      "Bash(node node_modules/typescript/bin/tsc --noEmit)",
+      "Bash(git rev-parse *)",
+      "Bash(node node_modules/prisma/build/index.js validate)",
+      "Bash(node node_modules/prisma/build/index.js generate)",
+      "Bash(node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json)",
+      "Bash(git commit -m 'Merge origin/fix/sourcing-request-bugs: keep full logistics module, add support tickets *)"
     ]
   }
 }
