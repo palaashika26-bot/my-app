@@ -1,8 +1,13 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useToast } from '@/components/ui/Toast';
 import { MessageSquare, Package, Edit3, Building2, CheckCircle2 } from 'lucide-react';
+import {
+  logisticsApi,
+  LOGISTICS_STATUS_COLORS,
+  LOGISTICS_STATUS_LABELS,
+} from '@/lib/api/logistics.api';
 
 const DEFAULT_WAREHOUSE_ADDRESS = {
   companyName: 'Elios Wholesale — China Warehouse',
@@ -16,32 +21,12 @@ const DEFAULT_WAREHOUSE_ADDRESS = {
   pincode: '322000',
 };
 
-interface LogisticsRequest {
-  id: string;
-  clientName: string;
-  clientEmail: string;
-  orderId: string;
-  weight: string;
-  cbm: string;
-  shippingMethod: string;
-  packagingList: string[];
-  status: 'Pending' | 'Quoted' | 'Approved' | 'Rejected' | 'SlipUploaded' | 'CargoReceived';
-  submittedAt: string;
-  adminQuote: null | Record<string, string>;
-}
-
-const statusColor: Record<string, string> = {
-  Pending: 'bg-yellow-100 text-yellow-700',
-  Quoted: 'bg-[#e4eeee] text-[#6b8f90]',
-  Approved: 'bg-[#ece9f5] text-[#5c5470]',
-  SlipUploaded: 'bg-orange-100 text-[#c17b5c]',
-  CargoReceived: 'bg-green-100 text-green-700',
-  Rejected: 'bg-red-100 text-red-700',
-};
-
 export default function SourcingLogisticsPage() {
   const { addToast } = useToast();
-  const [requests, setRequests] = useState<LogisticsRequest[]>([]);
+  const [requests, setRequests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [warehouseAddress, setWarehouseAddress] = useState<any>(DEFAULT_WAREHOUSE_ADDRESS);
   const [warehouseAddressUpdatedAt, setWarehouseAddressUpdatedAt] = useState<string | null>(null);
   const [editingAddress, setEditingAddress] = useState(false);
@@ -49,11 +34,20 @@ export default function SourcingLogisticsPage() {
   const [addressSuccess, setAddressSuccess] = useState(false);
   const [addressLoading, setAddressLoading] = useState(false);
 
+  const fetchRequests = useCallback((signal?: AbortSignal) => {
+    setError(null);
+    setLoading(true);
+    logisticsApi.getList({ limit: 100 }, signal)
+      .then(r => setRequests(r.data?.data ?? []))
+      .catch(err => {
+        if (err?.code !== 'ERR_CANCELED') setError('Failed to load logistics requests.');
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem('logistics-requests');
-      setRequests(raw ? JSON.parse(raw) : []);
-    } catch {}
+    const ac = new AbortController();
+    fetchRequests(ac.signal);
     try {
       const raw = localStorage.getItem('elios-warehouse-address');
       const addr = raw ? JSON.parse(raw) : DEFAULT_WAREHOUSE_ADDRESS;
@@ -62,7 +56,8 @@ export default function SourcingLogisticsPage() {
       const { updatedAt: _u, ...formFields } = addr;
       setAddressForm(formFields);
     } catch {}
-  }, []);
+    return () => ac.abort();
+  }, [fetchRequests]);
 
   async function handleSaveAddress() {
     setAddressLoading(true);
@@ -83,6 +78,8 @@ export default function SourcingLogisticsPage() {
     setAddressForm(formFields);
     setEditingAddress(false);
   }
+
+  const pendingCount = requests.filter(r => r.status === 'SUBMITTED').length;
 
   return (
     <div>
@@ -163,13 +160,25 @@ export default function SourcingLogisticsPage() {
         <div className="px-5 py-4 border-b border-border flex items-center gap-2">
           <Package className="w-4 h-4 text-[#4A3B52]" />
           <h3 className="font-700">Logistics Requests</h3>
-          {requests.filter(r => r.status === 'Pending').length > 0 && (
+          {pendingCount > 0 && (
             <span className="ml-auto text-xs bg-yellow-100 text-yellow-700 font-600 px-2 py-0.5 rounded-full">
-              {requests.filter(r => r.status === 'Pending').length} pending
+              {pendingCount} pending
             </span>
           )}
         </div>
-        {requests.length === 0 ? (
+
+        {error ? (
+          <div className="px-5 py-8">
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+              <p className="text-sm text-red-800 flex-1">{error}</p>
+              <button onClick={() => fetchRequests()} className="text-xs font-600 text-red-700 hover:underline">Retry</button>
+            </div>
+          </div>
+        ) : loading ? (
+          <div className="px-5 py-8 space-y-3">
+            {[1, 2, 3].map(i => <div key={i} className="h-12 rounded-lg bg-muted animate-pulse" />)}
+          </div>
+        ) : requests.length === 0 ? (
           <div className="px-5 py-8 text-center text-sm text-muted-foreground">No logistics requests yet.</div>
         ) : (
           <div className="overflow-x-auto">
@@ -177,7 +186,7 @@ export default function SourcingLogisticsPage() {
               <thead className="bg-muted/40 border-b border-border">
                 <tr className="text-[11px] uppercase text-muted-foreground">
                   <th className="px-3 py-3 text-left font-600">Client</th>
-                  <th className="px-3 py-3 text-left font-600">Order ID</th>
+                  <th className="px-3 py-3 text-left font-600">Request #</th>
                   <th className="px-3 py-3 text-left font-600">Weight</th>
                   <th className="px-3 py-3 text-left font-600">CBM</th>
                   <th className="px-3 py-3 text-left font-600">Method</th>
@@ -187,24 +196,26 @@ export default function SourcingLogisticsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {requests.slice().reverse().map(req => (
+                {requests.map(req => (
                   <tr key={req.id} className="table-row-hover">
                     <td className="px-3 py-3">
-                      <p className="font-600 text-sm">{req.clientName}</p>
-                      <p className="text-xs text-muted-foreground">{req.clientEmail}</p>
+                      <p className="font-600 text-sm">{req.client?.companyName || req.client?.user?.email || '—'}</p>
+                      <p className="text-xs text-muted-foreground">{req.client?.user?.email || ''}</p>
                     </td>
-                    <td className="px-3 py-3 font-tabular text-xs">{req.orderId}</td>
-                    <td className="px-3 py-3 text-sm">{req.weight || '—'} KG</td>
-                    <td className="px-3 py-3 text-sm">{req.cbm || '—'} CBM</td>
+                    <td className="px-3 py-3 font-tabular text-xs">{req.requestNumber || req.id}</td>
+                    <td className="px-3 py-3 text-sm">{req.weightKg ? `${Number(req.weightKg)} KG` : '— KG'}</td>
+                    <td className="px-3 py-3 text-sm">{req.volumeCbm ? `${Number(req.volumeCbm)} CBM` : '— CBM'}</td>
                     <td className="px-3 py-3 text-sm">{req.shippingMethod}</td>
-                    <td className="px-3 py-3 text-xs font-tabular">{new Date(req.submittedAt).toLocaleDateString()}</td>
+                    <td className="px-3 py-3 text-xs font-tabular">{new Date(req.createdAt).toLocaleDateString()}</td>
                     <td className="px-3 py-3">
-                      <span className={`text-xs font-600 px-2 py-0.5 rounded-full ${statusColor[req.status]}`}>{req.status}</span>
+                      <span className={`text-xs font-600 px-2 py-0.5 rounded-full ${LOGISTICS_STATUS_COLORS[req.status] || 'bg-muted text-muted-foreground'}`}>
+                        {LOGISTICS_STATUS_LABELS[req.status] ?? req.status}
+                      </span>
                     </td>
                     <td className="px-3 py-3 text-right">
                       <Link href={`/staff/sourcing/logistics/${req.id}`} className="flex items-center gap-1 ml-auto px-3 py-1.5 rounded-lg bg-[#4A3B52] text-white text-xs font-600 hover:bg-[#4A3B52]/90 transition-colors w-fit">
                         <MessageSquare className="w-3.5 h-3.5" />
-                        {req.status === 'Quoted' ? 'Edit Quote' : req.status === 'Pending' ? 'Reply / Quote' : 'View'}
+                        {req.status === 'QUOTED' ? 'Edit Quote' : req.status === 'SUBMITTED' ? 'Reply / Quote' : 'View'}
                       </Link>
                     </td>
                   </tr>
@@ -214,8 +225,6 @@ export default function SourcingLogisticsPage() {
           </div>
         )}
       </div>
-
-
     </div>
   );
 }

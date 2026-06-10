@@ -4,7 +4,13 @@ import { paymentsRepository } from "./payments.repository";
 import { requestsRepository } from "../requests/requests.repository";
 import { sendEmail } from "../../../config/email";
 import { signImageFields } from "../../../config/storage";
-import type { SubmitPaymentInput, SubmitRequestPaymentInput, VerifyPaymentInput } from "./payments.schema";
+import { notifyUser } from "../../../utils/notify";
+import type {
+  SubmitPaymentInput,
+  SubmitRequestPaymentInput,
+  SubmitLogisticsPaymentInput,
+  VerifyPaymentInput,
+} from "./payments.schema";
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
@@ -299,6 +305,125 @@ export const paymentsService = {
           resubmitUrl,
         }),
       }).catch(() => {});
+      return { payment: updated };
+    }
+  },
+
+  // ── Logistics payment flow ──────────────────────────────────────────────────
+
+  async submitLogisticsPayment(userId: string, data: SubmitLogisticsPaymentInput) {
+    const client = await prisma.client.findUnique({
+      where: { userId },
+      include: { user: { select: { firstName: true, lastName: true, email: true } } },
+    });
+    if (!client) throw ApiError.forbidden("Client profile not found");
+
+    const logistics = await prisma.logisticsRequest.findFirst({
+      where: { id: data.logisticsRequestId, clientId: client.id },
+      select: { id: true, requestNumber: true, status: true },
+    });
+    if (!logistics) throw ApiError.notFound("Logistics request not found");
+    if (logistics.status !== "ACCEPTED") {
+      throw ApiError.badRequest("Payment can only be submitted after accepting the quote");
+    }
+
+    const payment = await paymentsRepository.createLogisticsPayment({
+      logisticsRequestId: data.logisticsRequestId,
+      type: data.type,
+      amountINR: data.amountINR,
+      proofUrl: data.proofUrl,
+      proofThumbUrl: data.proofThumbUrl,
+      proofImageBase64: data.proofImageBase64,
+      proofFileName: data.proofFileName,
+      notes: data.notes,
+    });
+
+    await prisma.logisticsRequest.update({
+      where: { id: logistics.id },
+      data: { status: "PAYMENT_PENDING" },
+    });
+
+    const companyName = client.companyName;
+    const dashboardUrl = `${FRONTEND_URL}/admin/logistics/${logistics.id}`;
+    const staffAndAdmins = await prisma.user.findMany({
+      where: { role: { in: ["ADMIN", "STAFF"] }, isActive: true },
+      select: { email: true, firstName: true },
+    });
+    for (const staff of staffAndAdmins) {
+      sendEmail({
+        to: staff.email,
+        subject: `Logistics Payment Submitted: ${logistics.requestNumber} from ${companyName}`,
+        html: `<p>Hi ${staff.firstName},</p><p><strong>${companyName}</strong> submitted payment proof of <strong>₹${data.amountINR.toLocaleString("en-IN")}</strong> for logistics order <strong>${logistics.requestNumber}</strong>.</p><p><a href="${dashboardUrl}">View &amp; verify</a></p>`,
+      }).catch(() => {});
+    }
+
+    return payment;
+  },
+
+  async getLogisticsPayments(logisticsRequestId: string, userId: string, role: string) {
+    if (role === "CLIENT") {
+      const client = await prisma.client.findUnique({ where: { userId }, select: { id: true } });
+      if (!client) throw ApiError.forbidden("No client profile found");
+      const logistics = await prisma.logisticsRequest.findFirst({
+        where: { id: logisticsRequestId, clientId: client.id },
+        select: { id: true },
+      });
+      if (!logistics) throw ApiError.notFound("Logistics request not found");
+    }
+    const payments = await paymentsRepository.findByLogisticsId(logisticsRequestId);
+    await signImageFields(payments, { singles: ["proofUrl", "proofThumbUrl"] });
+    return payments;
+  },
+
+  async verifyLogisticsPayment(
+    paymentId: string,
+    staffUserId: string,
+    action: VerifyPaymentInput["action"],
+    rejectionReason?: string
+  ) {
+    const payment = await paymentsRepository.findLogisticsPaymentById(paymentId);
+    if (!payment) throw ApiError.notFound("Payment not found");
+    if (payment.status !== "SUBMITTED") {
+      throw ApiError.badRequest("Only submitted payments can be verified or rejected");
+    }
+
+    const logistics = payment.logisticsRequest;
+    const clientUserId = logistics.client?.userId;
+    const clientEmail = logistics.client?.user?.email;
+    const clientName = logistics.client?.user?.firstName ?? "there";
+    const requestNumber = logistics.requestNumber;
+    const amountINR = parseFloat(payment.amountINR.toString());
+
+    if (action === "VERIFY") {
+      const updated = await paymentsRepository.verifyLogisticsPayment(paymentId, staffUserId);
+
+      if (clientUserId) {
+        await notifyUser(clientUserId, {
+          type: "logistics",
+          title: `✅ Logistics Order Confirmed — ${requestNumber}`,
+          message: "Payment verified. Your shipment is confirmed and now At Warehouse.",
+          relatedType: "LOGISTICS",
+          relatedId: logistics.id,
+        }).catch(() => {});
+      }
+      if (clientEmail) {
+        sendEmail({
+          to: clientEmail,
+          subject: `Logistics Payment Verified — ${requestNumber} Confirmed`,
+          html: `<p>Hi ${clientName},</p><p>Your payment of <strong>₹${amountINR.toLocaleString("en-IN")}</strong> for logistics order <strong>${requestNumber}</strong> has been verified. Your shipment is confirmed and now at our warehouse.</p><p><a href="${FRONTEND_URL}/client-dashboard/logistics/${logistics.id}">Track your shipment</a></p>`,
+        }).catch(() => {});
+      }
+      return { payment: updated };
+    } else {
+      if (!rejectionReason?.trim()) throw ApiError.badRequest("Rejection reason is required");
+      const updated = await paymentsRepository.rejectLogisticsPayment(paymentId, staffUserId, rejectionReason);
+      if (clientEmail) {
+        sendEmail({
+          to: clientEmail,
+          subject: `Logistics Payment Rejected — ${requestNumber}`,
+          html: `<p>Hi ${clientName},</p><p>We could not verify your payment proof for logistics order <strong>${requestNumber}</strong>.</p><p>Reason: ${rejectionReason}</p><p><a href="${FRONTEND_URL}/payment/logistics/${logistics.id}">Resubmit payment proof</a></p>`,
+        }).catch(() => {});
+      }
       return { payment: updated };
     }
   },

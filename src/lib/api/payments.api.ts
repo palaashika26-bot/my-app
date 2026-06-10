@@ -30,4 +30,19 @@ export const paymentsApi = {
 
   verifyRequestPayment: (id: string, action: 'VERIFY' | 'REJECT', rejectionReason?: string) =>
     axiosClient.patch(`/payments/request/${id}/verify`, { action, rejectionReason }),
+
+  submitLogisticsPayment: (data: {
+    logisticsRequestId: string;
+    type: 'ADVANCE' | 'FULL';
+    amountINR: number;
+    proofImageBase64: string;
+    proofFileName?: string;
+    notes?: string;
+  }) => axiosClient.post('/payments/logistics', data),
+
+  getLogisticsPayments: (logisticsId: string) =>
+    axiosClient.get(`/payments/logistics/${logisticsId}`),
+
+  verifyLogisticsPayment: (id: string, action: 'VERIFY' | 'REJECT', rejectionReason?: string) =>
+    axiosClient.patch(`/payments/logistics/${id}/verify`, { action, rejectionReason }),
 };

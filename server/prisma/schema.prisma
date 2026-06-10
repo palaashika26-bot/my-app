@@ -114,6 +114,32 @@ enum RequestType {
   SAMPLE
 }
 
+// Quote lifecycle for a standalone logistics (shipping) request. Mirrors the
+// SourcingRequest flow but for a single shipping quote (not per-item).
+enum LogisticsStatus {
+  SUBMITTED
+  QUOTED
+  COUNTERED
+  ACCEPTED
+  REJECTED
+  PAYMENT_PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+// Post-confirmation fulfillment phases shown on the client tracking timeline.
+enum LogisticsPhase {
+  AT_WAREHOUSE
+  FLIGHT_BOOKED
+  IN_TRANSIT
+  INDIA_WAREHOUSE
+}
+
+enum LogisticsDeliveryMode {
+  PICKUP
+  DELIVERY
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
@@ -143,6 +169,8 @@ model User {
   requestMessages    RequestMessage[]
   verifiedPayments        Payment[]        @relation("PaymentVerifiedBy")
   verifiedRequestPayments RequestPayment[] @relation("RequestPaymentVerifiedBy")
+  verifiedLogisticsPayments LogisticsPayment[] @relation("LogisticsPaymentVerifiedBy")
+  logisticsMessages       LogisticsMessage[]
   pushSubscriptions  PushSubscription[]
   notifications      Notification[]
 }
@@ -216,11 +244,12 @@ model Client {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  user             User              @relation(fields: [userId], references: [id])
-  inquiries        Inquiry[]
-  orders           Order[]
-  sourcingRequests SourcingRequest[]
-  disputes         Dispute[]
+  user              User               @relation(fields: [userId], references: [id])
+  inquiries         Inquiry[]
+  orders            Order[]
+  sourcingRequests  SourcingRequest[]
+  logisticsRequests LogisticsRequest[]
+  disputes          Dispute[]
 
   @@map("clients")
 }
@@ -649,6 +678,115 @@ model RequestPayment {
   @@index([requestId])
   @@index([status])
   @@map("request_payments")
+}
+
+// Standalone shipping request: client submits weight/CBM/method + packing list,
+// admin quotes (single quote), client accepts/rejects/counters, pays, then the
+// shipment moves through fulfillment phases. Replaces the browser-localStorage
+// logistics prototype.
+model LogisticsRequest {
+  id            String          @id @default(uuid())
+  requestNumber String          @unique
+  clientId      String
+  status        LogisticsStatus @default(SUBMITTED)
+
+  // Client-submitted shipment details
+  shippingMethod     String   // 'Air' | 'Express' | 'Sea'
+  weightKg           Decimal? @db.Decimal(12, 2)
+  volumeCbm          Decimal? @db.Decimal(12, 3)
+  packagingListUrls  String[] @default([])
+  packagingThumbUrls String[] @default([])
+  note               String?
+
+  // Admin quote (single quote — not per-item)
+  carrier           String?
+  shippingMode      String?
+  estimatedPriceINR Decimal?  @db.Decimal(12, 2)
+  pricePerKgCNY     Decimal?  @db.Decimal(12, 2)
+  eta               String?
+  quoteNote         String?
+  quotedAt          DateTime?
+
+  // Client counter offer
+  counterPriceINR Decimal?  @db.Decimal(12, 2)
+  counterNote     String?
+  counteredAt     DateTime?
+
+  // Post-confirmation fulfillment
+  phase           LogisticsPhase?
+  completedPhases String[]               @default([])
+  deliveryMode    LogisticsDeliveryMode?
+  deliveryAddress String?
+
+  // Warehouse slip + cargo receipt
+  warehouseSlipUrl      String?
+  warehouseSlipThumbUrl String?
+  slipUploadedAt        DateTime?
+  cargoConfirmedBy      String?
+  cargoConfirmedAt      DateTime?
+
+  // Lifecycle timestamps
+  acceptedAt   DateTime?
+  rejectedAt   DateTime?
+  confirmedAt  DateTime?
+  cancelledAt  DateTime?
+  cancelReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client   Client             @relation(fields: [clientId], references: [id])
+  payments LogisticsPayment[]
+  messages LogisticsMessage[]
+
+  @@index([clientId])
+  @@index([requestNumber])
+  @@index([status])
+  @@index([createdAt])
+  @@index([clientId, status])
+  @@map("logistics_requests")
+}
+
+model LogisticsPayment {
+  id                 String        @id @default(uuid())
+  logisticsRequestId String
+  type               PaymentType
+  amountINR          Decimal       @db.Decimal(12, 2)
+  status             PaymentStatus @default(SUBMITTED)
+  proofImageBase64   String?
+  proofUrl           String?
+  proofThumbUrl      String?
+  proofFileName      String?
+  submittedAt        DateTime?
+  verifiedAt         DateTime?
+  verifiedByUserId   String?
+  rejectedAt         DateTime?
+  rejectionReason    String?
+  notes              String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  logisticsRequest LogisticsRequest @relation(fields: [logisticsRequestId], references: [id], onDelete: Restrict)
+  verifiedBy       User?            @relation("LogisticsPaymentVerifiedBy", fields: [verifiedByUserId], references: [id])
+
+  @@index([logisticsRequestId])
+  @@index([status])
+  @@map("logistics_payments")
+}
+
+model LogisticsMessage {
+  id                 String   @id @default(uuid())
+  logisticsRequestId String
+  senderId           String
+  senderRole         String
+  text               String
+  createdAt          DateTime @default(now())
+
+  logisticsRequest LogisticsRequest @relation(fields: [logisticsRequestId], references: [id], onDelete: Cascade)
+  sender           User             @relation(fields: [senderId], references: [id])
+
+  @@index([logisticsRequestId, createdAt])
+  @@map("logistics_messages")
 }
 
 model Dispute {

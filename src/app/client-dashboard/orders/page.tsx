@@ -7,8 +7,9 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import { ordersApi } from '@/lib/api/orders.api';
 import { ordersCache } from '@/lib/api/ordersCache';
 import type { ApiOrder } from '@/lib/types/api.types';
-import { Search, Eye, ChevronDown, ChevronUp, Package, Warehouse, MapPin, CheckCircle2, Clock, FileText, Truck, AlertCircle, DollarSign, ShoppingCart, List } from 'lucide-react';
+import { Search, Eye, ChevronDown, ChevronUp, Package, Warehouse, MapPin, CheckCircle2, Clock, FileText, Truck, AlertCircle, DollarSign, ShoppingCart, List, TruckIcon } from 'lucide-react';
 import { SkeletonTable } from '@/components/SkeletonLoader';
+import { logisticsApi, LOGISTICS_STATUS_LABELS } from '@/lib/api/logistics.api';
 
 interface OrderRow {
   id: string;
@@ -186,6 +187,7 @@ function AllOrdersContent() {
 
   // ── Live orders from the backend (shown when a JWT is present) ─────────────
   const [liveOrders, setLiveOrders] = useState<OrderRow[]>([]);
+  const [logisticsRequests, setLogisticsRequests] = useState<any[]>([]);
 
   function fetchLiveOrders(signal?: AbortSignal) {
     ordersApi
@@ -199,9 +201,16 @@ function AllOrdersContent() {
       .finally(() => setIsLoading(false));
   }
 
+  function fetchLogisticsRequests(signal?: AbortSignal) {
+    logisticsApi.getList({ limit: 50, view: 'orders' }, signal)
+      .then(r => setLogisticsRequests(r.data?.data ?? []))
+      .catch(() => {});
+  }
+
   useEffect(() => {
     const ac = new AbortController();
     fetchLiveOrders(ac.signal);
+    fetchLogisticsRequests(ac.signal);
     return () => ac.abort();
   }, []);
 
@@ -217,6 +226,7 @@ function AllOrdersContent() {
   }, []);
 
   const allOrders = liveOrders;
+  const confirmedLogistics = logisticsRequests.filter((r: any) => r.status === 'CONFIRMED');
 
   const filtered = useMemo(() => allOrders.filter(o => {
     const matchesSearch = !q || o.orderId.toLowerCase().includes(q.toLowerCase()) || (o.itemNames || '').toLowerCase().includes(q.toLowerCase());
@@ -299,6 +309,41 @@ function AllOrdersContent() {
         </>
       ) : (
         <PipelineView orders={liveOrders} />
+      )}
+
+      {/* Logistics Shipments section */}
+      {confirmedLogistics.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-lg font-700 mb-3 flex items-center gap-2"><TruckIcon className="w-5 h-5" /> Logistics Shipments</h2>
+          <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[600px]">
+                <thead className="bg-muted/40">
+                  <tr className="border-b border-border">
+                    {['Request #', 'Method', 'Weight', 'Status', 'Action'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {confirmedLogistics.map((r: any) => (
+                    <tr key={r.id} className="table-row-hover">
+                      <td className="px-4 py-3.5"><span className="text-sm font-600 text-primary font-tabular">{r.requestNumber || r.id}</span></td>
+                      <td className="px-4 py-3.5 text-sm">{r.shippingMethod}</td>
+                      <td className="px-4 py-3.5 text-sm font-tabular">{r.weightKg ? `${Number(r.weightKg)} KG` : '—'}</td>
+                      <td className="px-4 py-3.5"><StatusBadge status={'Confirmed' as any} /></td>
+                      <td className="px-4 py-3.5">
+                        <Link href={`/client-dashboard/logistics/${r.id}`} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-500 text-[#4A3B52] border border-[#4A3B52]/30 rounded-lg hover:bg-[#4A3B52]/10">
+                          <Eye className="w-3.5 h-3.5" /> View
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       )}
     </ClientLayout>
   );

@@ -33,6 +33,16 @@ export const submitRequestPaymentSchema = z
   })
   .refine(hasProof, proofRefine);
 
+export const submitLogisticsPaymentSchema = z
+  .object({
+    logisticsRequestId: z.string().uuid("Invalid logistics request ID"),
+    type: z.enum(["ADVANCE", "FULL"]),
+    amountINR: z.number().positive("Amount must be positive"),
+    ...proofFields,
+    notes: z.string().max(500).optional(),
+  })
+  .refine(hasProof, proofRefine);
+
 export const verifyPaymentSchema = z.object({
   action: z.enum(["VERIFY", "REJECT"]),
   rejectionReason: z.string().max(500).optional(),
@@ -40,4 +50,5 @@ export const verifyPaymentSchema = z.object({
 
 export type SubmitPaymentInput = z.infer<typeof submitPaymentSchema>;
 export type SubmitRequestPaymentInput = z.infer<typeof submitRequestPaymentSchema>;
+export type SubmitLogisticsPaymentInput = z.infer<typeof submitLogisticsPaymentSchema>;
 export type VerifyPaymentInput = z.infer<typeof verifyPaymentSchema>;

@@ -1,13 +1,14 @@
 ﻿'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import AdminLayout from '@/components/AdminLayout';
-import StatusBadge from '@/components/ui/StatusBadge';
-import { mockAdminOrders, statusToLocation, carrierForOrder } from '@/lib/adminMockData';
 import { useToast } from '@/components/ui/Toast';
-import { MapPin, RefreshCw, MessageSquare, Package, Edit3, Building2, CheckCircle2 } from 'lucide-react';
-
-// ─── Backend-ready data functions ─────────────────────────────────────────────
+import { MapPin, RefreshCw, MessageSquare, Package, Edit3, Building2, CheckCircle2, Search } from 'lucide-react';
+import {
+  logisticsApi,
+  LOGISTICS_STATUS_COLORS,
+  LOGISTICS_STATUS_LABELS,
+} from '@/lib/api/logistics.api';
 
 const DEFAULT_WAREHOUSE_ADDRESS = {
   companyName: 'Elios Wholesale — China Warehouse',
@@ -30,63 +31,20 @@ async function saveWarehouseAddress(data: any) {
   localStorage.setItem('elios-warehouse-address', JSON.stringify({ ...data, updatedAt: new Date().toISOString() }));
 }
 
-interface LogisticsRequest {
-  id: string;
-  clientName: string;
-  clientEmail: string;
-  orderId: string;
-  weight: string;
-  cbm: string;
-  shippingMethod: string;
-  packagingList: string[];
-  status: 'Pending' | 'Quoted' | 'Approved' | 'Rejected' | 'SlipUploaded' | 'CargoReceived';
-  submittedAt: string;
-  adminQuote: null | Record<string, string>;
+function getStatusSortWeight(status: string): number {
+  const order = ['SUBMITTED', 'QUOTED', 'COUNTERED', 'ACCEPTED', 'PAYMENT_PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED'];
+  const idx = order.indexOf(status);
+  return idx >= 0 ? idx : 99;
 }
-
-interface TrackingEntry {
-  trackingId: string;
-  orderId: string;
-  clientName: string;
-  carrier: string;
-  shippingMode: string;
-  currentLocation: string;
-  eta: string;
-  status: string;
-  createdAt: string;
-}
-
-function loadRequests(): LogisticsRequest[] {
-  try {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem('logistics-requests') : null;
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
-}
-
-function loadTracking(): TrackingEntry[] {
-  try {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem('logistics-tracking') : null;
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
-}
-
-const statusColor: Record<string, string> = {
-  Pending: 'bg-yellow-100 text-yellow-700',
-  Quoted: 'bg-[#e4eeee] text-[#6b8f90]',
-  Approved: 'bg-[#ece9f5] text-[#5c5470]',
-  SlipUploaded: 'bg-orange-100 text-[#c17b5c]',
-  CargoReceived: 'bg-green-100 text-green-700',
-  Rejected: 'bg-red-100 text-red-700',
-};
 
 export default function AdminLogisticsPage() {
   const { addToast } = useToast();
-  const shipments = mockAdminOrders.filter(o => statusToLocation[o.status as string]);
-  const [filter, setFilter] = useState('All');
 
-  // Logistics requests state
-  const [requests, setRequests] = useState<LogisticsRequest[]>([]);
-  const [trackingEntries, setTrackingEntries] = useState<TrackingEntry[]>([]);
+  const [requests, setRequests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState('All');
+  const [requestQuery, setRequestQuery] = useState('');
 
   // Warehouse address state
   const [warehouseAddress, setWarehouseAddress] = useState<any>(DEFAULT_WAREHOUSE_ADDRESS);
@@ -96,16 +54,31 @@ export default function AdminLogisticsPage() {
   const [addressSuccess, setAddressSuccess] = useState(false);
   const [addressLoading, setAddressLoading] = useState(false);
 
+  const fetchRequests = useCallback((signal?: AbortSignal) => {
+    setError(null);
+    setLoading(true);
+    logisticsApi.getList({ limit: 100 }, signal)
+      .then(r => {
+        const items = r.data?.data ?? [];
+        setRequests(items);
+      })
+      .catch(err => {
+        if (err?.code !== 'ERR_CANCELED') setError('Failed to load logistics requests.');
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
   useEffect(() => {
-    setRequests(loadRequests());
-    setTrackingEntries(loadTracking());
+    const ac = new AbortController();
+    fetchRequests(ac.signal);
     getWarehouseAddress().then(addr => {
       setWarehouseAddress(addr);
       if (addr.updatedAt) setWarehouseAddressUpdatedAt(addr.updatedAt);
       const { updatedAt: _u, ...formFields } = addr;
       setAddressForm(formFields);
     });
-  }, []);
+    return () => ac.abort();
+  }, [fetchRequests]);
 
   async function handleSaveAddress() {
     const fields = ['companyName', 'contactPerson', 'phone', 'address', 'area', 'city', 'country', 'pincode'] as const;
@@ -132,18 +105,32 @@ export default function AdminLogisticsPage() {
     setEditingAddress(false);
   }
 
-  // Combine mock shipments with localStorage tracking for the table
-  const allTracking = trackingEntries;
-  const mockFiltered = filter === 'All' ? shipments : shipments.filter(s => carrierForOrder(s.orderId).mode === filter);
-  const localFiltered = filter === 'All' ? allTracking : allTracking.filter(t => t.shippingMode === filter);
-  const active = shipments.length + trackingEntries.length;
+  const statusFilters = ['All', 'SUBMITTED', 'QUOTED', 'COUNTERED', 'ACCEPTED', 'PAYMENT_PENDING', 'CONFIRMED', 'REJECTED'];
+
+  const requestSearch = requestQuery.trim().toLowerCase();
+  const filteredRequests = requests
+    .filter(r => filter === 'All' || r.status === filter)
+    .filter(r => !requestSearch || [r.requestNumber, r.client?.companyName, r.client?.user?.email, r.shippingMethod, r.status]
+      .some(v => (v ?? '').toLowerCase().includes(requestSearch)))
+    .sort((a, b) => {
+      const wa = getStatusSortWeight(a.status);
+      const wb = getStatusSortWeight(b.status);
+      if (wa !== wb) return wa - wb;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+  const pendingCount = requests.filter(r => r.status === 'SUBMITTED').length;
 
   return (
     <AdminLayout>
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-5">
-        <div><h1 className="text-2xl font-700">Logistics & Shipments</h1><p className="text-sm text-muted-foreground mt-1">{active} active shipments in the pipeline</p></div>
-        <div className="flex gap-1">
-          {['All','Sea Freight','Air Freight','Express'].map(f => <button key={f} onClick={() => setFilter(f)} className={`px-3 py-2 rounded-lg text-xs font-600 ${filter === f ? 'bg-[#4A3B52] text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>{f}</button>)}
+        <div><h1 className="text-2xl font-700">Logistics & Shipments</h1><p className="text-sm text-muted-foreground mt-1">{requests.length} total requests</p></div>
+        <div className="flex gap-1 flex-wrap">
+          {['All', 'SUBMITTED', 'QUOTED', 'CONFIRMED'].map(f => (
+            <button key={f} onClick={() => setFilter(f)} className={`px-3 py-2 rounded-lg text-xs font-600 ${filter === f ? 'bg-[#4A3B52] text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
+              {f === 'All' ? 'All' : LOGISTICS_STATUS_LABELS[f] || f}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -158,10 +145,7 @@ export default function AdminLogisticsPage() {
             <p className="text-xs text-muted-foreground">This address is shown to clients after they approve a logistics quote</p>
           </div>
           {!editingAddress && (
-            <button
-              onClick={() => setEditingAddress(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-600 hover:bg-muted transition-colors flex-shrink-0"
-            >
+            <button onClick={() => setEditingAddress(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-600 hover:bg-muted transition-colors flex-shrink-0">
               <Edit3 className="w-3.5 h-3.5" /> Edit Address
             </button>
           )}
@@ -169,7 +153,7 @@ export default function AdminLogisticsPage() {
 
         {addressSuccess && (
           <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-4">
-            <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> Address updated successfully. All future client views will show the new address.
+            <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> Address updated successfully.
           </div>
         )}
 
@@ -189,29 +173,15 @@ export default function AdminLogisticsPage() {
               ].map(({ label, key, placeholder }) => (
                 <div key={key}>
                   <label className="text-[10px] uppercase text-muted-foreground font-600 block mb-1">{label}</label>
-                  <input
-                    className="input-field w-full text-sm"
-                    value={addressForm[key] ?? ''}
-                    onChange={e => setAddressForm((f: any) => ({ ...f, [key]: e.target.value }))}
-                    placeholder={placeholder}
-                  />
+                  <input className="input-field w-full text-sm" value={addressForm[key] ?? ''} onChange={e => setAddressForm((f: any) => ({ ...f, [key]: e.target.value }))} placeholder={placeholder} />
                 </div>
               ))}
             </div>
             <div className="flex gap-2 pt-1">
-              <button
-                onClick={handleSaveAddress}
-                disabled={addressLoading}
-                className="px-4 py-2 rounded-lg bg-[#c17b5c] text-white text-sm font-600 hover:bg-[#a66344] transition-colors disabled:opacity-60"
-              >
+              <button onClick={handleSaveAddress} disabled={addressLoading} className="px-4 py-2 rounded-lg bg-[#c17b5c] text-white text-sm font-600 hover:bg-[#a66344] transition-colors disabled:opacity-60">
                 {addressLoading ? 'Saving…' : 'Save Address'}
               </button>
-              <button
-                onClick={handleCancelAddress}
-                className="px-4 py-2 rounded-lg border border-border text-sm font-600 hover:bg-muted transition-colors"
-              >
-                Cancel
-              </button>
+              <button onClick={handleCancelAddress} className="px-4 py-2 rounded-lg border border-border text-sm font-600 hover:bg-muted transition-colors">Cancel</button>
             </div>
           </div>
         ) : (
@@ -240,104 +210,83 @@ export default function AdminLogisticsPage() {
         <div className="px-5 py-4 border-b border-border flex items-center gap-2">
           <Package className="w-4 h-4 text-[#4A3B52]" />
           <h3 className="font-700">Logistics Requests</h3>
-          {requests.filter(r => r.status === 'Pending').length > 0 && (
+          {pendingCount > 0 && (
             <span className="ml-auto text-xs bg-yellow-100 text-yellow-700 font-600 px-2 py-0.5 rounded-full">
-              {requests.filter(r => r.status === 'Pending').length} pending
+              {pendingCount} pending
             </span>
           )}
         </div>
-        {requests.length === 0 ? (
+
+        {error ? (
+          <div className="px-5 py-8">
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+              <p className="text-sm text-red-800 flex-1">{error}</p>
+              <button onClick={() => fetchRequests()} className="text-xs font-600 text-red-700 hover:underline">Retry</button>
+            </div>
+          </div>
+        ) : loading ? (
+          <div className="px-5 py-8 space-y-3">
+            {[1, 2, 3].map(i => <div key={i} className="h-12 rounded-lg bg-muted animate-pulse" />)}
+          </div>
+        ) : requests.length === 0 ? (
           <div className="px-5 py-8 text-center text-sm text-muted-foreground">No logistics requests yet.</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[750px]">
-              <thead className="bg-muted/40 border-b border-border">
-                <tr className="text-[11px] uppercase text-muted-foreground">
-                  <th className="px-3 py-3 text-left font-600">Client</th>
-                  <th className="px-3 py-3 text-left font-600">Order ID</th>
-                  <th className="px-3 py-3 text-left font-600">Weight</th>
-                  <th className="px-3 py-3 text-left font-600">CBM</th>
-                  <th className="px-3 py-3 text-left font-600">Method</th>
-                  <th className="px-3 py-3 text-left font-600">Submitted</th>
-                  <th className="px-3 py-3 text-left font-600">Status</th>
-                  <th className="px-3 py-3 text-right font-600">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {requests.slice().reverse().map(req => (
-                  <tr key={req.id} className="table-row-hover">
-                    <td className="px-3 py-3">
-                      <p className="font-600 text-sm">{req.clientName}</p>
-                      <p className="text-xs text-muted-foreground">{req.clientEmail}</p>
-                    </td>
-                    <td className="px-3 py-3 font-tabular text-xs">{req.orderId}</td>
-                    <td className="px-3 py-3 text-sm">{req.weight || '—'} KG</td>
-                    <td className="px-3 py-3 text-sm">{req.cbm || '—'} CBM</td>
-                    <td className="px-3 py-3 text-sm">{req.shippingMethod}</td>
-                    <td className="px-3 py-3 text-xs font-tabular">{new Date(req.submittedAt).toLocaleDateString()}</td>
-                    <td className="px-3 py-3">
-                      <span className={`text-xs font-600 px-2 py-0.5 rounded-full ${statusColor[req.status]}`}>{req.status}</span>
-                    </td>
-                    <td className="px-3 py-3 text-right">
-                      <Link
-                        href={`/admin/logistics/${req.id}`}
-                        className="flex items-center gap-1 ml-auto px-3 py-1.5 rounded-lg bg-[#4A3B52] text-white text-xs font-600 hover:bg-[#4A3B52]/90 transition-colors w-fit"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        {req.status === 'Quoted' ? 'Edit Quote' : req.status === 'Pending' ? 'Reply / Quote' : 'View'}
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="px-5 py-3 border-b border-border">
+              <div className="relative max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none z-10" />
+                <input value={requestQuery} onChange={e => setRequestQuery(e.target.value)} placeholder="Search request #, client, method..." className="input-field !pl-10 w-full text-sm" />
+              </div>
+            </div>
+            {filteredRequests.length === 0 ? (
+              <div className="px-5 py-8 text-center text-sm text-muted-foreground">No requests match your filters.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[750px]">
+                  <thead className="bg-muted/40 border-b border-border">
+                    <tr className="text-[11px] uppercase text-muted-foreground">
+                      <th className="px-3 py-3 text-left font-600">Client</th>
+                      <th className="px-3 py-3 text-left font-600">Request #</th>
+                      <th className="px-3 py-3 text-left font-600">Weight</th>
+                      <th className="px-3 py-3 text-left font-600">CBM</th>
+                      <th className="px-3 py-3 text-left font-600">Method</th>
+                      <th className="px-3 py-3 text-left font-600">Submitted</th>
+                      <th className="px-3 py-3 text-left font-600">Status</th>
+                      <th className="px-3 py-3 text-right font-600">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {filteredRequests.map(req => (
+                      <tr key={req.id} className="table-row-hover">
+                        <td className="px-3 py-3">
+                          <p className="font-600 text-sm">{req.client?.companyName || req.client?.user?.email || '—'}</p>
+                          <p className="text-xs text-muted-foreground">{req.client?.user?.email || ''}</p>
+                        </td>
+                        <td className="px-3 py-3 font-tabular text-xs">{req.requestNumber || req.id}</td>
+                        <td className="px-3 py-3 text-sm">{req.weightKg ? `${Number(req.weightKg)} KG` : '— KG'}</td>
+                        <td className="px-3 py-3 text-sm">{req.volumeCbm ? `${Number(req.volumeCbm)} CBM` : '— CBM'}</td>
+                        <td className="px-3 py-3 text-sm">{req.shippingMethod}</td>
+                        <td className="px-3 py-3 text-xs font-tabular">{new Date(req.createdAt).toLocaleDateString()}</td>
+                        <td className="px-3 py-3">
+                          <span className={`text-xs font-600 px-2 py-0.5 rounded-full ${LOGISTICS_STATUS_COLORS[req.status] || 'bg-muted text-muted-foreground'}`}>
+                            {LOGISTICS_STATUS_LABELS[req.status] ?? req.status}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          <Link href={`/admin/logistics/${req.id}`} className="flex items-center gap-1 ml-auto px-3 py-1.5 rounded-lg bg-[#4A3B52] text-white text-xs font-600 hover:bg-[#4A3B52]/90 transition-colors w-fit">
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            {req.status === 'QUOTED' ? 'Edit Quote' : req.status === 'SUBMITTED' ? 'Reply / Quote' : 'View'}
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
         )}
       </div>
-
-      {/* Tracking Table — mock data + localStorage approved shipments */}
-      <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
-        <div className="overflow-x-auto"><table className="w-full text-sm min-w-[900px]">
-          <thead className="bg-muted/40 border-b border-border"><tr className="text-[11px] uppercase text-muted-foreground">
-            <th className="px-3 py-3 text-left font-600">Tracking ID</th><th className="px-3 py-3 text-left font-600">Order ID</th><th className="px-3 py-3 text-left font-600">Client</th><th className="px-3 py-3 text-left font-600">Carrier</th><th className="px-3 py-3 text-left font-600">Current Location</th><th className="px-3 py-3 text-left font-600">ETA</th><th className="px-3 py-3 text-left font-600">Status</th><th className="px-3 py-3 text-right font-600">Actions</th>
-          </tr></thead>
-          <tbody className="divide-y divide-border">
-            {mockFiltered.map(s => {
-              const c = carrierForOrder(s.orderId); const loc = statusToLocation[s.status as string];
-              return (
-                <tr key={s.id} className="table-row-hover">
-                  <td className="px-3 py-3 font-tabular font-600">{c.trackingNo}</td>
-                  <td className="px-3 py-3"><Link href={`/admin/orders/${s.id}`} className="font-tabular text-primary font-600 hover:text-[#4A3B52]">{s.orderId}</Link></td>
-                  <td className="px-3 py-3 text-sm">{s.client}</td>
-                  <td className="px-3 py-3"><p className="text-sm">{c.carrier}</p><p className="text-[11px] text-muted-foreground">{c.mode}</p></td>
-                  <td className="px-3 py-3"><p className="text-sm">{loc.label}</p><div className="w-24 h-1 mt-1 bg-muted rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-accent to-[#1A1423]" style={{ width: `${loc.progress}%` }} /></div></td>
-                  <td className="px-3 py-3 text-xs font-tabular">{s.estimatedDelivery}</td>
-                  <td className="px-3 py-3"><StatusBadge status={s.status as any} /></td>
-                  <td className="px-3 py-3 text-right"><div className="flex items-center justify-end gap-1">
-                    <button onClick={() => addToast({ type: 'success', title: 'Location updated' })} className="p-1.5 rounded-md hover:bg-muted" title="Update Location"><RefreshCw className="w-3.5 h-3.5" /></button>
-                    <Link href={`/admin/shipments/tracking/${s.id}`} className="p-1.5 rounded-md hover:bg-muted text-[#4A3B52]" title="View Tracking"><MapPin className="w-3.5 h-3.5" /></Link>
-                  </div></td>
-                </tr>
-              );
-            })}
-            {localFiltered.map(t => (
-              <tr key={t.trackingId} className="table-row-hover">
-                <td className="px-3 py-3 font-tabular font-600">{t.trackingId}</td>
-                <td className="px-3 py-3 font-tabular text-primary font-600">{t.orderId}</td>
-                <td className="px-3 py-3 text-sm">{t.clientName}</td>
-                <td className="px-3 py-3"><p className="text-sm">{t.carrier}</p><p className="text-[11px] text-muted-foreground">{t.shippingMode}</p></td>
-                <td className="px-3 py-3"><p className="text-sm">{t.currentLocation}</p><div className="w-24 h-1 mt-1 bg-muted rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-accent to-[#1A1423]" style={{ width: '10%' }} /></div></td>
-                <td className="px-3 py-3 text-xs font-tabular">{t.eta}</td>
-                <td className="px-3 py-3"><span className="text-xs font-600 px-2 py-0.5 rounded-full bg-[#e4eeee] text-[#6b8f90]">{t.status}</span></td>
-                <td className="px-3 py-3 text-right"><div className="flex items-center justify-end gap-1">
-                  <button onClick={() => addToast({ type: 'success', title: 'Location updated' })} className="p-1.5 rounded-md hover:bg-muted" title="Update Location"><RefreshCw className="w-3.5 h-3.5" /></button>
-                </div></td>
-              </tr>
-            ))}
-          </tbody>
-        </table></div>
-      </div>
-
     </AdminLayout>
   );
 }

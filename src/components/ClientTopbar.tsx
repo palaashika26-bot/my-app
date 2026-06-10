@@ -176,7 +176,7 @@ export default function ClientTopbar({ onMenuOpen }: ClientTopbarProps) {
 
             {/* Notification dropdown */}
             {notifOpen && (
-              <div className="absolute right-0 top-full mt-2 w-96 bg-card rounded-xl shadow-card-lg border border-border z-50 fade-in overflow-hidden">
+              <div className="fixed left-3 right-3 top-16 w-auto sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 bg-card rounded-xl shadow-card-lg border border-border z-50 fade-in overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                   <h3 className="text-sm font-600 text-foreground">Notifications</h3>
                   {unreadCount > 0 && (
@@ -200,6 +200,8 @@ export default function ClientTopbar({ onMenuOpen }: ClientTopbarProps) {
                         ? `/client-dashboard/requests/${notif.relatedId}`
                         : notif.relatedType === 'INQUIRY'
                         ? `/client-dashboard/inquiries/${notif.relatedId}`
+                        : notif.relatedType === 'LOGISTICS'
+                        ? `/client-dashboard/logistics/${notif.relatedId}`
                         : '/client-dashboard';
                     return (
                       <div
