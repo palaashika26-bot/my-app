@@ -168,18 +168,19 @@ export default function ClientLogisticsDetailPage({ params }: { params: Promise<
     const file = e.target.files?.[0];
     if (!file) return;
     setFileError('');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setFileError('Please upload an image (JPG, PNG, or WEBP).');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
     if (file.size > 10 * 1024 * 1024) {
       setFileError('File too large. Maximum size is 10MB.');
       return;
     }
     setSlipFile(file);
-    if (file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = ev => setSlipPreview(ev.target?.result as string);
-      reader.readAsDataURL(file);
-    } else {
-      setSlipPreview('pdf');
-    }
+    const reader = new FileReader();
+    reader.onload = ev => setSlipPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
   }
 
   async function handleUploadSlip() {
@@ -424,7 +425,7 @@ export default function ClientLogisticsDetailPage({ params }: { params: Promise<
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  accept="image/jpeg,image/png,image/webp"
                   className="hidden"
                   onChange={handleFileSelect}
                 />
@@ -435,7 +436,7 @@ export default function ClientLogisticsDetailPage({ params }: { params: Promise<
                   >
                     <Upload className="w-8 h-8 mx-auto mb-2 text-[#c17b5c]" />
                     <p className="text-sm font-600 text-foreground">Click to upload warehouse slip</p>
-                    <p className="text-xs text-muted-foreground mt-1">JPG, PNG, WEBP or PDF · Max 10MB</p>
+                    <p className="text-xs text-muted-foreground mt-1">JPG, PNG, WEBP · Max 10MB</p>
                   </div>
                 ) : (
                   <div className="mb-3">
