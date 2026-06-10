@@ -500,6 +500,33 @@ export const updateRepackApproval = async (req: Request, res: Response) => {
     clientReviewedAt: new Date().toISOString(),
   });
 
+  // Notify admin + staff of the client's decision on the repackaging photos so it
+  // surfaces in their bell (mirrors the uploadWarehousePhotos notify pattern).
+  const orderForNotif = await prisma.order.findUnique({
+    where: { id },
+    select: { orderNumber: true },
+  });
+  if (orderForNotif) {
+    const orderNumber = orderForNotif.orderNumber;
+    if (approved) {
+      await notifyAdminsAndStaff({
+        type: "order",
+        title: `✅ Shipping Approved — ${orderNumber}`,
+        message: `Client approved the repackaged product photos for order ${orderNumber}. Ready to ship.`,
+        relatedType: "ORDER",
+        relatedId: id,
+      });
+    } else {
+      await notifyAdminsAndStaff({
+        type: "order",
+        title: `⚠️ Repack Concern Raised — ${orderNumber}`,
+        message: `Client flagged a concern on the repackaging photos for order ${orderNumber}${concern ? `: ${concern}` : "."}`,
+        relatedType: "ORDER",
+        relatedId: id,
+      });
+    }
+  }
+
   return ApiResponse.success(res, { clientApproved: (report as any).clientApproved, clientConcern: (report as any).clientConcern }, "Approval recorded");
 };
 

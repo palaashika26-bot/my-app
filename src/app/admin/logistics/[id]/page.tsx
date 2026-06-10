@@ -172,12 +172,9 @@ export default function AdminLogisticsDetailPage({ params }: { params: Promise<{
     } finally { setCounterLoading(false); }
   }
 
-  async function handleConfirmCargo() {
-    if (!staffName.trim()) {
-      addToast({ type: 'warning', title: 'Staff name required', description: 'Please enter the warehouse staff name.' });
-      return;
-    }
-    setCargoLoading(true);
+  async function send() {
+    if (!reply.trim() && files.length === 0) return;
+    setSending(true);
     try {
       await logisticsApi.confirmCargo(id, staffName.trim());
       setConfirmSuccess(true);
@@ -406,8 +403,10 @@ export default function AdminLogisticsDetailPage({ params }: { params: Promise<{
                       <p className="text-xs text-muted-foreground">Uploaded: {new Date(req.slipUploadedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
                     )}
                   </div>
-                )}
-              </div>
+                );
+              })}
+              <div ref={bottomRef} />
+            </div>
 
               {/* Confirm Cargo */}
               {req.slipUploadedAt && (
@@ -439,7 +438,7 @@ export default function AdminLogisticsDetailPage({ params }: { params: Promise<{
                         {cargoLoading ? 'Confirming…' : 'Confirm Cargo Received'}
                       </button>
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
             </>
@@ -513,7 +512,7 @@ export default function AdminLogisticsDetailPage({ params }: { params: Promise<{
             </div>
           )}
         </div>
-      </div>
+      )}
     </AdminLayout>
   );
 }

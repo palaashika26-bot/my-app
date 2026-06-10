@@ -80,30 +80,13 @@ export default function AdminLogisticsPage() {
     return () => ac.abort();
   }, [fetchRequests]);
 
-  async function handleSaveAddress() {
-    const fields = ['companyName', 'contactPerson', 'phone', 'address', 'area', 'city', 'country', 'pincode'] as const;
-    for (const field of fields) {
-      if (!addressForm[field]?.trim()) {
-        addToast({ type: 'warning', title: 'All fields required', description: 'Please fill in all address fields.' });
-        return;
-      }
-    }
-    setAddressLoading(true);
-    await saveWarehouseAddress(addressForm);
-    const saved = await getWarehouseAddress();
-    setWarehouseAddress(saved);
-    if (saved.updatedAt) setWarehouseAddressUpdatedAt(saved.updatedAt);
-    setEditingAddress(false);
-    setAddressSuccess(true);
-    setAddressLoading(false);
-    setTimeout(() => setAddressSuccess(false), 4000);
-  }
+  useEffect(() => { load(); }, [load]);
 
-  function handleCancelAddress() {
-    const { updatedAt: _u, ...formFields } = warehouseAddress;
-    setAddressForm(formFields);
-    setEditingAddress(false);
-  }
+  const filtered = useMemo(() => rows.filter(r => {
+    if (tab !== 'All' && r.status !== tab) return false;
+    if (!q) return true;
+    return [r.requestNumber, r.clientName, r.companyName, r.shippingMethod].join(' ').toLowerCase().includes(q.toLowerCase());
+  }), [rows, q, tab]);
 
   const statusFilters = ['All', 'SUBMITTED', 'QUOTED', 'COUNTERED', 'ACCEPTED', 'PAYMENT_PENDING', 'CONFIRMED', 'REJECTED'];
 
@@ -132,6 +115,7 @@ export default function AdminLogisticsPage() {
             </button>
           ))}
         </div>
+        <button onClick={load} className="btn-secondary inline-flex items-center gap-1.5 text-sm py-2"><RefreshCw className="w-4 h-4" /> Refresh</button>
       </div>
 
       {/* Warehouse Address Card */}
@@ -148,7 +132,7 @@ export default function AdminLogisticsPage() {
             <button onClick={() => setEditingAddress(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-600 hover:bg-muted transition-colors flex-shrink-0">
               <Edit3 className="w-3.5 h-3.5" /> Edit Address
             </button>
-          )}
+          ))}
         </div>
 
         {addressSuccess && (

@@ -137,7 +137,6 @@ export default function LogisticsPage() {
           )}
         </div>
 
-        {/* Weight & CBM */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-sm font-600 block mb-1">Weight (KG)</label>
@@ -149,10 +148,10 @@ export default function LogisticsPage() {
           </div>
         </div>
 
-        {/* Shipping method */}
         <div>
           <label className="text-sm font-600 block mb-1">Shipping Method</label>
           <select value={shippingMethod} onChange={(e) => setShippingMethod(e.target.value)} className="input-field">
+          <select value={shippingMethod} onChange={e => setShippingMethod(e.target.value)} className="input-field">
             <option value="">Select shipping method</option>
             <option value="Air">Air</option>
             <option value="Express">Express</option>
@@ -173,6 +172,7 @@ export default function LogisticsPage() {
         </div>
 
         <button type="submit" disabled={submitting} className="btn-primary w-full py-2.5 text-sm">
+        <button type="submit" disabled={submitting} className="btn-primary w-full py-2.5 text-sm disabled:opacity-50">
           {submitting ? 'Submitting…' : 'Submit Logistics Request'}
         </button>
       </form>

@@ -171,12 +171,9 @@ export default function SourcingLogisticsDetailPage({ params }: { params: Promis
     } finally { setCounterLoading(false); }
   }
 
-  async function handleConfirmCargo() {
-    if (!staffName.trim()) {
-      addToast({ type: 'warning', title: 'Staff name required' });
-      return;
-    }
-    setCargoLoading(true);
+  async function send() {
+    if (!reply.trim() && files.length === 0) return;
+    setSending(true);
     try {
       await logisticsApi.confirmCargo(id, staffName.trim());
       setConfirmSuccess(true);
@@ -232,7 +229,6 @@ export default function SourcingLogisticsDetailPage({ params }: { params: Promis
               <div><p className="text-[10px] uppercase text-muted-foreground">Name</p><p className="font-500">{req.client?.companyName || req.client?.user?.firstName || '—'}</p></div>
               <div><p className="text-[10px] uppercase text-muted-foreground">Email</p><p className="font-500">{req.client?.user?.email || '—'}</p></div>
             </div>
-          </div>
 
           {/* Request Details */}
           <div className="bg-card rounded-xl border border-border shadow-card p-5">
@@ -255,8 +251,7 @@ export default function SourcingLogisticsDetailPage({ params }: { params: Promis
                   ))}
                 </ul>
               </div>
-            )}
-          </div>
+            </div>
 
           {/* Counter-offer response */}
           {showCounterResponse && (
@@ -391,8 +386,10 @@ export default function SourcingLogisticsDetailPage({ params }: { params: Promis
                         : <a href={warehouseSlipUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 bg-muted/40 rounded-lg px-3 py-2 text-sm font-600 text-[#4A3B52] hover:underline">View Slip</a>
                     )}
                   </div>
-                )}
-              </div>
+                );
+              })}
+              <div ref={bottomRef} />
+            </div>
 
               {(req.slipUploadedAt) && (
                 <div className="bg-card rounded-xl border border-border shadow-card p-5">
@@ -466,6 +463,7 @@ export default function SourcingLogisticsDetailPage({ params }: { params: Promis
             </div>
           </div>
         </div>
+      )}
 
         {/* Sidebar */}
         <div className="space-y-5">
@@ -497,7 +495,7 @@ export default function SourcingLogisticsDetailPage({ params }: { params: Promis
             </div>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

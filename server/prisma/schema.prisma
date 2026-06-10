@@ -173,6 +173,8 @@ model User {
   logisticsMessages       LogisticsMessage[]
   pushSubscriptions  PushSubscription[]
   notifications      Notification[]
+  supportTicketMessages SupportTicketMessage[]
+  logisticsMessages     LogisticsMessage[]
 }
 
 model PushSubscription {
@@ -250,6 +252,13 @@ model Client {
   sourcingRequests  SourcingRequest[]
   logisticsRequests LogisticsRequest[]
   disputes          Dispute[]
+  user             User              @relation(fields: [userId], references: [id])
+  inquiries        Inquiry[]
+  orders           Order[]
+  sourcingRequests SourcingRequest[]
+  disputes         Dispute[]
+  supportTickets    SupportTicket[]
+  logisticsRequests LogisticsRequest[]
 
   @@map("clients")
 }
@@ -832,4 +841,108 @@ model Notification {
   @@index([userId, read])
   @@index([createdAt])
   @@map("notifications")
+}
+
+// ── Support tickets ───────────────────────────────────────────────────────────
+// One unified ticket table backs both the general "Submit a Ticket" flow and the
+// order-linked "Raise a Complaint" (after-sales) flow. Messages are a separate
+// table so list queries stay light (no chat bodies / base64 attachments).
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model SupportTicket {
+  id              String              @id @default(uuid())
+  ticketNumber    String              @unique
+  clientId        String
+  orderId         String?
+  category        String
+  subject         String
+  description     String
+  status          SupportTicketStatus @default(OPEN)
+  priority        String?
+  clientLastReadAt DateTime?
+  staffLastReadAt  DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  client   Client                 @relation(fields: [clientId], references: [id])
+  messages SupportTicketMessage[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("support_tickets")
+}
+
+model SupportTicketMessage {
+  id          String   @id @default(uuid())
+  ticketId    String
+  senderId    String
+  senderRole  String
+  text        String
+  attachments String[]
+  createdAt   DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender User          @relation(fields: [senderId], references: [id])
+
+  @@index([ticketId, createdAt])
+  @@map("support_ticket_messages")
+}
+
+// ── Logistics requests ────────────────────────────────────────────────────────
+// Standalone shipment-logistics inquiries (separate from the SourcingRequest
+// Stage-2 logistics estimate). Messages live in their own table for light lists.
+enum LogisticsStatus {
+  PENDING
+  QUOTED
+  CONFIRMED
+  IN_TRANSIT
+  COMPLETED
+}
+
+model LogisticsRequest {
+  id               String          @id @default(uuid())
+  requestNumber    String          @unique
+  clientId         String
+  orderRef         String?
+  weightKg         String?
+  cbm              String?
+  shippingMethod   String?
+  packagingList    String[]
+  status           LogisticsStatus @default(PENDING)
+  quotePricePerKg  Decimal?        @db.Decimal(12, 2)
+  quoteNote        String?
+  clientLastReadAt DateTime?
+  staffLastReadAt  DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  client   Client             @relation(fields: [clientId], references: [id])
+  messages LogisticsMessage[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("logistics_requests")
+}
+
+model LogisticsMessage {
+  id          String   @id @default(uuid())
+  logisticsId String
+  senderId    String
+  senderRole  String
+  text        String
+  attachments String[]
+  createdAt   DateTime @default(now())
+
+  logistics LogisticsRequest @relation(fields: [logisticsId], references: [id], onDelete: Cascade)
+  sender    User             @relation(fields: [senderId], references: [id])
+
+  @@index([logisticsId, createdAt])
+  @@map("logistics_messages")
 }

@@ -26,6 +26,7 @@ const DEFAULT_WAREHOUSE_ADDRESS = {
   country: 'China',
   pincode: '322000',
 };
+const statusLabel: Record<string, string> = { PENDING: 'Pending', QUOTED: 'Quoted', CONFIRMED: 'Confirmed', IN_TRANSIT: 'In Transit', COMPLETED: 'Completed' };
 
 function getWarehouseAddress(): Promise<any> {
   const raw = typeof window !== 'undefined' ? localStorage.getItem('elios-warehouse-address') : null;
@@ -164,224 +165,49 @@ export default function ClientLogisticsDetailPage({ params }: { params: Promise<
     } finally { setRespondLoading(false); }
   }
 
-  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setFileError('');
-    if (file.size > 10 * 1024 * 1024) {
-      setFileError('File too large. Maximum size is 10MB.');
-      return;
+  async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files || []);
+    if (files.length + picked.length > 3) { addToast({ type: 'warning', title: 'Max 3 files per message' }); e.target.value = ''; return; }
+    const results: { name: string; base64: string }[] = [];
+    for (const file of picked) {
+      if (file.size > 10 * 1024 * 1024) { addToast({ type: 'warning', title: `"${file.name}" exceeds 10 MB` }); continue; }
+      results.push({ name: file.name, base64: await toBase64(file) });
     }
-    setSlipFile(file);
-    if (file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = ev => setSlipPreview(ev.target?.result as string);
-      reader.readAsDataURL(file);
-    } else {
-      setSlipPreview('pdf');
-    }
+    setFiles(prev => [...prev, ...results].slice(0, 3));
+    e.target.value = '';
   }
 
-  async function handleUploadSlip() {
-    if (!slipFile) return;
-    setSlipLoading(true);
+  async function send() {
+    if (!reply.trim() && files.length === 0) return;
+    setSending(true);
     try {
-      const uploaded = await uploadFiles([slipFile], 'logistics-slip');
-      await logisticsApi.uploadSlip(id, uploaded[0].url, uploaded[0].thumbUrl);
-      addToast({ type: 'success', title: 'Slip uploaded', description: 'Our team will confirm receipt shortly.' });
-      setSlipFile(null);
-      setSlipPreview(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      fetchReq();
-    } catch {
-      addToast({ type: 'error', title: 'Upload failed', description: 'Please try again.' });
-    } finally { setSlipLoading(false); }
+      await logisticsApi.addMessage(id, { text: reply.trim(), attachments: files.map(f => f.base64) });
+      setReply(''); setFiles([]); await load();
+    } catch { addToast({ type: 'error', title: 'Could not send' }); }
+    finally { setSending(false); }
   }
-
-  function copyAddress() {
-    const w = warehouseAddress;
-    const text = [
-      w.companyName,
-      `Contact: ${w.contactPerson}`,
-      `Phone: ${w.phone}`,
-      w.address,
-      w.area,
-      `${w.city}${w.province ? `, ${w.province}` : ''}`,
-      `${w.country} — ${w.pincode}`,
-    ].join('\n');
-    navigator.clipboard.writeText(text).then(() => {
-      setAddressCopied(true);
-      setTimeout(() => setAddressCopied(false), 2000);
-    });
-  }
-
-  async function sendChatMessage() {
-    if (!chatInput.trim()) return;
-    try {
-      await logisticsApi.sendMessage(id, chatInput.trim());
-      setChatInput('');
-      fetchMessages();
-    } catch {
-      addToast({ type: 'error', title: 'Failed', description: 'Could not send message.' });
-    }
-  }
-
-  const clientInitials = user?.name ? getInitials(user.name) : 'CL';
-  const hasQuote = req.carrier && req.estimatedPriceINR != null;
-  const showWarehouseSections = req.status === 'CONFIRMED';
-  const slipAlreadyUploaded = !!req.slipUploadedAt;
 
   return (
     <ClientLayout>
-      <Link href="/client-dashboard/logistics" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4">
-        <ArrowLeft className="w-4 h-4" /> Back to Logistics
-      </Link>
+      <Link href="/client-dashboard/logistics" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4"><ArrowLeft className="w-4 h-4" /> Back to Logistics</Link>
 
-      {/* Header */}
-      <div className="bg-card rounded-xl border border-border shadow-card p-5 mb-5">
-        <div className="flex flex-wrap items-center gap-3 mb-1">
-          <Package className="w-5 h-5 text-[#4A3B52]" />
-          <span className="font-tabular font-700 text-base">{req.requestNumber || req.id}</span>
-          <span className={`text-xs font-600 px-2.5 py-1 rounded-full ${LOGISTICS_STATUS_COLORS[req.status] || 'bg-muted text-muted-foreground'}`}>
-            {LOGISTICS_STATUS_LABELS[req.status] ?? req.status}
-          </span>
-        </div>
-        <p className="text-xs text-muted-foreground">Submitted: {new Date(req.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
-      </div>
-
-      {/* Shipment Details */}
-      <div className="bg-card rounded-xl border border-border shadow-card p-5 mb-5">
-        <h3 className="font-700 mb-3">Shipment Details</h3>
-        <div className="grid grid-cols-3 gap-4 text-sm">
-          <div><p className="text-[10px] uppercase text-muted-foreground">Weight</p><p className="font-600 mt-0.5">{req.weightKg ? `${Number(req.weightKg)} KG` : '— KG'}</p></div>
-          <div><p className="text-[10px] uppercase text-muted-foreground">Volume</p><p className="font-600 mt-0.5">{req.volumeCbm ? `${Number(req.volumeCbm)} CBM` : '— CBM'}</p></div>
-          <div><p className="text-[10px] uppercase text-muted-foreground">Method</p><p className="font-600 mt-0.5">{req.shippingMethod}</p></div>
-        </div>
-      </div>
-
-      {/* Quote card — shown when QUOTED */}
-      {req.status === 'QUOTED' && hasQuote && (
-        <div className="bg-[#f5f4f7] border border-[#e8e4f0] rounded-xl p-5 mb-5">
-          <p className="text-xs font-700 text-[#5c5470] mb-3 uppercase tracking-wide">Quote from Admin</p>
-          <div className="grid sm:grid-cols-2 gap-3 text-sm mb-4">
-            <div><p className="text-[10px] uppercase text-muted-foreground">Carrier</p><p className="font-600">{req.carrier}</p></div>
-            <div><p className="text-[10px] uppercase text-muted-foreground">Mode</p><p className="font-600">{req.shippingMode || req.shippingMethod}</p></div>
-            <div><p className="text-[10px] uppercase text-muted-foreground">Estimated Price</p><p className="font-700 text-lg">₹{Number(req.estimatedPriceINR).toLocaleString('en-IN')}</p></div>
-            <div><p className="text-[10px] uppercase text-muted-foreground">Price per KG</p><p className="font-600">{req.pricePerKgCNY ? `¥${Number(req.pricePerKgCNY)}` : '—'}</p></div>
-            <div><p className="text-[10px] uppercase text-muted-foreground">ETA</p><p className="font-600">{req.eta || '—'}</p></div>
-            {req.quoteNote && (
-              <div className="sm:col-span-2">
-                <p className="text-[10px] uppercase text-muted-foreground">Note</p>
-                <p className="text-sm italic text-muted-foreground mt-0.5">{req.quoteNote}</p>
-              </div>
-            )}
-          </div>
-          <div className="flex gap-3 flex-wrap">
-            <button
-              onClick={handleAccept}
-              disabled={respondLoading}
-              className="flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-green-600 text-white text-sm font-600 hover:bg-green-700 transition-colors disabled:opacity-60"
-            >
-              <CheckCircle className="w-4 h-4" /> {respondLoading ? 'Processing…' : 'Accept'}
-            </button>
-            <button
-              onClick={handleReject}
-              disabled={respondLoading}
-              className="flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-red-100 text-red-700 text-sm font-600 hover:bg-red-200 transition-colors disabled:opacity-60"
-            >
-              <XCircle className="w-4 h-4" /> Reject
-            </button>
-          </div>
-          {/* Counter offer */}
-          <div className="mt-4 pt-4 border-t border-[#e8e4f0]">
-            <p className="text-xs font-700 text-muted-foreground mb-2">Or send a counter offer</p>
-            <div className="flex gap-2 flex-wrap items-end">
-              <div>
-                <label className="text-[10px] text-muted-foreground block mb-0.5">Your price (₹)</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={counterPrice}
-                  onChange={e => setCounterPrice(e.target.value)}
-                  className="input-field text-sm w-36"
-                  placeholder="e.g. 35000"
-                />
-              </div>
-              <div className="flex-1 min-w-[150px]">
-                <label className="text-[10px] text-muted-foreground block mb-0.5">Note (optional)</label>
-                <input
-                  value={counterNote}
-                  onChange={e => setCounterNote(e.target.value)}
-                  className="input-field text-sm w-full"
-                  placeholder="Your note..."
-                />
-              </div>
-              <button
-                onClick={handleCounter}
-                disabled={respondLoading || !counterPrice}
-                className="px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-600 hover:bg-amber-700 transition-colors disabled:opacity-60"
-              >
-                Send Counter
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Countered status — waiting for admin */}
-      {req.status === 'COUNTERED' && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 mb-5 flex items-center gap-2 text-amber-800">
-          <MessageSquare className="w-5 h-5 flex-shrink-0" />
-          <p className="text-sm font-600">Your counter offer (₹{Number(req.counterPriceINR).toLocaleString('en-IN')}) is being reviewed. We&apos;ll get back to you shortly.</p>
-        </div>
-      )}
-
-      {/* Accepted — show payment prompt */}
-      {req.status === 'ACCEPTED' && (
-        <div className="bg-[#ece9f5] border border-[#d8d0e8] rounded-xl p-5 mb-5">
-          <div className="flex items-center gap-2 mb-2">
-            <CheckCircle className="w-5 h-5 text-[#5c5470]" />
-            <p className="font-700 text-[#5c5470]">Quote Accepted!</p>
-          </div>
-          <p className="text-sm text-muted-foreground mb-4">Please proceed to payment to confirm your shipment.</p>
-          <Link
-            href={`/payment/logistics/${id}`}
-            className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-[#5c5470] text-white text-sm font-600 hover:bg-[#4A3B52] transition-colors"
-          >
-            <ExternalLink className="w-4 h-4" /> Proceed to Payment
-          </Link>
-        </div>
-      )}
-
-      {/* Rejected state */}
-      {req.status === 'REJECTED' && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-5 mb-5 flex items-center gap-2 text-red-700">
-          <XCircle className="w-5 h-5 flex-shrink-0" />
-          <p className="text-sm font-600">You rejected this quote. Please contact our team if you need a revised quote.</p>
-        </div>
-      )}
-
-      {/* ── Warehouse shipping flow — shown after CONFIRMED ─────────────────── */}
-      {showWarehouseSections && (
-        <>
-          {/* Warehouse Address Card */}
-          <div className="bg-card rounded-xl border border-border shadow-card p-5 mb-5">
-            <h3 className="font-700 mb-1">Ship Your Cargo to Our Warehouse</h3>
-            <p className="text-sm text-muted-foreground mb-4">Please ship your goods to the address below and upload the warehouse slip.</p>
-
-            <div className="bg-[#faf9f7] border border-[#e8e4f0] rounded-xl p-4 mb-4">
+      {loading ? (
+        <div className="flex items-center justify-center py-20 text-muted-foreground"><Loader2 className="w-6 h-6 animate-spin" /></div>
+      ) : !req ? (
+        <p className="text-center text-muted-foreground py-20">Request not found.</p>
+      ) : (
+        <div className="grid lg:grid-cols-3 gap-5">
+          <div className="lg:col-span-1 space-y-5">
+            <div className="bg-card rounded-xl border border-border shadow-card p-5">
               <div className="flex items-center gap-2 mb-3">
-                <p className="font-700 text-sm">{warehouseAddress.companyName}</p>
+                <Package className="w-5 h-5 text-[#4A3B52]" />
+                <span className="font-tabular font-700">{req.requestNumber}</span>
+                <span className={`text-xs font-600 px-2 py-0.5 rounded-full ${statusColor[req.status]}`}>{statusLabel[req.status]}</span>
               </div>
-              <div className="space-y-1 text-sm mb-3">
-                <p><span className="font-600">Contact:</span> <span className="text-muted-foreground">{warehouseAddress.contactPerson}</span></p>
-                <p><span className="font-600">Phone:</span> <span className="text-muted-foreground">{warehouseAddress.phone}</span></p>
-              </div>
-              <div className="border-t border-[#e8e4f0] pt-3 space-y-0.5 text-sm text-muted-foreground mb-4">
-                <p>{warehouseAddress.address}</p>
-                <p>{warehouseAddress.area}</p>
-                <p>{warehouseAddress.city}{warehouseAddress.province ? `, ${warehouseAddress.province}` : ''}</p>
-                <p className="font-600 text-foreground">{warehouseAddress.country} — {warehouseAddress.pincode}</p>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between"><span className="text-muted-foreground">Method</span><span className="font-500">{req.shippingMethod || '—'}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Weight</span><span className="font-500">{req.weightKg || '—'} KG</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Volume</span><span className="font-500">{req.cbm || '—'} CBM</span></div>
               </div>
               <button
                 onClick={copyAddress}
@@ -456,6 +282,18 @@ export default function ClientLogisticsDetailPage({ params }: { params: Promise<
                     {slipLoading ? 'Uploading…' : 'Upload Slip'}
                   </button>
                 )}
+            {req.quotePricePerKg && (
+              <div className="bg-emerald-50 rounded-xl border border-emerald-200 p-5">
+                <h4 className="font-700 text-emerald-800 mb-2">Quote</h4>
+                <div className="flex justify-between text-sm"><span className="text-emerald-700">Price / KG</span><span className="font-700 text-emerald-900">₹{req.quotePricePerKg}</span></div>
+                {req.quoteNote && <p className="text-xs text-emerald-700 mt-2">{req.quoteNote}</p>}
+              </div>
+            )}
+
+            {req.packagingList.length > 0 && (
+              <div className="bg-card rounded-xl border border-border shadow-card p-5">
+                <h4 className="font-700 mb-2 text-sm">Packing List</h4>
+                <div className="flex flex-wrap gap-2">{req.packagingList.map((a, i) => <Att key={i} url={a} onZoom={setLightbox} />)}</div>
               </div>
             )}
           </div>
@@ -505,26 +343,53 @@ export default function ClientLogisticsDetailPage({ params }: { params: Promise<
               <div className={`flex-1 max-w-[80%] p-3 rounded-lg text-sm break-words ${msg.senderRole === 'CLIENT' ? 'bg-[#f0eef8]' : 'bg-muted/50'}`}>
                 <p>{msg.text}</p>
                 <p className="text-[10px] text-muted-foreground mt-1">{new Date(msg.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+          <div className="lg:col-span-2 bg-card rounded-xl border border-border shadow-card p-5">
+            <h3 className="font-700 mb-4">Conversation with our team</h3>
+            <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1">
+              {req.messages.map(m => {
+                const mine = m.senderRole === 'CLIENT';
+                return (
+                  <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${mine ? 'bg-[#4A3B52] text-white' : 'bg-muted/50 text-foreground'}`}>
+                      <p className="text-[10px] font-600 opacity-70 mb-1">{mine ? 'You' : (m.senderName || 'Elios Team')}</p>
+                      {m.text && <p className="text-sm whitespace-pre-wrap break-words">{m.text}</p>}
+                      {m.attachments.length > 0 && <div className="flex flex-wrap gap-2 mt-2">{m.attachments.map((a, i) => <Att key={i} url={a} onZoom={setLightbox} />)}</div>}
+                      <p className="text-[9px] opacity-60 mt-1">{new Date(m.createdAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}</p>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={bottomRef} />
+            </div>
+
+            <div className="border-t border-border mt-4 pt-4">
+              {files.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {files.map((f, i) => (
+                    <div key={i} className="flex items-center gap-1.5 bg-muted/40 rounded-lg px-2 py-1 border border-border">
+                      <FileText className="w-3.5 h-3.5 text-muted-foreground" /><span className="text-[10px] max-w-[90px] truncate">{f.name}</span>
+                      <button onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))}><X className="w-3 h-3 text-muted-foreground" /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-end gap-2">
+                <input ref={fileInputRef} type="file" style={{ display: 'none' }} accept="image/*,video/*,.pdf,.xlsx,.xls,.csv" multiple onChange={handleFiles} />
+                <button onClick={() => fileInputRef.current?.click()} disabled={files.length >= 3} className="p-2.5 text-muted-foreground hover:text-foreground rounded-lg border border-border disabled:opacity-40"><Paperclip className="w-4 h-4" /></button>
+                <textarea value={reply} onChange={e => setReply(e.target.value)} rows={1} placeholder="Type your message…" className="input-field flex-1 resize-none text-sm" onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
+                <button onClick={send} disabled={sending || (!reply.trim() && files.length === 0)} className="btn-primary px-4 py-2.5 disabled:opacity-50">{sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</button>
               </div>
             </div>
-          ))}
+          </div>
         </div>
-        <div className="flex gap-2 mt-3">
-          <input
-            value={chatInput}
-            onChange={e => setChatInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') sendChatMessage(); }}
-            className="input-field flex-1 min-w-0"
-            placeholder="Send a message..."
-          />
-          <button
-            onClick={sendChatMessage}
-            className="px-3 py-2 rounded-lg bg-[#4A3B52] text-white text-sm font-600 hover:bg-[#1A1423] transition-colors inline-flex items-center gap-1.5 flex-shrink-0"
-          >
-            <MessageSquare className="w-3.5 h-3.5" /> Send
-          </button>
+      )}
+
+      {lightbox && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="attachment" className="max-w-full max-h-[90vh] rounded-xl shadow-xl" onClick={e => e.stopPropagation()} />
+          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 text-white bg-black/50 rounded-full p-2 hover:bg-black/70"><X className="w-5 h-5" /></button>
         </div>
-      </div>
+      )}
     </ClientLayout>
   );
 }
