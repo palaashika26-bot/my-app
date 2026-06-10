@@ -17,12 +17,19 @@ import { ApiError } from "../utils/ApiError";
  * so unrelated columns (catalog product image paths, etc.) are never touched.
  */
 
-export type UploadScope = "request-item" | "payment-proof" | "dispute";
+export type UploadScope =
+  | "request-item"
+  | "payment-proof"
+  | "dispute"
+  | "logistics-packing"
+  | "logistics-slip";
 
 const SCOPE_PREFIX: Record<UploadScope, string> = {
   "request-item": "request-items",
   "payment-proof": "payment-proofs",
   dispute: "dispute-attachments",
+  "logistics-packing": "logistics-packing",
+  "logistics-slip": "logistics-slips",
 };
 
 // Only object keys under one of these prefixes are treated as storage paths and

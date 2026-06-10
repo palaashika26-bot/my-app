@@ -1,62 +1,136 @@
 import { Router } from "express";
 import {
-  createRequest,
-  listRequests,
-  getRequest,
-  addMessage,
-  updateQuote,
-  updateStatus,
+  createLogistics,
+  getLogisticsList,
+  getLogisticsById,
+  quoteLogistics,
+  respondLogistics,
+  respondCounterLogistics,
+  updateLogisticsPhase,
+  setLogisticsDeliveryMode,
+  uploadLogisticsSlip,
+  confirmLogisticsCargo,
+  cancelLogistics,
+  sendLogisticsMessage,
+  getLogisticsMessages,
 } from "./logistics.controller";
+import { asyncHandler } from "../../../utils/asyncHandler";
+import { validate, validateQueryParams } from "../../../middleware/validate";
 import { authenticate } from "../../../middleware/authenticate";
 import { authorize } from "../../../middleware/authorize";
-import { validate } from "../../../middleware/validate";
-import { asyncHandler } from "../../../utils/asyncHandler";
 import {
   createLogisticsSchema,
-  logisticsMessageSchema,
-  logisticsQuoteSchema,
-  logisticsStatusSchema,
+  quoteLogisticsSchema,
+  respondLogisticsSchema,
+  respondCounterLogisticsSchema,
+  updatePhaseSchema,
+  deliveryModeSchema,
+  uploadSlipSchema,
+  confirmCargoSchema,
+  cancelLogisticsSchema,
+  sendLogisticsMessageSchema,
 } from "./logistics.schema";
 
 const router = Router();
 
-router.use(authenticate);
-
-// POST /api/v1/logistics/requests — client submits a logistics request
+// ── Client submits a logistics request ────────────────────────────────────────
 router.post(
-  "/requests",
+  "/",
+  authenticate,
   authorize(["CLIENT"]),
   validate(createLogisticsSchema),
-  asyncHandler(createRequest)
+  asyncHandler(createLogistics)
 );
 
-// GET /api/v1/logistics/requests — client own, admin/staff all
-router.get("/requests", asyncHandler(listRequests));
+router.get(
+  "/",
+  authenticate,
+  authorize(["CLIENT", "ADMIN", "STAFF"]),
+  validateQueryParams,
+  asyncHandler(getLogisticsList)
+);
 
-// GET /api/v1/logistics/requests/:id — detail + chat
-router.get("/requests/:id", asyncHandler(getRequest));
+router.get(
+  "/:id",
+  authenticate,
+  authorize(["CLIENT", "ADMIN", "STAFF"]),
+  asyncHandler(getLogisticsById)
+);
 
-// POST /api/v1/logistics/requests/:id/messages — chat
+// ── Admin/staff quote + counter-response ──────────────────────────────────────
 router.post(
-  "/requests/:id/messages",
-  validate(logisticsMessageSchema),
-  asyncHandler(addMessage)
+  "/:id/quote",
+  authenticate,
+  authorize(["ADMIN", "STAFF"]),
+  validate(quoteLogisticsSchema),
+  asyncHandler(quoteLogistics)
 );
 
-// PATCH /api/v1/logistics/requests/:id/quote — admin/staff send a quote
-router.patch(
-  "/requests/:id/quote",
+router.post(
+  "/:id/respond-counter",
+  authenticate,
   authorize(["ADMIN", "STAFF"]),
-  validate(logisticsQuoteSchema),
-  asyncHandler(updateQuote)
+  validate(respondCounterLogisticsSchema),
+  asyncHandler(respondCounterLogistics)
 );
 
-// PATCH /api/v1/logistics/requests/:id/status — admin/staff update status
-router.patch(
-  "/requests/:id/status",
-  authorize(["ADMIN", "STAFF"]),
-  validate(logisticsStatusSchema),
-  asyncHandler(updateStatus)
+// ── Client accept/reject/counter ──────────────────────────────────────────────
+router.post(
+  "/:id/respond",
+  authenticate,
+  authorize(["CLIENT"]),
+  validate(respondLogisticsSchema),
+  asyncHandler(respondLogistics)
 );
+
+// ── Fulfillment: phase (admin) + delivery mode & slip (client) ────────────────
+router.patch(
+  "/:id/phase",
+  authenticate,
+  authorize(["ADMIN", "STAFF"]),
+  validate(updatePhaseSchema),
+  asyncHandler(updateLogisticsPhase)
+);
+
+router.patch(
+  "/:id/delivery-mode",
+  authenticate,
+  authorize(["CLIENT"]),
+  validate(deliveryModeSchema),
+  asyncHandler(setLogisticsDeliveryMode)
+);
+
+router.patch(
+  "/:id/slip",
+  authenticate,
+  authorize(["CLIENT"]),
+  validate(uploadSlipSchema),
+  asyncHandler(uploadLogisticsSlip)
+);
+
+router.post(
+  "/:id/cargo-confirm",
+  authenticate,
+  authorize(["ADMIN", "STAFF"]),
+  validate(confirmCargoSchema),
+  asyncHandler(confirmLogisticsCargo)
+);
+
+router.patch(
+  "/:id/cancel",
+  authenticate,
+  authorize(["CLIENT", "ADMIN", "STAFF"]),
+  validate(cancelLogisticsSchema),
+  asyncHandler(cancelLogistics)
+);
+
+// ── Conversation ──────────────────────────────────────────────────────────────
+router.post(
+  "/:id/messages",
+  authenticate,
+  validate(sendLogisticsMessageSchema),
+  asyncHandler(sendLogisticsMessage)
+);
+router.get("/:id/messages", authenticate, asyncHandler(getLogisticsMessages));
 
 export default router;

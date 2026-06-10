@@ -7,7 +7,12 @@ import { getBrowserSupabase } from './supabaseClient';
 // paths to signed read URLs on read. A small webp thumbnail is generated client-
 // side for list/preview use.
 
-export type UploadScope = 'request-item' | 'payment-proof' | 'dispute';
+export type UploadScope =
+  | 'request-item'
+  | 'payment-proof'
+  | 'dispute'
+  | 'logistics-packing'
+  | 'logistics-slip';
 
 export interface UploadedFile {
   /** Storage object path to persist (backend signs it on read). */

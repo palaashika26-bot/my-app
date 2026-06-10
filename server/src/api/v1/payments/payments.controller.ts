@@ -63,3 +63,36 @@ export const verifyRequestPayment = async (req: Request, res: Response) => {
     action === "VERIFY" ? "Payment verified and order created" : "Payment rejected"
   );
 };
+
+// ── Logistics payments ────────────────────────────────────────────────────────
+
+export const submitLogisticsPayment = async (req: Request, res: Response) => {
+  const payment = await paymentsService.submitLogisticsPayment(req.user!.userId, req.body);
+  return ApiResponse.success(res, payment, "Payment proof submitted successfully", 201);
+};
+
+export const getLogisticsPayments = async (req: Request, res: Response) => {
+  const { logisticsId } = req.params;
+  const payments = await paymentsService.getLogisticsPayments(
+    logisticsId,
+    req.user!.userId,
+    req.user!.role
+  );
+  return ApiResponse.success(res, payments, "Payments fetched successfully");
+};
+
+export const verifyLogisticsPayment = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { action, rejectionReason } = req.body;
+  const result = await paymentsService.verifyLogisticsPayment(
+    id,
+    req.user!.userId,
+    action,
+    rejectionReason
+  );
+  return ApiResponse.success(
+    res,
+    result,
+    action === "VERIFY" ? "Payment verified — logistics order confirmed" : "Payment rejected"
+  );
+};

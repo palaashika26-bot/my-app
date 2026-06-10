@@ -1,203 +1,337 @@
-import { logisticsRepository } from "./logistics.repository";
+import prisma from "../../../config/prisma";
 import { ApiError } from "../../../utils/ApiError";
+import { getPagination, buildPaginationMeta } from "../../../utils/pagination";
+import { logisticsRepository } from "./logistics.repository";
+import { sendEmail } from "../../../config/email";
 import { notifyUser, notifyAdminsAndStaff } from "../../../utils/notify";
-import { CreateLogisticsInput } from "./logistics.schema";
+import { signImageFields } from "../../../config/storage";
+import type {
+  CreateLogisticsInput,
+  QuoteLogisticsInput,
+  RespondLogisticsInput,
+  RespondCounterLogisticsInput,
+  UpdatePhaseInput,
+  DeliveryModeInput,
+  UploadSlipInput,
+  ConfirmCargoInput,
+} from "./logistics.schema";
 
-type Role = string;
-const isStaff = (r: Role) => r === "ADMIN" || r === "STAFF";
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
-function baseFields(t: any) {
-  const u = t.client?.user;
-  return {
-    id: t.id,
-    requestNumber: t.requestNumber,
-    orderRef: t.orderRef,
-    weightKg: t.weightKg,
-    cbm: t.cbm,
-    shippingMethod: t.shippingMethod,
-    status: t.status,
-    quotePricePerKg: t.quotePricePerKg != null ? String(t.quotePricePerKg) : null,
-    quoteNote: t.quoteNote,
-    createdAt: t.createdAt,
-    updatedAt: t.updatedAt,
-    clientName: u ? `${u.firstName} ${u.lastName}`.trim() : "",
-    clientEmail: u?.email ?? "",
-    companyName: t.client?.companyName ?? "",
-  };
+interface ListQuery {
+  page?: string;
+  limit?: string;
+  status?: string;
+  view?: string;
 }
 
-function serializeMessage(m: any) {
-  const name = m.sender ? `${m.sender.firstName} ${m.sender.lastName}`.trim() : "";
-  return {
-    id: m.id,
-    senderRole: m.senderRole,
-    senderName: name,
-    text: m.text,
-    attachments: m.attachments ?? [],
-    createdAt: m.createdAt,
-  };
+// Sign storage-path image fields (packaging list, warehouse slip, payment proofs)
+// in place so the client renders short-lived signed URLs. No-op for legacy/raw
+// values and when storage is unconfigured.
+async function signLogistics(row: any) {
+  if (!row) return row;
+  await signImageFields(row, {
+    singles: ["warehouseSlipUrl", "warehouseSlipThumbUrl"],
+    arrays: ["packagingListUrls", "packagingThumbUrls"],
+  });
+  if (Array.isArray(row.payments)) {
+    await signImageFields(row.payments, { singles: ["proofUrl", "proofThumbUrl"] });
+  }
+  return row;
+}
+
+async function resolveClientId(userId: string): Promise<string> {
+  const client = await prisma.client.findUnique({ where: { userId }, select: { id: true } });
+  if (!client) throw ApiError.forbidden("No client profile linked to this account");
+  return client.id;
+}
+
+async function clientContact(userId: string | undefined | null) {
+  if (!userId) return null;
+  return prisma.user.findUnique({ where: { id: userId }, select: { email: true, firstName: true } });
 }
 
 export const logisticsService = {
-  async create(clientId: string, userId: string, data: CreateLogisticsInput) {
-    const requestNumber = await logisticsRepository.nextRequestNumber();
-    const packaging = data.packagingList ?? [];
-    const request = await logisticsRepository.create({
-      requestNumber,
-      clientId,
-      orderRef: data.orderRef?.trim() || null,
-      weightKg: data.weightKg?.trim() || null,
-      cbm: data.cbm?.trim() || null,
-      shippingMethod: data.shippingMethod?.trim() || null,
-      packagingList: packaging,
-    });
+  async createRequest(clientId: string, data: CreateLogisticsInput) {
+    const created = await logisticsRepository.create(clientId, data);
 
-    // Seed the chat with the request summary so admin/staff see context immediately.
-    const summary = [
-      data.weightKg ? `Weight: ${data.weightKg}` : null,
-      data.cbm ? `Volume: ${data.cbm} CBM` : null,
-      data.shippingMethod ? `Method: ${data.shippingMethod}` : null,
-      data.orderRef ? `Order: ${data.orderRef}` : null,
-      data.note?.trim() ? data.note.trim() : null,
-    ].filter(Boolean).join(" · ") || "New logistics request";
-
-    await logisticsRepository.addMessage({
-      logisticsId: request.id,
-      senderId: userId,
-      senderRole: "CLIENT",
-      text: summary,
-      attachments: packaging,
+    const client = await prisma.client.findUnique({
+      where: { id: clientId },
+      select: { companyName: true },
     });
+    const companyName = client?.companyName ?? "A client";
 
     await notifyAdminsAndStaff({
       type: "logistics",
-      title: `📦 New Logistics Request — ${requestNumber}`,
-      message: summary,
+      title: `🚚 New Logistics Request — ${created.requestNumber}`,
+      message: `${companyName} submitted a ${created.shippingMethod} shipment request.`,
       relatedType: "LOGISTICS",
-      relatedId: request.id,
+      relatedId: created.id,
+    }).catch(() => {});
+
+    const staffAndAdmins = await prisma.user.findMany({
+      where: { role: { in: ["ADMIN", "STAFF"] }, isActive: true },
+      select: { email: true, firstName: true },
     });
-
-    return this.getById(request.id, userId, "CLIENT", clientId);
-  },
-
-  async list(role: Role, clientId?: string) {
-    const where = isStaff(role) ? {} : { clientId: clientId ?? "__none__" };
-    const rows = await logisticsRepository.findForList(where);
-    const meta = await logisticsRepository.messageMetaFor(rows.map((r) => r.id));
-
-    return rows.map((t) => {
-      const lastRead = role === "CLIENT" ? t.clientLastReadAt : t.staffLastReadAt;
-      let unreadCount = 0;
-      let lastMessageAt: Date | null = null;
-      for (const m of meta) {
-        if (m.logisticsId !== t.id) continue;
-        if (!lastMessageAt || m.createdAt > lastMessageAt) lastMessageAt = m.createdAt;
-        const fromOther = role === "CLIENT" ? m.senderRole !== "CLIENT" : m.senderRole === "CLIENT";
-        if (fromOther && (!lastRead || m.createdAt > lastRead)) unreadCount++;
-      }
-      return { ...baseFields(t), lastMessageAt, unreadCount };
-    });
-  },
-
-  async getById(id: string, userId: string, role: Role, clientId?: string) {
-    const req = await logisticsRepository.findById(id);
-    if (!req) throw ApiError.notFound("Logistics request not found");
-    if (!isStaff(role) && req.clientId !== clientId) {
-      throw ApiError.forbidden("You do not have access to this request");
+    const dashboardUrl = `${FRONTEND_URL}/admin/logistics/${created.id}`;
+    for (const staff of staffAndAdmins) {
+      sendEmail({
+        to: staff.email,
+        subject: `New Logistics Request: ${created.requestNumber} from ${companyName}`,
+        html: `<p>Hi ${staff.firstName},</p><p><strong>${companyName}</strong> submitted logistics request <strong>${created.requestNumber}</strong> (${created.shippingMethod}). Please review and send a quote.</p><p><a href="${dashboardUrl}">View Request</a></p>`,
+      }).catch(() => {});
     }
-    await logisticsRepository.stampRead(id, role);
-    return {
-      ...baseFields(req),
-      packagingList: req.packagingList ?? [],
-      clientUserId: req.client?.user?.id ?? null,
-      messages: req.messages.map(serializeMessage),
+
+    return signLogistics(created);
+  },
+
+  async getRequests(query: ListQuery, userId: string, role: string, clientIdFromAuth?: string) {
+    const { page, limit, skip, take } = getPagination(query);
+
+    let clientId: string | undefined = clientIdFromAuth;
+    if (role === "CLIENT" && !clientId) clientId = await resolveClientId(userId);
+
+    const [requests, total] = await logisticsRepository.findAll({
+      clientId,
+      status: query.status,
+      confirmedOnly: query.view === "orders",
+      skip,
+      take,
+    });
+
+    for (const r of requests) await signLogistics(r);
+    const pagination = buildPaginationMeta(total, page, limit);
+    return { requests, pagination };
+  },
+
+  async getRequestById(id: string, userId: string, role: string) {
+    let clientId: string | undefined;
+    if (role === "CLIENT") clientId = await resolveClientId(userId);
+    const request = await logisticsRepository.findById(id, clientId);
+    return signLogistics(request);
+  },
+
+  async sendQuote(id: string, data: QuoteLogisticsInput) {
+    const existing = await logisticsRepository.findBasic(id);
+    if (!existing) throw ApiError.notFound("Logistics request not found");
+    if (["CONFIRMED", "CANCELLED"].includes(existing.status)) {
+      throw ApiError.badRequest("Cannot quote a request that is already confirmed or cancelled");
+    }
+
+    // Validate required quote fields
+    if (!data.carrier || data.carrier.trim() === "") {
+      throw ApiError.badRequest("Carrier name is required for the quote");
+    }
+    if (data.estimatedPriceINR === null || data.estimatedPriceINR === undefined || data.estimatedPriceINR <= 0) {
+      throw ApiError.badRequest("Estimated price must be greater than zero");
+    }
+
+    const updated = await logisticsRepository.quote(id, data);
+
+    await notifyUser(existing.client.userId, {
+      type: "logistics",
+      title: `📦 Logistics Quote Ready — ${updated.requestNumber}`,
+      message: `Your shipment quote is ready: ₹${Number(data.estimatedPriceINR).toLocaleString("en-IN")}. Review to accept, reject, or counter.`,
+      relatedType: "LOGISTICS",
+      relatedId: id,
+    }).catch(() => {});
+
+    const contact = await clientContact(existing.client.userId);
+    if (contact?.email) {
+      sendEmail({
+        to: contact.email,
+        subject: `Logistics Quote Ready: ${updated.requestNumber}`,
+        html: `<p>Hi ${contact.firstName},</p><p>Your logistics quote for <strong>${updated.requestNumber}</strong> is ready — <strong>₹${Number(data.estimatedPriceINR).toLocaleString("en-IN")}</strong> via ${data.carrier} (${data.shippingMode}).</p><p><a href="${FRONTEND_URL}/client-dashboard/logistics/${id}">Review &amp; respond</a></p>`,
+      }).catch(() => {});
+    }
+
+    return updated;
+  },
+
+  async respond(id: string, clientUserId: string, data: RespondLogisticsInput) {
+    const clientId = await resolveClientId(clientUserId);
+    const existing = await logisticsRepository.findBasic(id);
+    if (!existing || existing.client.id !== clientId) {
+      throw ApiError.notFound("Logistics request not found");
+    }
+    if (existing.status !== "QUOTED") {
+      throw ApiError.badRequest("This request has no active quote to respond to");
+    }
+
+    const updated = await logisticsRepository.respond(id, data);
+
+    const label =
+      data.response === "ACCEPTED"
+        ? "accepted the quote — awaiting payment"
+        : data.response === "REJECTED"
+        ? "rejected the quote"
+        : `sent a counter offer (₹${Number(data.counterPriceINR).toLocaleString("en-IN")})`;
+    await notifyAdminsAndStaff({
+      type: "logistics",
+      title: `📝 Logistics Response — ${updated.requestNumber}`,
+      message: `${existing.client.companyName} ${label}.`,
+      relatedType: "LOGISTICS",
+      relatedId: id,
+    }).catch(() => {});
+
+    return updated;
+  },
+
+  async respondCounter(id: string, data: RespondCounterLogisticsInput) {
+    const existing = await logisticsRepository.findBasic(id);
+    if (!existing) throw ApiError.notFound("Logistics request not found");
+    if (existing.status !== "COUNTERED") {
+      throw ApiError.badRequest("There is no pending counter offer to respond to");
+    }
+
+    const updated = await logisticsRepository.respondCounter(id, data);
+
+    await notifyUser(existing.client.userId, {
+      type: "logistics",
+      title: `📦 Updated Logistics Quote — ${updated.requestNumber}`,
+      message: `Our team responded to your counter with ₹${Number(data.estimatedPriceINR).toLocaleString("en-IN")}. Please review.`,
+      relatedType: "LOGISTICS",
+      relatedId: id,
+    }).catch(() => {});
+
+    const contact = await clientContact(existing.client.userId);
+    if (contact?.email) {
+      sendEmail({
+        to: contact.email,
+        subject: `Updated Logistics Quote: ${updated.requestNumber}`,
+        html: `<p>Hi ${contact.firstName},</p><p>We've responded to your counter offer for <strong>${updated.requestNumber}</strong>. Please log in to review the updated price.</p><p><a href="${FRONTEND_URL}/client-dashboard/logistics/${id}">Review quote</a></p>`,
+      }).catch(() => {});
+    }
+
+    return updated;
+  },
+
+  async updatePhase(id: string, data: UpdatePhaseInput) {
+    const existing = await logisticsRepository.findBasic(id);
+    if (!existing) throw ApiError.notFound("Logistics request not found");
+    if (existing.status !== "CONFIRMED") {
+      throw ApiError.badRequest("Only confirmed logistics orders can be advanced");
+    }
+
+    const updated = await logisticsRepository.updatePhase(id, data.phase);
+
+    const phaseLabel: Record<string, string> = {
+      AT_WAREHOUSE: "At Warehouse",
+      FLIGHT_BOOKED: "Flight Booked for India",
+      IN_TRANSIT: "In Transit",
+      INDIA_WAREHOUSE: "Arrived at India Warehouse",
     };
+    await notifyUser(existing.client.userId, {
+      type: "logistics",
+      title: `🚚 Shipment Update — ${updated.requestNumber}`,
+      message: `Your shipment is now: ${phaseLabel[data.phase] ?? data.phase}.`,
+      relatedType: "LOGISTICS",
+      relatedId: id,
+    }).catch(() => {});
+
+    return updated;
   },
 
-  async addMessage(
-    id: string,
-    userId: string,
-    role: Role,
-    data: { text?: string; attachments?: string[] },
-    clientId?: string
-  ) {
-    const req = await logisticsRepository.findById(id);
-    if (!req) throw ApiError.notFound("Logistics request not found");
-    if (!isStaff(role) && req.clientId !== clientId) {
-      throw ApiError.forbidden("You do not have access to this request");
+  async setDeliveryMode(id: string, clientUserId: string, data: DeliveryModeInput) {
+    const clientId = await resolveClientId(clientUserId);
+    const existing = await logisticsRepository.findBasic(id);
+    if (!existing || existing.client.id !== clientId) {
+      throw ApiError.notFound("Logistics request not found");
+    }
+    if (existing.status !== "CONFIRMED") {
+      throw ApiError.badRequest("Delivery preference can only be set on a confirmed order");
+    }
+    return logisticsRepository.setDeliveryMode(id, data);
+  },
+
+  async uploadSlip(id: string, clientUserId: string, data: UploadSlipInput) {
+    const clientId = await resolveClientId(clientUserId);
+    const existing = await logisticsRepository.findBasic(id);
+    if (!existing || existing.client.id !== clientId) {
+      throw ApiError.notFound("Logistics request not found");
+    }
+    if (existing.status !== "CONFIRMED") {
+      throw ApiError.badRequest("Upload a warehouse slip only after the order is confirmed");
     }
 
-    const message = await logisticsRepository.addMessage({
-      logisticsId: id,
-      senderId: userId,
-      senderRole: role,
-      text: (data.text ?? "").trim(),
-      attachments: data.attachments ?? [],
-    });
+    const updated = await logisticsRepository.uploadSlip(
+      id,
+      data.warehouseSlipUrl,
+      data.warehouseSlipThumbUrl
+    );
 
-    const clientUserId = req.client?.user?.id;
-    if (isStaff(role)) {
-      if (clientUserId) {
-        await notifyUser(clientUserId, {
-          type: "logistics",
-          title: `💬 Logistics Update — ${req.requestNumber}`,
-          message: `Our team replied to your logistics request ${req.requestNumber}.`,
-          relatedType: "LOGISTICS",
-          relatedId: id,
-        });
-      }
-    } else {
+    await notifyAdminsAndStaff({
+      type: "logistics",
+      title: `📄 Warehouse Slip Uploaded — ${updated.requestNumber}`,
+      message: `${existing.client.companyName} uploaded a warehouse slip. Confirm cargo receipt.`,
+      relatedType: "LOGISTICS",
+      relatedId: id,
+    }).catch(() => {});
+
+    return signLogistics(updated);
+  },
+
+  async confirmCargo(id: string, data: ConfirmCargoInput) {
+    const existing = await logisticsRepository.findBasic(id);
+    if (!existing) throw ApiError.notFound("Logistics request not found");
+
+    const updated = await logisticsRepository.confirmCargo(id, data.confirmedBy);
+
+    await notifyUser(existing.client.userId, {
+      type: "logistics",
+      title: `✅ Cargo Received — ${updated.requestNumber}`,
+      message: `Your cargo has been received at our China warehouse and is being processed.`,
+      relatedType: "LOGISTICS",
+      relatedId: id,
+    }).catch(() => {});
+
+    return updated;
+  },
+
+  async cancelRequest(id: string, userId: string, role: string, reason?: string) {
+    const existing = await logisticsRepository.findBasic(id);
+    if (!existing) throw ApiError.notFound("Logistics request not found");
+
+    if (role === "CLIENT") {
+      const clientId = await resolveClientId(userId);
+      if (existing.client.id !== clientId) throw ApiError.forbidden("Access denied");
+    }
+    if (["CONFIRMED", "CANCELLED", "REJECTED"].includes(existing.status)) {
+      throw ApiError.badRequest(`Cannot cancel a ${existing.status.toLowerCase()} request`);
+    }
+
+    const updated = await logisticsRepository.cancel(id, reason);
+
+    if (role === "CLIENT") {
       await notifyAdminsAndStaff({
         type: "logistics",
-        title: `💬 Logistics Reply — ${req.requestNumber}`,
-        message: `${req.client?.companyName ?? "Client"} replied on logistics ${req.requestNumber}.`,
+        title: `Logistics Request Cancelled — ${updated.requestNumber}`,
+        message: `${existing.client.companyName} cancelled their logistics request.`,
         relatedType: "LOGISTICS",
         relatedId: id,
-      });
+      }).catch(() => {});
     }
-    return serializeMessage(message);
+
+    return updated;
   },
 
-  async updateQuote(id: string, role: Role, pricePerKg?: string | null, note?: string | null) {
-    if (!isStaff(role)) throw ApiError.forbidden("Only staff can quote");
-    const req = await logisticsRepository.findById(id);
-    if (!req) throw ApiError.notFound("Logistics request not found");
-
-    const priceNum = pricePerKg != null && `${pricePerKg}`.trim() !== "" ? Number(pricePerKg) : null;
-    const updated = await logisticsRepository.updateQuote(id, {
-      quotePricePerKg: priceNum != null && !Number.isNaN(priceNum) ? priceNum : null,
-      quoteNote: note?.trim() || null,
-    });
-
-    const clientUserId = req.client?.user?.id;
-    if (clientUserId) {
-      await notifyUser(clientUserId, {
-        type: "logistics",
-        title: `💰 Logistics Quote Ready — ${req.requestNumber}`,
-        message: `A shipping quote is ready for your logistics request ${req.requestNumber}.`,
-        relatedType: "LOGISTICS",
-        relatedId: id,
-      });
+  async sendMessage(id: string, userId: string, role: string, text: string) {
+    const existing = await logisticsRepository.findBasic(id);
+    if (!existing) throw ApiError.notFound("Logistics request not found");
+    if (role === "CLIENT") {
+      const clientId = await resolveClientId(userId);
+      if (existing.client.id !== clientId) throw ApiError.forbidden("Access denied");
     }
-    return { id: updated.id, status: updated.status, quotePricePerKg: String(updated.quotePricePerKg) };
+    return logisticsRepository.createMessage(id, userId, role, text);
   },
 
-  async updateStatus(id: string, role: Role, status: string) {
-    if (!isStaff(role)) throw ApiError.forbidden("Only staff can change status");
-    const req = await logisticsRepository.findById(id);
-    if (!req) throw ApiError.notFound("Logistics request not found");
-    const updated = await logisticsRepository.updateStatus(id, status);
-
-    const clientUserId = req.client?.user?.id;
-    if (clientUserId) {
-      await notifyUser(clientUserId, {
-        type: "logistics",
-        title: `📦 Logistics ${status.replace("_", " ")} — ${req.requestNumber}`,
-        message: `Your logistics request ${req.requestNumber} is now ${status.replace("_", " ").toLowerCase()}.`,
-        relatedType: "LOGISTICS",
-        relatedId: id,
-      });
+  async getMessages(id: string, userId: string, role: string, since?: string) {
+    const existing = await logisticsRepository.findBasic(id);
+    if (!existing) throw ApiError.notFound("Logistics request not found");
+    if (role === "CLIENT") {
+      const clientId = await resolveClientId(userId);
+      if (existing.client.id !== clientId) throw ApiError.forbidden("Access denied");
     }
-    return { id: updated.id, status: updated.status };
+    return logisticsRepository.getMessages(id, since);
   },
 };

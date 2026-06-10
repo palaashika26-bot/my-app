@@ -211,4 +211,133 @@ export const paymentsRepository = {
       },
     });
   },
+
+  // ── Logistics payment methods ───────────────────────────────────────────────
+
+  async createLogisticsPayment(data: {
+    logisticsRequestId: string;
+    type: "ADVANCE" | "FULL";
+    amountINR: number;
+    proofUrl?: string;
+    proofThumbUrl?: string;
+    proofImageBase64?: string;
+    proofFileName?: string;
+    notes?: string;
+  }) {
+    return prisma.logisticsPayment.create({
+      data: {
+        logisticsRequestId: data.logisticsRequestId,
+        type: data.type as any,
+        amountINR: data.amountINR,
+        status: "SUBMITTED",
+        proofUrl: data.proofUrl,
+        proofThumbUrl: data.proofThumbUrl,
+        proofImageBase64: data.proofImageBase64,
+        proofFileName: data.proofFileName,
+        notes: data.notes,
+        submittedAt: new Date(),
+      },
+    });
+  },
+
+  async findByLogisticsId(logisticsRequestId: string) {
+    return prisma.logisticsPayment.findMany({
+      where: { logisticsRequestId },
+      select: {
+        id: true,
+        logisticsRequestId: true,
+        type: true,
+        amountINR: true,
+        status: true,
+        proofUrl: true,
+        proofThumbUrl: true,
+        proofImageBase64: true,
+        proofFileName: true,
+        submittedAt: true,
+        verifiedAt: true,
+        rejectedAt: true,
+        rejectionReason: true,
+        notes: true,
+        createdAt: true,
+        verifiedBy: { select: { firstName: true, lastName: true, email: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  },
+
+  async findLogisticsPaymentById(id: string) {
+    return prisma.logisticsPayment.findUnique({
+      where: { id },
+      include: {
+        logisticsRequest: {
+          include: {
+            client: {
+              include: {
+                user: { select: { firstName: true, lastName: true, email: true } },
+              },
+            },
+          },
+        },
+        verifiedBy: { select: { firstName: true, lastName: true, email: true } },
+      },
+    });
+  },
+
+  // Verifying a logistics payment confirms the order and starts its fulfillment
+  // timeline at the first phase (At Warehouse).
+  async verifyLogisticsPayment(id: string, staffUserId: string) {
+    const payment = await prisma.logisticsPayment.findUnique({
+      where: { id },
+      select: { logisticsRequestId: true },
+    });
+    if (!payment) throw ApiError.notFound("Payment not found");
+
+    const updated = await prisma.logisticsPayment.update({
+      where: { id },
+      data: {
+        status: "VERIFIED",
+        verifiedAt: new Date(),
+        verifiedByUserId: staffUserId,
+      },
+    });
+
+    await prisma.logisticsRequest.update({
+      where: { id: payment.logisticsRequestId },
+      data: {
+        status: "CONFIRMED",
+        confirmedAt: new Date(),
+        phase: "AT_WAREHOUSE",
+        completedPhases: ["AT_WAREHOUSE"],
+      },
+    });
+
+    return updated;
+  },
+
+  // Rejecting reverts the request to ACCEPTED so the client can resubmit proof.
+  async rejectLogisticsPayment(id: string, staffUserId: string, reason: string) {
+    const payment = await prisma.logisticsPayment.findUnique({
+      where: { id },
+      select: { logisticsRequestId: true },
+    });
+
+    const updated = await prisma.logisticsPayment.update({
+      where: { id },
+      data: {
+        status: "REJECTED",
+        rejectedAt: new Date(),
+        rejectionReason: reason,
+        verifiedByUserId: staffUserId,
+      },
+    });
+
+    if (payment) {
+      await prisma.logisticsRequest.update({
+        where: { id: payment.logisticsRequestId },
+        data: { status: "ACCEPTED" },
+      });
+    }
+
+    return updated;
+  },
 };

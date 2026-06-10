@@ -84,6 +84,11 @@ function notifHref(n: ApiNotification, role: string): string {
   if (n.relatedType === 'INQUIRY') {
     return isWarehouse ? `/staff/warehouse` : `/admin/requests/${n.relatedId}`;
   }
+  if (n.relatedType === 'LOGISTICS') {
+    return isWarehouse
+      ? `/staff/sourcing/logistics/${n.relatedId}`
+      : `/admin/logistics/${n.relatedId}`;
+  }
   return isWarehouse ? '/staff/warehouse' : '/admin';
 }
 
@@ -278,7 +283,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               )}
             </button>
             {notifOpen && (
-              <div className="absolute right-0 top-full mt-2 w-80 bg-card rounded-xl shadow-card-lg border border-border z-50 fade-in overflow-hidden">
+              <div className="fixed left-3 right-3 top-16 w-auto sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80 bg-card rounded-xl shadow-card-lg border border-border z-50 fade-in overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                   <h3 className="text-sm font-600 text-foreground">Notifications</h3>
                   <span className="text-xs text-muted-foreground">{adminUnreadCount > 0 ? `${adminUnreadCount} unread` : 'All read'}</span>
