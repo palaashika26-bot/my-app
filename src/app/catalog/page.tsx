@@ -5,6 +5,7 @@ import ClientLayout from '@/components/ClientLayout';
 import { useToast } from '@/components/ui/Toast';
 import { Search, X, Plus, SlidersHorizontal, ArrowUpDown, Check, Star, ChevronLeft, ChevronRight } from 'lucide-react';
 import ProductImage from '@/components/ProductImage';
+import CatalogImage from '@/components/CatalogImage';
 import ImageLightbox from '@/components/ImageLightbox';
 import { productsApi } from '@/lib/api/products.api';
 import { TOKEN_KEY } from '@/lib/api/axiosClient';
@@ -503,9 +504,9 @@ export default function CatalogPage() {
                   : 'border-transparent shadow-sm hover:border-[#C8BEE0] hover:shadow-md'}`}
               style={{ width: '110px' }}
             >
-              <div className="w-full flex items-center justify-center overflow-hidden bg-gradient-to-br from-[#E8E1F5] to-[#D6CEE8]" style={{ height: '84px' }}>
+              <div className="relative w-full flex items-center justify-center overflow-hidden bg-gradient-to-br from-[#E8E1F5] to-[#D6CEE8]" style={{ height: '84px' }}>
                 {c.image
-                  ? <img src={c.image} alt={c.name} className="w-full h-full object-cover" />
+                  ? <CatalogImage src={c.image} alt={c.name} className="object-cover" sizes="110px" />
                   : <span className="text-4xl select-none">{getCategoryEmoji(c.name)}</span>
                 }
               </div>
@@ -608,7 +609,7 @@ export default function CatalogPage() {
               onClick={() => router.push(`/catalog/${p.id}`)}>
               <div className={`aspect-square ${p.bg} flex items-center justify-center text-6xl relative`}>
                 {p.images && p.images[0]
-                  ? <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover" />
+                  ? <CatalogImage src={p.images[0]} alt={p.name} className="object-cover" sizes="(max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw" />
                   : <><ProductImage productName={p.name} canUpload={false} fill />{p.emoji}</>
                 }
                 {p.isNew && <span className="absolute top-2 left-2 px-1.5 py-0.5 bg-emerald-500 text-white text-[9px] font-700 rounded-full leading-tight">NEW</span>}
@@ -687,7 +688,7 @@ export default function CatalogPage() {
                       {isVideo(detailMedia[detailImgIdx]) ? (
                         <video src={detailMedia[detailImgIdx]} controls className="w-full h-full object-contain" />
                       ) : (
-                        <img src={detailMedia[detailImgIdx]} alt={detailProduct.name} className="w-full h-full object-contain cursor-pointer" onClick={() => setDetailLightboxUrl(detailMedia[detailImgIdx])} />
+                        <CatalogImage src={detailMedia[detailImgIdx]} alt={detailProduct.name} className="object-contain cursor-pointer" sizes="(max-width: 768px) 100vw, 672px" priority onClick={() => setDetailLightboxUrl(detailMedia[detailImgIdx])} />
                       )}
                       {/* nav arrows */}
                       {detailMedia.length > 1 && (
@@ -715,7 +716,7 @@ export default function CatalogPage() {
                             {isVideo(src) ? (
                               <div className="w-full h-full bg-muted flex items-center justify-center text-base">▶</div>
                             ) : (
-                              <img src={src} alt="" className="w-full h-full object-cover" />
+                              <img src={src} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                             )}
                           </button>
                         ))}
@@ -833,7 +834,7 @@ export default function CatalogPage() {
               <div className="flex items-center gap-3 p-3 rounded-xl bg-muted/40">
                 <div className={`w-14 h-14 rounded-lg ${quoteProduct.bg} flex items-center justify-center text-3xl overflow-hidden flex-shrink-0`}>
                   {quoteProduct.images && quoteProduct.images[0]
-                    ? <img src={quoteProduct.images[0]} alt={quoteProduct.name} className="w-full h-full object-cover" />
+                    ? <img src={quoteProduct.images[0]} alt={quoteProduct.name} className="w-full h-full object-cover" loading="lazy" decoding="async" />
                     : quoteProduct.emoji}
                 </div>
                 <div className="min-w-0">

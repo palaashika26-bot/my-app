@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect, use } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import ClientLayout from '@/components/ClientLayout';
+import CatalogImage from '@/components/CatalogImage';
 import ImageLightbox from '@/components/ImageLightbox';
 import { Star, ChevronLeft, Heart, Minus, Plus, CheckCircle2, Truck, ShieldCheck, Tag } from 'lucide-react';
 
@@ -293,7 +294,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                       onClick={() => setActiveImg(i)}
                       className={`w-14 h-14 rounded-lg overflow-hidden border-2 flex-shrink-0 transition-all ${activeImg === i ? 'border-[#4A3B52] shadow-sm' : 'border-[#e5e5e5] hover:border-[#4A3B52]/50'}`}
                     >
-                      <img src={src} alt="" className="w-full h-full object-cover" />
+                      <img src={src} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                     </button>
                   ))}
                 </div>
@@ -302,10 +303,12 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               {/* Main image */}
               <div className="flex-1 aspect-square rounded-2xl overflow-hidden border border-[#e5e5e5] bg-[#f5f5f5] flex items-center justify-center relative">
                 {hasImages ? (
-                  <img
+                  <CatalogImage
                     src={images[activeImg]}
                     alt={product.name}
-                    className="w-full h-full object-contain cursor-pointer"
+                    className="object-contain cursor-pointer"
+                    sizes="(max-width: 768px) 100vw, 50vw"
+                    priority
                     onClick={() => setLightboxUrl(images[activeImg])}
                   />
                 ) : (
@@ -535,7 +538,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 >
                   <div className={`aspect-square ${p.bg ?? 'bg-[#e4eeee]'} flex items-center justify-center text-4xl relative`}>
                     {p.images.length > 0
-                      ? <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover" />
+                      ? <CatalogImage src={p.images[0]} alt={p.name} className="object-cover" sizes="(max-width: 768px) 50vw, 25vw" />
                       : <span className="select-none">{p.emoji ?? '📦'}</span>
                     }
                     {p.badge && (
