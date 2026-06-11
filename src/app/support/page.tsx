@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import ClientLayout from '@/components/ClientLayout';
 import { useToast } from '@/components/ui/Toast';
 import { supportApi, type SupportTicketListItem } from '@/lib/api/support.api';
+import { uploadFiles } from '@/lib/upload';
 import { MessageCircle, Mail, Phone, ChevronDown, Paperclip, X, FileText, Play, ChevronRight } from 'lucide-react';
 
 const faqs = [
@@ -27,16 +28,8 @@ const statusLabel: Record<string, string> = {
   OPEN: 'Open', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved', CLOSED: 'Closed',
 };
 
-interface Attachment { name: string; type: 'image' | 'video' | 'pdf'; base64: string; size: number; }
-
-function toBase64(file: File): Promise<string> {
-  return new Promise((res, rej) => {
-    const reader = new FileReader();
-    reader.onload = () => res(reader.result as string);
-    reader.onerror = rej;
-    reader.readAsDataURL(file);
-  });
-}
+// url = uploaded storage path (persisted); preview = local object URL (display only).
+interface Attachment { name: string; type: 'image' | 'video' | 'pdf'; url: string; preview: string; size: number; }
 
 export default function SupportPage() {
   const { addToast } = useToast();
@@ -44,6 +37,7 @@ export default function SupportPage() {
   const [open, setOpen] = useState<number | null>(0);
   const [form, setForm] = useState({ subject: '', category: 'General', desc: '' });
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [tickets, setTickets] = useState<SupportTicketListItem[]>([]);
@@ -62,23 +56,40 @@ export default function SupportPage() {
 
   async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(e.target.files || []);
+    e.target.value = '';
     if (attachments.length + picked.length > 3) {
       addToast({ type: 'warning', title: 'Max 3 attachments per ticket' });
-      e.target.value = '';
       return;
     }
-    const results: Attachment[] = [];
-    for (const file of picked) {
-      if (file.size > 5 * 1024 * 1024) {
-        addToast({ type: 'warning', title: `"${file.name}" exceeds 5 MB and was skipped` });
-        continue;
-      }
-      const base64 = await toBase64(file);
-      const type = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'pdf';
-      results.push({ name: file.name, type, base64, size: file.size });
+    const valid = picked.filter(file => {
+      if (file.size > 5 * 1024 * 1024) { addToast({ type: 'warning', title: `"${file.name}" exceeds 5 MB and was skipped` }); return false; }
+      return true;
+    });
+    if (valid.length === 0) return;
+
+    // Upload straight to object storage; only the returned paths are persisted.
+    setUploading(true);
+    try {
+      const uploaded = await uploadFiles(valid, 'support');
+      const results: Attachment[] = uploaded.map((u, i) => {
+        const f = valid[i];
+        const type = f.type.startsWith('image/') ? 'image' : f.type.startsWith('video/') ? 'video' : 'pdf';
+        return { name: f.name, type, url: u.url, preview: URL.createObjectURL(f), size: f.size };
+      });
+      setAttachments(prev => [...prev, ...results].slice(0, 3));
+    } catch {
+      addToast({ type: 'error', title: 'Upload failed', description: 'Please check your connection and try again.' });
+    } finally {
+      setUploading(false);
     }
-    setAttachments(prev => [...prev, ...results].slice(0, 3));
-    e.target.value = '';
+  }
+
+  function removeAttachment(idx: number) {
+    setAttachments(prev => {
+      const a = prev[idx];
+      if (a?.preview) URL.revokeObjectURL(a.preview);
+      return prev.filter((_, j) => j !== idx);
+    });
   }
 
   async function submitTicket() {
@@ -90,9 +101,10 @@ export default function SupportPage() {
         subject: form.subject.trim(),
         category: form.category,
         description: form.desc.trim(),
-        attachments: attachments.map(a => a.base64),
+        attachments: attachments.map(a => a.url),
       });
       addToast({ type: 'success', title: 'Ticket submitted', description: 'Our team will respond shortly.' });
+      attachments.forEach(a => a.preview && URL.revokeObjectURL(a.preview));
       setForm({ subject: '', category: 'General', desc: '' });
       setAttachments([]);
       loadTickets();
@@ -136,8 +148,8 @@ export default function SupportPage() {
                   {attachments.map((a, i) => (
                     <div key={i} className="flex items-center gap-1.5 bg-muted/40 rounded-lg px-2 py-1 border border-border">
                       {a.type === 'image' ? (
-                        <button type="button" onClick={() => setLightbox(a.base64)}>
-                          <img src={a.base64} alt={a.name} className="w-8 h-8 object-cover rounded cursor-zoom-in" />
+                        <button type="button" onClick={() => setLightbox(a.preview)}>
+                          <img src={a.preview} alt={a.name} className="w-8 h-8 object-cover rounded cursor-zoom-in" />
                         </button>
                       ) : a.type === 'video' ? (
                         <div className="w-8 h-8 bg-slate-200 rounded flex items-center justify-center"><Play className="w-4 h-4 text-slate-600" /></div>
@@ -145,7 +157,7 @@ export default function SupportPage() {
                         <div className="w-8 h-8 bg-red-50 rounded flex items-center justify-center"><FileText className="w-4 h-4 text-red-500" /></div>
                       )}
                       <span className="text-[10px] text-muted-foreground max-w-[90px] truncate">{a.name}</span>
-                      <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))} className="ml-0.5 text-muted-foreground hover:text-foreground">
+                      <button type="button" onClick={() => removeAttachment(i)} className="ml-0.5 text-muted-foreground hover:text-foreground">
                         <X className="w-3 h-3" />
                       </button>
                     </div>
@@ -158,14 +170,14 @@ export default function SupportPage() {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={attachments.length >= 3}
+                  disabled={uploading || attachments.length >= 3}
                   title="Attach files (max 3, up to 5 MB each)"
                   className="p-2 text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted/40 disabled:opacity-40 border border-border"
                 >
                   <Paperclip className="w-4 h-4" />
                 </button>
-                {attachments.length > 0 && <span className="text-xs text-muted-foreground">{attachments.length}/3</span>}
-                <button onClick={submitTicket} disabled={submitting} className="btn-primary flex-1 py-2 text-sm disabled:opacity-50">{submitting ? 'Submitting…' : 'Submit Ticket'}</button>
+                {uploading ? <span className="text-xs text-muted-foreground">Uploading…</span> : attachments.length > 0 && <span className="text-xs text-muted-foreground">{attachments.length}/3</span>}
+                <button onClick={submitTicket} disabled={submitting || uploading} className="btn-primary flex-1 py-2 text-sm disabled:opacity-50">{submitting ? 'Submitting…' : 'Submit Ticket'}</button>
               </div>
             </div>
           </div>

@@ -1,6 +1,9 @@
 import { productsRepository } from "./products.repository";
 import { getPagination, buildPaginationMeta } from "../../../utils/pagination";
 import { ApiError } from "../../../utils/ApiError";
+import { signImageFields, normalizeStoragePathFields } from "../../../config/storage";
+
+const MEDIA_FIELDS = ["images", "videos"];
 
 interface ProductQuery {
   page?: string;
@@ -23,11 +26,15 @@ export const productsService = {
     });
 
     const pagination = buildPaginationMeta(total, page, limit);
+    // Convert storage-path media to signed read URLs (legacy base64/external pass through).
+    await signImageFields(products, { arrays: MEDIA_FIELDS });
     return { products, pagination };
   },
 
   async getProductById(id: string) {
-    return productsRepository.findById(id);
+    const product = await productsRepository.findById(id);
+    await signImageFields(product, { arrays: MEDIA_FIELDS });
+    return product;
   },
 
   async createProduct(data: Record<string, unknown>) {
@@ -38,6 +45,8 @@ export const productsService = {
         .replace(/\s+/g, "-")
         .replace(/[^a-z0-9-]/g, "");
     }
+    // An admin form may resubmit signed URLs it was shown — store raw paths only.
+    normalizeStoragePathFields(data, MEDIA_FIELDS);
     return productsRepository.create(data);
   },
 
@@ -46,6 +55,7 @@ export const productsService = {
     if (!existing) {
       throw ApiError.notFound("Product not found");
     }
+    normalizeStoragePathFields(data, MEDIA_FIELDS);
     return productsRepository.update(id, data);
   },
 

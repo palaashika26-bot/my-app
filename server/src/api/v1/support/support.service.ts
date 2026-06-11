@@ -1,6 +1,7 @@
 import { supportRepository } from "./support.repository";
 import { ApiError } from "../../../utils/ApiError";
 import { notifyUser, notifyAdminsAndStaff } from "../../../utils/notify";
+import { signImageFields } from "../../../config/storage";
 import { CreateTicketInput } from "./support.schema";
 
 type Role = string;
@@ -102,11 +103,15 @@ export const supportService = {
     // Mark the viewer's side as read (powers the unread badge).
     await supportRepository.stampRead(id, role);
 
+    const messages = ticket.messages.map(serializeMessage);
+    // Convert storage-path attachments to signed read URLs (legacy base64 passes through).
+    await signImageFields(messages, { arrays: ["attachments"] });
+
     return {
       ...baseFields(ticket),
       description: ticket.description,
       clientUserId: ticket.client?.user?.id ?? null,
-      messages: ticket.messages.map(serializeMessage),
+      messages,
     };
   },
 
@@ -157,7 +162,9 @@ export const supportService = {
       });
     }
 
-    return serializeMessage(message);
+    const serialized = serializeMessage(message);
+    await signImageFields(serialized, { arrays: ["attachments"] });
+    return serialized;
   },
 
   async updateStatus(id: string, role: Role, status: string) {

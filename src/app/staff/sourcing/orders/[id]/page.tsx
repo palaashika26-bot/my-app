@@ -16,6 +16,7 @@ import GSTInvoicePopover from '@/components/GSTInvoicePopover';
 import type { GSTData } from '@/components/GSTInvoicePopover';
 import { paymentsApi } from '@/lib/api/payments.api';
 import ProductImage from '@/components/ProductImage';
+import { uploadFiles } from '@/lib/upload';
 import ExceptionChat from '@/components/ExceptionChat';
 import ImageLightbox from '@/components/ImageLightbox';
 import { useAuth } from '@/context/AuthContext';
@@ -371,15 +372,11 @@ export default function SourcingOrderDetailPage({ params }: { params: Promise<{ 
     if (!files?.length) return;
     setStaffUploadLoading(true);
     try {
-      const toBase64 = (file: File) => new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
-      const base64Photos = await Promise.all(Array.from(files).map(toBase64));
+      // Upload to object storage; persist only the returned paths (never base64).
+      const uploaded = await uploadFiles(Array.from(files), 'warehouse');
       const res = await apiFetch(`/api/orders/${id}/warehouse-photos`, {
         method: 'POST',
-        body: JSON.stringify({ photos: base64Photos }),
+        body: JSON.stringify({ photos: uploaded.map(u => u.url) }),
       });
       const data = await res.json();
       if (data?.success) {
@@ -883,9 +880,9 @@ export default function SourcingOrderDetailPage({ params }: { params: Promise<{ 
                     {dateStr && <p className="text-xs text-muted-foreground mb-1">Submitted: {dateStr}</p>}
                     {p.notes && <p className="text-xs text-muted-foreground mb-3">Notes: {p.notes}</p>}
                     <div className="flex gap-2 flex-wrap">
-                      {p.proofImageBase64 && (
+                      {(p.proofUrl || p.proofImageBase64) && (
                         <button
-                          onClick={() => setProofModalUrl(p.proofImageBase64)}
+                          onClick={() => setProofModalUrl((p.proofUrl || p.proofImageBase64))}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-600 rounded-lg border border-border hover:bg-muted transition-colors"
                         >
                           <Eye className="w-3.5 h-3.5" /> View Proof
@@ -926,7 +923,7 @@ export default function SourcingOrderDetailPage({ params }: { params: Promise<{ 
                     <div className="flex items-start gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-600 text-emerald-800">✅ {typeLabel} — ₹{amount} — Verified{p.proofImageBase64 && (<button onClick={() => setProofModalUrl(p.proofImageBase64)} className="text-xs text-blue-600 underline ml-2">View Proof</button>)}</p>
+                        <p className="text-sm font-600 text-emerald-800">✅ {typeLabel} — ₹{amount} — Verified{(p.proofUrl || p.proofImageBase64) && (<button onClick={() => setProofModalUrl((p.proofUrl || p.proofImageBase64))} className="text-xs text-blue-600 underline ml-2">View Proof</button>)}</p>
                         {verifiedBy && (
                           <p className="text-xs text-emerald-700 mt-0.5">
                             Verified by: {verifiedBy}{p.verifiedAt ? ` on ${new Date(p.verifiedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
@@ -934,9 +931,9 @@ export default function SourcingOrderDetailPage({ params }: { params: Promise<{ 
                         )}
                       </div>
                     </div>
-                    {p.proofImageBase64 && (
+                    {(p.proofUrl || p.proofImageBase64) && (
                       <button
-                        onClick={() => setProofModalUrl(p.proofImageBase64)}
+                        onClick={() => setProofModalUrl((p.proofUrl || p.proofImageBase64))}
                         className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-600 rounded-lg border border-emerald-300 hover:bg-emerald-100 transition-colors text-emerald-800"
                       >
                         <Eye className="w-3.5 h-3.5" /> View Proof
@@ -947,11 +944,11 @@ export default function SourcingOrderDetailPage({ params }: { params: Promise<{ 
 
                 if (p.status === 'REJECTED') return (
                   <div key={p.id} className="rounded-xl border border-red-200 bg-red-50 p-3 mb-3">
-                    <p className="text-sm font-600 text-red-800">❌ {typeLabel} — ₹{amount} — Rejected{p.proofImageBase64 && (<button onClick={() => setProofModalUrl(p.proofImageBase64)} className="text-xs text-blue-600 underline ml-2">View Proof</button>)}</p>
+                    <p className="text-sm font-600 text-red-800">❌ {typeLabel} — ₹{amount} — Rejected{(p.proofUrl || p.proofImageBase64) && (<button onClick={() => setProofModalUrl((p.proofUrl || p.proofImageBase64))} className="text-xs text-blue-600 underline ml-2">View Proof</button>)}</p>
                     {p.rejectionReason && <p className="text-xs text-red-700 mt-1">Reason: {p.rejectionReason}</p>}
-                    {p.proofImageBase64 && (
+                    {(p.proofUrl || p.proofImageBase64) && (
                       <button
-                        onClick={() => setProofModalUrl(p.proofImageBase64)}
+                        onClick={() => setProofModalUrl((p.proofUrl || p.proofImageBase64))}
                         className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-600 rounded-lg border border-red-300 hover:bg-red-100 transition-colors text-red-800"
                       >
                         <Eye className="w-3.5 h-3.5" /> View Proof

@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/Toast';
 import { ArrowLeft, FileImage, Check, Copy, CheckCheck, Building2, CreditCard } from 'lucide-react';
 import { logisticsApi } from '@/lib/api/logistics.api';
 import { paymentsApi } from '@/lib/api/payments.api';
+import { uploadFile, type UploadedFile } from '@/lib/upload';
 
 const BANK_ACCOUNTS = [
   {
@@ -59,7 +60,9 @@ export default function LogisticsPaymentPage({ params }: { params: Promise<{ id:
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
 
-  const [proofDataUrl, setProofDataUrl] = useState<string | null>(null);
+  const [proofPreview, setProofPreview] = useState<string | null>(null);
+  const [proofUploaded, setProofUploaded] = useState<UploadedFile | null>(null);
+  const [proofUploading, setProofUploading] = useState(false);
   const [proofName, setProofName] = useState('');
   const [proofSize, setProofSize] = useState(0);
   const [notes, setNotes] = useState('');
@@ -95,8 +98,17 @@ export default function LogisticsPaymentPage({ params }: { params: Promise<{ id:
     return () => ac.abort();
   }, [fetchReq, id]);
 
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+  function removeProof() {
+    if (proofPreview) URL.revokeObjectURL(proofPreview);
+    setProofPreview(null);
+    setProofUploaded(null);
+    setProofName('');
+    setProofSize(0);
+  }
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
     const ALLOWED = ['image/jpeg', 'image/png', 'image/webp'];
     if (!ALLOWED.includes(file.type)) {
@@ -107,16 +119,28 @@ export default function LogisticsPaymentPage({ params }: { params: Promise<{ id:
       addToast({ type: 'error', title: 'File too large', description: 'Maximum file size is 5 MB.' });
       return;
     }
+
+    // Upload straight to object storage; only the returned storage path is kept
+    // (a local object URL is used purely for the preview below).
+    if (proofPreview) URL.revokeObjectURL(proofPreview);
     setProofName(file.name);
     setProofSize(file.size);
-    const reader = new FileReader();
-    reader.onload = ev => setProofDataUrl(ev.target?.result as string);
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    setProofPreview(URL.createObjectURL(file));
+    setProofUploaded(null);
+    setProofUploading(true);
+    try {
+      const uploaded = await uploadFile(file, 'payment-proof');
+      setProofUploaded(uploaded);
+    } catch {
+      addToast({ type: 'error', title: 'Upload failed', description: 'Please check your connection and try again.' });
+      removeProof();
+    } finally {
+      setProofUploading(false);
+    }
   }
 
   async function submit() {
-    if (!proofDataUrl || !logisticsReq) return;
+    if (!proofUploaded || !logisticsReq) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -124,7 +148,8 @@ export default function LogisticsPaymentPage({ params }: { params: Promise<{ id:
         logisticsRequestId: id,
         type: paymentMode === 'full' ? 'FULL' : 'ADVANCE',
         amountINR: paymentMode === 'advance' ? Math.round(Number(logisticsReq.estimatedPriceINR) * 0.75) : Number(logisticsReq.estimatedPriceINR),
-        proofImageBase64: proofDataUrl,
+        proofUrl: proofUploaded.url,
+        proofThumbUrl: proofUploaded.thumbUrl,
         proofFileName: proofName || undefined,
         notes: notes.trim() || undefined,
       });
@@ -311,15 +336,24 @@ export default function LogisticsPaymentPage({ params }: { params: Promise<{ id:
             <h2 className="font-700 mb-1">Upload Payment Proof</h2>
             <p className="text-xs text-muted-foreground mb-4">Upload a screenshot or photo of your payment confirmation.</p>
 
-            {proofDataUrl ? (
+            {proofPreview ? (
               <div className="space-y-3">
-                <img src={proofDataUrl} alt="Payment proof preview" className="w-full max-h-52 object-contain rounded-xl border border-border bg-muted" />
+                <div className="relative">
+                  <img src={proofPreview} alt="Payment proof preview" className="w-full max-h-52 object-contain rounded-xl border border-border bg-muted" />
+                  {proofUploading && (
+                    <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/40">
+                      <span className="w-6 h-6 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    </div>
+                  )}
+                </div>
                 <div className="flex items-center justify-between text-xs">
                   <div>
                     <span className="text-muted-foreground truncate max-w-[180px] inline-block">{proofName}</span>
-                    {proofSize > 0 && <span className="text-muted-foreground ml-2">({(proofSize / 1024).toFixed(0)} KB)</span>}
+                    {proofUploading
+                      ? <span className="text-muted-foreground ml-2">Uploading…</span>
+                      : proofSize > 0 && <span className="text-muted-foreground ml-2">({(proofSize / 1024).toFixed(0)} KB)</span>}
                   </div>
-                  <button onClick={() => { setProofDataUrl(null); setProofName(''); setProofSize(0); }} className="text-muted-foreground hover:text-red-500 ml-2 flex-shrink-0">✕ Remove</button>
+                  <button onClick={removeProof} className="text-muted-foreground hover:text-red-500 ml-2 flex-shrink-0">✕ Remove</button>
                 </div>
               </div>
             ) : (
@@ -346,7 +380,7 @@ export default function LogisticsPaymentPage({ params }: { params: Promise<{ id:
 
             <button
               onClick={submit}
-              disabled={!proofDataUrl || submitting || submitted}
+              disabled={!proofUploaded || proofUploading || submitting || submitted}
               className="btn-primary w-full py-3 mt-4 inline-flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {submitting

@@ -59,7 +59,7 @@ export default function NewRequestPage() {
       return;
     }
     if (toAdd.some(f => f.size > MAX_UPLOAD_BYTES)) {
-      addToast({ type: 'error', title: 'Image too large', description: 'Max 15MB per image.' });
+      addToast({ type: 'error', title: 'Image too large', description: 'Max 10MB per image.' });
       return;
     }
 
@@ -119,9 +119,10 @@ export default function NewRequestPage() {
         })),
       };
 
-      // No client-side race timeout here: createRequest goes through uploadClient
-      // (120s) because the payload carries base64 reference images. The old 8s
-      // race fired "failed" while the POST actually succeeded on the server.
+      // No client-side race timeout here: the payload carries only storage paths
+      // (images were already uploaded on selection), but createRequest still goes
+      // through uploadClient (120s) to survive slow/cold-start backends. The old
+      // 8s race fired "failed" while the POST actually succeeded on the server.
       const response = await requestsApi.createRequest(payload);
       const request = (response as any)?.data?.data;
       if (request) {

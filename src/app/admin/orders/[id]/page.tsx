@@ -16,6 +16,7 @@ import { generatePackingList } from '@/lib/generatePackingList';
 import type { GSTData } from '@/components/GSTInvoicePopover';
 import { paymentsApi } from '@/lib/api/payments.api';
 import ProductImage from '@/components/ProductImage';
+import { uploadFiles } from '@/lib/upload';
 import { useAuth } from '@/context/AuthContext';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import { notFound } from 'next/navigation';
@@ -226,6 +227,13 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
   const [paymentActionLoading, setPaymentActionLoading] = useState(false);
 
   function handleViewProof(payment: any) {
+    // New proofs arrive as a signed storage URL (proofUrl); legacy ones as base64.
+    const proofUrl = payment.proofUrl as string | null | undefined;
+    if (proofUrl) {
+      setProofImageError(false);
+      setProofModalUrl(proofUrl);
+      return;
+    }
     const base64 = payment.proofImageBase64 as string | null | undefined;
     // A real screenshot is always at least ~10 KB → ~14 000 base64 chars.
     // If we get ≤ 5 000 chars the data was truncated by the old sanitiser (hard cap was 2 000).
@@ -638,15 +646,11 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
     if (!files?.length) return;
     setAdminUploadLoading(true);
     try {
-      const toBase64 = (file: File) => new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
-      const base64Photos = await Promise.all(Array.from(files).map(toBase64));
+      // Upload to object storage; persist only the returned paths (never base64).
+      const uploaded = await uploadFiles(Array.from(files), 'warehouse');
       const res = await apiFetch(`/api/orders/${id}/warehouse-photos`, {
         method: 'POST',
-        body: JSON.stringify({ photos: base64Photos }),
+        body: JSON.stringify({ photos: uploaded.map(u => u.url) }),
       });
       const data = await res.json();
       if (data?.success) {
@@ -1127,7 +1131,7 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
                     {dateStr && <p className="text-xs text-muted-foreground mb-1">Submitted: {dateStr}</p>}
                     {p.notes && <p className="text-xs text-muted-foreground mb-3">Notes: {p.notes}</p>}
                     <div className="flex gap-2 flex-wrap">
-                      {p.proofImageBase64 && (
+                      {(p.proofUrl || p.proofImageBase64) && (
                         <button
                           onClick={() => handleViewProof(p)}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-600 rounded-lg border border-border hover:bg-muted transition-colors"
@@ -1170,7 +1174,7 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
                     <div className="flex items-start gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-600 text-emerald-800">✅ {typeLabel} — ₹{amount} — Verified{p.proofImageBase64 && (<button onClick={() => handleViewProof(p)} className="text-xs text-blue-600 underline ml-2">View Proof</button>)}</p>
+                        <p className="text-sm font-600 text-emerald-800">✅ {typeLabel} — ₹{amount} — Verified{(p.proofUrl || p.proofImageBase64) && (<button onClick={() => handleViewProof(p)} className="text-xs text-blue-600 underline ml-2">View Proof</button>)}</p>
                         {verifiedBy && (
                           <p className="text-xs text-emerald-700 mt-0.5">
                             Verified by: {verifiedBy}{p.verifiedAt ? ` on ${new Date(p.verifiedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
@@ -1178,7 +1182,7 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
                         )}
                       </div>
                     </div>
-                    {p.proofImageBase64 && (
+                    {(p.proofUrl || p.proofImageBase64) && (
                       <button
                         onClick={() => handleViewProof(p)}
                         className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-600 rounded-lg border border-emerald-300 hover:bg-emerald-100 transition-colors text-emerald-800"
@@ -1191,9 +1195,9 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
 
                 if (p.status === 'REJECTED') return (
                   <div key={p.id} className="rounded-xl border border-red-200 bg-red-50 p-3 mb-3">
-                    <p className="text-sm font-600 text-red-800">❌ {typeLabel} — ₹{amount} — Rejected{p.proofImageBase64 && (<button onClick={() => handleViewProof(p)} className="text-xs text-blue-600 underline ml-2">View Proof</button>)}</p>
+                    <p className="text-sm font-600 text-red-800">❌ {typeLabel} — ₹{amount} — Rejected{(p.proofUrl || p.proofImageBase64) && (<button onClick={() => handleViewProof(p)} className="text-xs text-blue-600 underline ml-2">View Proof</button>)}</p>
                     {p.rejectionReason && <p className="text-xs text-red-700 mt-1">Reason: {p.rejectionReason}</p>}
-                    {p.proofImageBase64 && (
+                    {(p.proofUrl || p.proofImageBase64) && (
                       <button
                         onClick={() => handleViewProof(p)}
                         className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-600 rounded-lg border border-red-300 hover:bg-red-100 transition-colors text-red-800"
