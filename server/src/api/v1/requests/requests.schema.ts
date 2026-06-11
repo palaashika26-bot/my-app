@@ -36,6 +36,14 @@ const requestItemWithImagesBase = requestItemBaseObject.extend({
     )
     .max(5)
     .optional(),
+  // The client uploads a small webp thumbnail alongside each reference image and
+  // sends its storage path here. Without this field the validate() middleware
+  // (which replaces req.body with the parsed result) strips it, so every
+  // thumbnail was silently dropped before reaching the repository.
+  referenceThumbUrls: z
+    .array(z.string().refine(isUnderMaxSize, "Each thumbnail path is too long"))
+    .max(5)
+    .optional(),
 });
 
 const requestTypeSchema = z.enum(["SOURCING", "QUOTATION", "SAMPLE"]).optional();

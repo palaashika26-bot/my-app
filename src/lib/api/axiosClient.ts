@@ -133,6 +133,52 @@ const tokenInterceptor = (config: any) => {
   return config;
 };
 
+// Pull the *real* failure detail out of an axios error. Axios sets err.message to
+// a generic "Request failed with status code 422" and hides the server's actual
+// response under err.response.data ({ message, errors }). Callers that only look
+// at err.message therefore show users a meaningless "please try again" and log
+// nothing useful — which is exactly why mobile submit failures were undiagnosable.
+export interface ApiErrorInfo {
+  status?: number;
+  /** Best human-readable message: server message → field errors → axios message. */
+  message: string;
+  /** Field-level validation messages from the backend, if any. */
+  fieldErrors: string[];
+  isNetworkError: boolean;
+  isTimeout: boolean;
+}
+
+export function describeApiError(error: any): ApiErrorInfo {
+  const status: number | undefined = error?.response?.status;
+  const data = error?.response?.data;
+
+  // Backend shapes: errorHandler → { message }, validate → { message:'Validation
+  // failed', errors:[{field,message}] }. Normalise both into a flat string list.
+  const fieldErrors: string[] = Array.isArray(data?.errors)
+    ? data.errors.map((e: any) =>
+        typeof e === 'string' ? e : [e?.field, e?.message].filter(Boolean).join(': ')
+      )
+    : [];
+
+  const serverMessage: string | undefined =
+    typeof data?.message === 'string' ? data.message : undefined;
+
+  const isTimeout = error?.code === 'ECONNABORTED';
+  const isNetworkError = error?.code === 'ERR_NETWORK' || (!error?.response && !isTimeout);
+
+  const message =
+    fieldErrors.length > 0
+      ? `${serverMessage ?? 'Validation failed'}: ${fieldErrors.join('; ')}`
+      : serverMessage ??
+        (isTimeout
+          ? 'The server took too long to respond.'
+          : isNetworkError
+          ? 'Network error — could not reach the server.'
+          : error?.message ?? 'Unknown error');
+
+  return { status, message, fieldErrors, isNetworkError, isTimeout };
+}
+
 // Log network errors with details for debugging mobile issues
 function logNetworkError(error: any, endpoint: string): void {
   const status = error?.response?.status;

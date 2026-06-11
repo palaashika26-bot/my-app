@@ -5,6 +5,7 @@ import Link from 'next/link';
 import ClientLayout from '@/components/ClientLayout';
 import { useToast } from '@/components/ui/Toast';
 import { requestsApi } from '@/lib/api/requests.api';
+import { describeApiError } from '@/lib/api/axiosClient';
 import { requestsCache } from '@/lib/api/requestsCache';
 import { uploadFiles, MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES } from '@/lib/upload';
 import { Camera, Upload, ArrowLeft, ArrowRight, Plus, X, Check, ImageIcon } from 'lucide-react';
@@ -109,15 +110,25 @@ export default function NewRequestPage() {
         description: `Successfully uploaded ${toAdd.length} image${toAdd.length > 1 ? 's' : ''}`
       });
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`[form] Upload failed: ${errorMsg}`, err);
+      // The failure can be either the /uploads/sign API call (axios error, real
+      // reason under err.response.data) or the direct-to-Supabase PUT (a plain
+      // Error whose .message is the storage reason). describeApiError handles the
+      // axios case; for the storage case it falls through to err.message.
+      const info = describeApiError(err);
+      const errorMsg = info.message;
+      console.error(
+        `[form] Upload failed — status=${info.status ?? 'none'} :: ${errorMsg}`,
+        { fieldErrors: info.fieldErrors, raw: err }
+      );
       addToast({
         type: 'error',
         title: 'Upload failed',
-        description: errorMsg.includes('HEIC') || errorMsg.includes('conversion')
+        description: /HEIC|conversion/i.test(errorMsg)
           ? 'Image conversion failed. Try a different image format.'
           : errorMsg.includes('No upload URL')
           ? 'Backend error. Please try again in a moment.'
+          : info.status
+          ? errorMsg
           : 'Please check your connection and try again.'
       });
     } finally {
@@ -230,21 +241,28 @@ export default function NewRequestPage() {
         });
       }
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`[form] Submit failed: ${errorMsg}`, err);
-      
-      // Provide detailed error message based on error type
-      let description = 'Please try again.';
-      if (errorMsg.includes('401') || errorMsg.includes('Unauthorized')) {
+      // Surface the REAL cause. axios hides the server's reason under
+      // err.response.data; describeApiError unpacks the status, message and any
+      // field-level validation errors so they end up in both the console (for
+      // remote debugging) and the toast (so a mobile user can report what failed).
+      const info = describeApiError(err);
+      console.error(
+        `[form] Submit failed — status=${info.status ?? 'none'} ` +
+          `network=${info.isNetworkError} timeout=${info.isTimeout} :: ${info.message}`,
+        { fieldErrors: info.fieldErrors, raw: err }
+      );
+
+      // Friendly description per status, but always fall back to the server's
+      // actual message rather than a generic "please try again".
+      let description = info.message;
+      if (info.status === 401) {
         description = 'Your session expired. Please log in again.';
-      } else if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
+      } else if (info.status === 403) {
         description = 'You do not have permission to submit requests. Please check your account.';
-      } else if (errorMsg.includes('Network') || errorMsg.includes('timeout')) {
+      } else if (info.isNetworkError || info.isTimeout) {
         description = 'Network error. Please check your connection and try again.';
-      } else if (errorMsg.includes('400')) {
-        description = 'Invalid form data. Please check and try again.';
       }
-      
+
       addToast({
         type: 'error',
         title: 'Failed to submit request',

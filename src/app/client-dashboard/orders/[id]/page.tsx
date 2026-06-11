@@ -69,10 +69,17 @@ import ExceptionChat from '@/components/ExceptionChat';
 
 import { getEffectiveOrderStatus, getOrderQcBundle } from '@/lib/orderQcStore';
 import { ArrowLeft, Download, AlertTriangle, MapPin, CheckCircle2, XCircle, Circle, FileText, Info, Camera, X, ChevronLeft, ChevronRight, ZoomIn, MessageCircle, MessageSquare, Paperclip, Play, Package, Truck, Home, CreditCard, RefreshCw, Flag } from 'lucide-react';
-import { generateInvoice } from '@/lib/generateInvoice';
-import { generateGSTInvoice } from '@/lib/generateGSTInvoice';
-import { generateCommercialInvoice } from '@/lib/generateCommercialInvoice';
-import { generatePackingList } from '@/lib/generatePackingList';
+// PDF generators pull in jspdf + jspdf-autotable (~250 KB). They're only used on
+// a "Download" click, so import them lazily instead of shipping them in this
+// route's initial bundle — a meaningful win on mobile where this page is heavy.
+const generateInvoice = (...args: Parameters<typeof import('@/lib/generateInvoice')['generateInvoice']>) =>
+  import('@/lib/generateInvoice').then((m) => m.generateInvoice(...args));
+const generateGSTInvoice = (...args: Parameters<typeof import('@/lib/generateGSTInvoice')['generateGSTInvoice']>) =>
+  import('@/lib/generateGSTInvoice').then((m) => m.generateGSTInvoice(...args));
+const generateCommercialInvoice = (...args: Parameters<typeof import('@/lib/generateCommercialInvoice')['generateCommercialInvoice']>) =>
+  import('@/lib/generateCommercialInvoice').then((m) => m.generateCommercialInvoice(...args));
+const generatePackingList = (...args: Parameters<typeof import('@/lib/generatePackingList')['generatePackingList']>) =>
+  import('@/lib/generatePackingList').then((m) => m.generatePackingList(...args));
 import type { GSTData } from '@/components/GSTInvoicePopover';
 import { paymentsApi } from '@/lib/api/payments.api';
 import ProductImage from '@/components/ProductImage';

@@ -9,10 +9,16 @@ import { ordersApi } from '@/lib/api/orders.api';
 import { ordersCache } from '@/lib/api/ordersCache';
 import { useToast } from '@/components/ui/Toast';
 import { ArrowLeft, CheckCircle2, XCircle, Circle, MapPin, Upload, Download, FileText, AlertTriangle, Mail, Edit3, MessageSquare, Camera, UserCheck, CreditCard, Eye, X, RefreshCw } from 'lucide-react';
-import { generateInvoice } from '@/lib/generateInvoice';
-import { generateGSTInvoice } from '@/lib/generateGSTInvoice';
-import { generateCommercialInvoice } from '@/lib/generateCommercialInvoice';
-import { generatePackingList } from '@/lib/generatePackingList';
+// Lazily load the PDF generators (jspdf + jspdf-autotable, ~250 KB) so they stay
+// out of this route's initial bundle — they only run on a "Download" click.
+const generateInvoice = (...args: Parameters<typeof import('@/lib/generateInvoice')['generateInvoice']>) =>
+  import('@/lib/generateInvoice').then((m) => m.generateInvoice(...args));
+const generateGSTInvoice = (...args: Parameters<typeof import('@/lib/generateGSTInvoice')['generateGSTInvoice']>) =>
+  import('@/lib/generateGSTInvoice').then((m) => m.generateGSTInvoice(...args));
+const generateCommercialInvoice = (...args: Parameters<typeof import('@/lib/generateCommercialInvoice')['generateCommercialInvoice']>) =>
+  import('@/lib/generateCommercialInvoice').then((m) => m.generateCommercialInvoice(...args));
+const generatePackingList = (...args: Parameters<typeof import('@/lib/generatePackingList')['generatePackingList']>) =>
+  import('@/lib/generatePackingList').then((m) => m.generatePackingList(...args));
 import type { GSTData } from '@/components/GSTInvoicePopover';
 import { paymentsApi } from '@/lib/api/payments.api';
 import ProductImage from '@/components/ProductImage';
