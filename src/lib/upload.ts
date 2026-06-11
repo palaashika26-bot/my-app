@@ -106,7 +106,18 @@ async function putToSignedUrl(
   const { error } = await supabase.storage
     .from(bucket)
     .uploadToSignedUrl(upload.path, upload.token, body, { contentType });
-  if (error) throw error;
+  if (error) {
+    // Page-level handlers swallow upload errors with a bare catch + toast, so log
+    // the real cause here. Includes the FRONTEND Supabase host (NEXT_PUBLIC_*),
+    // which is separate from the backend's SUPABASE_URL — a wrong/suffixed value
+    // here is the usual reason a signed upload silently fails after /sign succeeds.
+    console.error(
+      `[upload] uploadToSignedUrl failed — host="${process.env.NEXT_PUBLIC_SUPABASE_URL}" ` +
+        `bucket="${bucket}" path="${upload.path}" :: ${error.message}`,
+      error
+    );
+    throw error;
+  }
 }
 
 /**
