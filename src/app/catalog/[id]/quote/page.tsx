@@ -6,6 +6,7 @@ import ClientLayout from '@/components/ClientLayout';
 import { useToast } from '@/components/ui/Toast';
 import { requestsApi } from '@/lib/api/requests.api';
 import { requestsCache } from '@/lib/api/requestsCache';
+import { resolveSubmitFailure } from '@/lib/api/submitRecovery';
 import { ChevronLeft, CheckCircle2 } from 'lucide-react';
 
 interface AdminProduct {
@@ -87,7 +88,21 @@ export default function QuotePage({ params }: { params: Promise<{ id: string }> 
       // navigate to requests view if available
       if (request?.id) router.push(`/client-dashboard/requests/${request.id}`);
     } catch (error: any) {
-      addToast({ type: 'error', title: 'Failed to submit request', description: error?.response?.data?.message || 'Please try again.' });
+      // Verify before reporting failure — a client abort may still have created
+      // the request server-side (slow mobile / cold start / CORS).
+      const resolution = await resolveSubmitFailure(error, [product?.name || '']);
+      if (resolution.outcome === 'created') {
+        const confirmed = resolution.request;
+        requestsCache.set(confirmed.id, confirmed);
+        setRequestId(confirmed.requestNumber || confirmed.id || '');
+        addToast({ type: 'success', title: 'Quotation request submitted', description: `${confirmed.requestNumber || confirmed.id} created. Our team will contact you within 24 hours.` });
+        setSubmitted(true);
+        router.push(`/client-dashboard/requests/${confirmed.id}`);
+      } else if (resolution.outcome === 'unconfirmed') {
+        addToast({ type: 'error', title: 'Could not confirm submission', description: 'Your request may have been received. Please check My Requests before resubmitting.' });
+      } else {
+        addToast({ type: 'error', title: 'Failed to submit request', description: resolution.description });
+      }
     } finally {
       setSubmitting(false);
     }

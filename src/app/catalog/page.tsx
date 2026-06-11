@@ -11,6 +11,7 @@ import { productsApi } from '@/lib/api/products.api';
 import { TOKEN_KEY } from '@/lib/api/axiosClient';
 import { requestsApi } from '@/lib/api/requests.api';
 import { requestsCache } from '@/lib/api/requestsCache';
+import { resolveSubmitFailure } from '@/lib/api/submitRecovery';
 import type { ApiProduct } from '@/lib/types/api.types';
 
 interface Spec { key: string; value: string; }
@@ -384,7 +385,21 @@ export default function CatalogPage() {
       closeDetail();
       if (request?.id) router.push(`/client-dashboard/requests/${request.id}`);
     } catch (error: any) {
-      addToast({ type: 'error', title: 'Failed to submit request', description: error?.response?.data?.message || 'Please try again.' });
+      // The submission may have succeeded server-side despite a client abort —
+      // verify before reporting failure (avoids duplicate requests on mobile).
+      const resolution = await resolveSubmitFailure(error, [quoteProduct.name]);
+      if (resolution.outcome === 'created') {
+        const confirmed = resolution.request;
+        requestsCache.set(confirmed.id, confirmed);
+        addToast({ type: 'success', title: 'Quotation request submitted', description: `${confirmed.requestNumber || confirmed.id} created for ${quoteProduct.name}. Our team will contact you within 24 hours.` });
+        closeQuote();
+        closeDetail();
+        router.push(`/client-dashboard/requests/${confirmed.id}`);
+      } else if (resolution.outcome === 'unconfirmed') {
+        addToast({ type: 'error', title: 'Could not confirm submission', description: 'Your request may have been received. Please check My Requests before resubmitting.' });
+      } else {
+        addToast({ type: 'error', title: 'Failed to submit request', description: resolution.description });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -416,7 +431,19 @@ export default function CatalogPage() {
       closeCustomModal();
       if (request?.id) router.push(`/client-dashboard/requests/${request.id}`);
     } catch (error: any) {
-      addToast({ type: 'error', title: 'Failed to submit request', description: error?.response?.data?.message || 'Please try again.' });
+      // Verify before reporting failure — the row may already exist server-side.
+      const resolution = await resolveSubmitFailure(error, [customName.trim()]);
+      if (resolution.outcome === 'created') {
+        const confirmed = resolution.request;
+        requestsCache.set(confirmed.id, confirmed);
+        addToast({ type: 'success', title: 'Product request submitted', description: `${confirmed.requestNumber || confirmed.id} created for "${customName}". Our team will contact you within 24 hours.` });
+        closeCustomModal();
+        router.push(`/client-dashboard/requests/${confirmed.id}`);
+      } else if (resolution.outcome === 'unconfirmed') {
+        addToast({ type: 'error', title: 'Could not confirm submission', description: 'Your request may have been received. Please check My Requests before resubmitting.' });
+      } else {
+        addToast({ type: 'error', title: 'Failed to submit request', description: resolution.description });
+      }
     } finally {
       setCustomSubmitting(false);
     }
