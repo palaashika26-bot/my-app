@@ -11,13 +11,14 @@ export const ordersService = {
   async getOrders(
     query: OrderQuery,
     clientId?: string,
-    filters?: { statuses?: string[]; search?: string }
+    filters?: { statuses?: string[]; displayStatus?: string; search?: string }
   ) {
     const { page, limit, skip, take } = getPagination(query);
 
     const [orders, total] = await ordersRepository.findAll({
       clientId,
       statuses: filters?.statuses,
+      displayStatus: filters?.displayStatus,
       search: filters?.search,
       skip,
       take,

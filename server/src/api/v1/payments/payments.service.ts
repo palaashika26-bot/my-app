@@ -55,7 +55,7 @@ export const paymentsService = {
 
     await prisma.order.update({
       where: { id: data.orderId },
-      data: { status: "PAYMENT_PENDING" },
+      data: { status: "PAYMENT_PENDING", displayStatus: "Payment Pending" },
     });
 
     const companyName = client.companyName;

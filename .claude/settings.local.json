@@ -248,7 +248,21 @@
       "Bash(node node_modules/prisma/build/index.js validate)",
       "Bash(node node_modules/prisma/build/index.js generate)",
       "Bash(node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json)",
-      "Bash(git commit -m 'Merge origin/fix/sourcing-request-bugs: keep full logistics module, add support tickets *)"
+      "Bash(git commit -m 'Merge origin/fix/sourcing-request-bugs: keep full logistics module, add support tickets *)",
+      "Bash(xargs grep -l \"SourcingRequest\\\\|sourcing.*request\")",
+      "Bash(xargs grep -l \"sourceId\\\\|SourcingRequest\")",
+      "Bash(xargs grep -l \"POST\\\\|new.*request\\\\|create.*request\")",
+      "Bash(xargs grep -l \"createRequest\\\\|new.*request\\\\|NewRequest\")",
+      "Bash(grep -r \"proofImageBase64\\\\|data:image\\\\|toDataURL\\\\|readAsDataURL\" --include=\"*.ts\" --include=\"*.tsx\" . ! -path \"*/node_modules/*\" ! -path \"*/.next/*\" ! -path \"*/dist/*\")",
+      "Bash(xargs grep -l \"payment.*proof\\\\|Payment\\\\|RequestPayment\")",
+      "Bash(xargs grep -l \"payment\\\\|proof\")",
+      "Bash(awk '{print $2}')",
+      "Bash(git commit *)",
+      "Bash(git merge *)",
+      "Bash(node -e \"try{console.log\\(require\\('./server/node_modules/@supabase/supabase-js/package.json'\\).version\\)}catch\\(e\\){console.log\\('not found in server/node_modules'\\)}\")",
+      "Bash(node ../node_modules/typescript/bin/tsc --noEmit)",
+      "Bash(git rev-list *)",
+      "Bash(NEXT_PUBLIC_API_URL=\"https://elios-server.onrender.com/api/v1\" node node_modules/next/dist/bin/next build)"
     ]
   }
 }

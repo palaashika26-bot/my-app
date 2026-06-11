@@ -41,25 +41,40 @@ export const getOrders = async (req: Request, res: Response) => {
   }
   // ADMIN and STAFF receive all orders (clientId stays undefined)
 
+  // Sub-stage labels that all share the same DB enum (SHIPPED) — filter on
+  // displayStatus column so each sub-stage returns only its own orders.
+  const SHIPPED_SUB_STAGES = new Set([
+    "Shipped from China",
+    "In Transit",
+    "Arrived India Warehouse",
+    "Out for Delivery",
+  ]);
+
   // Two ways to filter by status:
   //  • `statuses` — a comma-separated list of raw DB enums (used for role scopes
   //    like shipping-only that span several statuses).
   //  • `status` — a single display label, mapped to its DB enum(s) here.
   // Only valid enums survive; "All"/empty = no status filter.
   let statuses: string[] | undefined;
+  let displayStatus: string | undefined;
   if (statusesParam) {
     const list = statusesParam.split(",").map((s) => s.trim()).filter((s) => VALID_DB_STATUSES.has(s));
     if (list.length) statuses = list;
   } else if (status && status !== "All") {
-    statuses =
-      DISPLAY_STATUS_TO_DB_ENUMS[status] ??
-      (VALID_DB_STATUSES.has(status) ? [status] : undefined);
+    if (SHIPPED_SUB_STAGES.has(status)) {
+      // Use the indexed displayStatus column to distinguish sub-stages
+      displayStatus = status;
+    } else {
+      statuses =
+        DISPLAY_STATUS_TO_DB_ENUMS[status] ??
+        (VALID_DB_STATUSES.has(status) ? [status] : undefined);
+    }
   }
 
   const { orders, pagination } = await ordersService.getOrders(
     { page, limit },
     clientId,
-    { statuses, search }
+    { statuses, displayStatus, search }
   );
 
   return ApiResponse.success(res, orders, "Orders fetched successfully", 200, pagination);
@@ -650,6 +665,7 @@ export const cancelOrder = async (req: Request, res: Response) => {
     where: { id },
     data: {
       status: "CANCELLED",
+      displayStatus: "Exception",
       cancelledAt: new Date(),
       cancelReason: cancelReason ?? null,
     },

@@ -394,6 +394,7 @@ model Order {
   orderNumber       String      @unique
   clientId          String
   status            OrderStatus @default(CONFIRMED)
+  displayStatus     String      @default("Payment Confirmed")
   subtotalINR       Decimal     @db.Decimal(12, 2)
   shippingCostINR   Decimal     @db.Decimal(12, 2) @default(0)
   taxINR            Decimal     @db.Decimal(12, 2) @default(0)
@@ -423,6 +424,7 @@ model Order {
   @@index([clientId])
   @@index([orderNumber])
   @@index([status])
+  @@index([displayStatus])
   @@index([createdAt])
   @@index([clientId, status])
   @@map("orders")

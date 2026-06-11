@@ -96,7 +96,7 @@ export const paymentsRepository = {
 
     await prisma.order.update({
       where: { id: payment.orderId },
-      data: { status: newOrderStatus },
+      data: { status: newOrderStatus, displayStatus: "Payment Confirmed" },
     });
 
     return updatedPayment;

@@ -2,10 +2,65 @@ import prisma from "../../../config/prisma";
 import { ApiError } from "../../../utils/ApiError";
 import { signImageFields } from "../../../config/storage";
 
+// ── Timeline stage order — used by computeDisplayStatus ───────────────────────
+const DISPLAY_STAGE_ORDER = [
+  "Order Placed",
+  "Payment Confirmed",
+  "Sourcing",
+  "At China Warehouse",
+  "China Consolidation Warehouse",
+  "Repacking Warehouse",
+  "Shipped from China",
+  "In Transit",
+  "Arrived India Warehouse",
+  "Out for Delivery",
+  "Completed",
+];
+
+// ── DB enum → canonical display label ─────────────────────────────────────────
+const DB_STATUS_TO_DISPLAY: Record<string, string> = {
+  PAYMENT_PENDING: "Payment Pending",
+  CONFIRMED:       "Payment Confirmed",
+  ADVANCE_PAID:    "Payment Confirmed",
+  FULLY_PAID:      "Payment Confirmed",
+  SOURCING:        "Sourcing",
+  QC_PENDING:      "At China Warehouse",
+  QC_PASSED:       "Ready for Shipping",
+  QC_FAILED:       "Exception",
+  REPACKING:       "Repacking Warehouse",
+  SHIPPED:         "Shipped from China",
+  DELIVERED:       "Completed",
+  CANCELLED:       "Exception",
+};
+
+/**
+ * Compute the canonical display status string for an order.
+ * When completedStages is non-empty the furthest stage in the timeline wins
+ * (this disambiguates the four SHIPPED sub-stages). Exception statuses
+ * (CANCELLED / QC_FAILED) always return "Exception" regardless of stages.
+ */
+export function computeDisplayStatus(
+  dbStatus: string,
+  completedStages: string[]
+): string {
+  if (dbStatus === "CANCELLED" || dbStatus === "QC_FAILED") return "Exception";
+  const cs = completedStages ?? [];
+  if (cs.length > 0) {
+    let maxIdx = -1;
+    for (let i = 0; i < DISPLAY_STAGE_ORDER.length; i++) {
+      if (cs.includes(DISPLAY_STAGE_ORDER[i])) maxIdx = i;
+    }
+    if (maxIdx >= 0) return DISPLAY_STAGE_ORDER[maxIdx];
+  }
+  return DB_STATUS_TO_DISPLAY[dbStatus] ?? dbStatus;
+}
+
 interface OrderFilters {
   clientId?: string;
   /** DB OrderStatus enum values to match (controller maps display labels → enums). */
   statuses?: string[];
+  /** Exact displayStatus value for sub-stage server-side filtering. */
+  displayStatus?: string;
   /** Free-text match across order number, company name, and item names/notes. */
   search?: string;
   skip: number;
@@ -14,7 +69,7 @@ interface OrderFilters {
 
 export const ordersRepository = {
   async findAll(filters: OrderFilters) {
-    const { clientId, statuses, search, skip, take } = filters;
+    const { clientId, statuses, displayStatus, search, skip, take } = filters;
 
     const where: Record<string, unknown> = {
       deletedAt: null,
@@ -25,6 +80,9 @@ export const ordersRepository = {
     }
     if (statuses && statuses.length) {
       where.status = { in: statuses };
+    }
+    if (displayStatus) {
+      where.displayStatus = displayStatus;
     }
     const term = search?.trim();
     if (term) {
@@ -199,15 +257,17 @@ export const ordersRepository = {
   },
 
   async updateCompletedStages(id: string, completedStages: string[]) {
-    const order = await prisma.order.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
+    const order = await prisma.order.findFirst({ where: { id, deletedAt: null }, select: { id: true, status: true } });
     if (!order) throw ApiError.notFound(`Order "${id}" not found`);
-    return prisma.order.update({ where: { id }, data: { completedStages } });
+    const displayStatus = computeDisplayStatus(order.status, completedStages);
+    return prisma.order.update({ where: { id }, data: { completedStages, displayStatus } });
   },
 
   async updateStatus(id: string, status: string) {
-    const order = await prisma.order.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
+    const order = await prisma.order.findFirst({ where: { id, deletedAt: null }, select: { id: true, completedStages: true } });
     if (!order) throw ApiError.notFound(`Order "${id}" not found`);
-    return prisma.order.update({ where: { id }, data: { status: status as any } });
+    const displayStatus = computeDisplayStatus(status, order.completedStages);
+    return prisma.order.update({ where: { id }, data: { status: status as any, displayStatus } });
   },
 
   async updateDeliveryPreference(id: string, deliveryPreference: string, deliveryAddress?: string) {
