@@ -77,9 +77,15 @@ const config = {
   // payment proofs, dispute attachments). Optional at boot so local dev without
   // storage configured doesn't crash; the storage helper (config/storage.ts)
   // throws a clear error only if a storage operation is attempted while unset.
-  SUPABASE_URL: process.env.SUPABASE_URL || "",
-  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
-  SUPABASE_STORAGE_BUCKET: process.env.SUPABASE_STORAGE_BUCKET || "uploads",
+  // Trim + strip trailing slashes: a stray space/newline (common when pasting into
+  // a host dashboard) or a trailing "/" in SUPABASE_URL produces a malformed
+  // storage request URL ("Invalid path specified in request URL"). Likewise a
+  // bucket value with surrounding whitespace or slashes breaks the object key.
+  SUPABASE_URL: (process.env.SUPABASE_URL || "").trim().replace(/\/+$/, ""),
+  SUPABASE_SERVICE_ROLE_KEY: (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim(),
+  SUPABASE_STORAGE_BUCKET:
+    (process.env.SUPABASE_STORAGE_BUCKET || "uploads").trim().replace(/^\/+|\/+$/g, "") ||
+    "uploads",
 };
 
 export default config;
