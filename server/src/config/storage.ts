@@ -116,6 +116,12 @@ export async function createSignedUploads(opts: {
     const path = `${prefix}/${safeOwner}/${randomUUID()}.${ext}`;
     const { data, error } = await store.createSignedUploadUrl(path);
     if (error || !data) {
+      // Surface the exact bucket + object key sent to Supabase (no secrets) so an
+      // "Invalid path" / misconfig is diagnosable from the server logs.
+      console.error(
+        `[storage] createSignedUploadUrl failed — host="${config.SUPABASE_URL}" ` +
+          `bucket="${config.SUPABASE_STORAGE_BUCKET}" path="${path}" :: ${error?.message ?? "unknown"}`
+      );
       throw new ApiError(502, `Failed to create signed upload URL: ${error?.message ?? "unknown"}`);
     }
     const absolute = data.signedUrl.startsWith("http")
