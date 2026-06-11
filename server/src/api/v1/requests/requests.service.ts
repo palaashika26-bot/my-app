@@ -13,7 +13,8 @@ const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 interface RequestQuery {
   page?: string;
   limit?: string;
-  status?: string;
+  statuses?: string[];
+  search?: string;
 }
 
 export const requestsService = {
@@ -104,7 +105,6 @@ export const requestsService = {
 
   async getRequests(query: RequestQuery, userId: string, role: string, clientIdFromAuth?: string) {
     const { page, limit, skip, take } = getPagination(query);
-    const status = query.status;
 
     let clientId: string | undefined = clientIdFromAuth;
     if (role === "CLIENT" && !clientId) {
@@ -118,7 +118,8 @@ export const requestsService = {
 
     const [requests, total] = await requestsRepository.findAll({
       clientId,
-      status,
+      statuses: query.statuses,
+      search: query.search,
       skip,
       take,
     });

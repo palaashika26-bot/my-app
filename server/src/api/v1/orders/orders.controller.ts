@@ -7,8 +7,29 @@ import { disputesRepository } from "../disputes/disputes.repository";
 import { notifyUser, notifyAdminsAndStaff } from "../../../utils/notify";
 import { signImageFields, isStoragePath, normalizeStoragePathFields } from "../../../config/storage";
 
+// Maps an admin-panel display status → the DB OrderStatus enum values it covers.
+// order.status is kept in sync with the furthest completed stage (see
+// updateOrderStatus / updateOrderStages), so filtering on the enum reflects the
+// current stage. Note: the four "shipped" sub-stages all collapse to SHIPPED —
+// filtering by any of them returns all shipped orders (the granular sub-stage is
+// still rendered per row from completedStages).
+const DISPLAY_STATUS_TO_DB_ENUMS: Record<string, string[]> = {
+  "Payment Pending":         ["PAYMENT_PENDING"],
+  "Payment Confirmed":       ["CONFIRMED", "ADVANCE_PAID", "FULLY_PAID"],
+  "Sourcing":                ["SOURCING"],
+  "At China Warehouse":      ["QC_PENDING"],
+  "Repacking Warehouse":     ["REPACKING"],
+  "Ready for Shipping":      ["QC_PASSED"],
+  "Shipped from China":      ["SHIPPED"],
+  "In Transit":              ["SHIPPED"],
+  "Arrived India Warehouse": ["SHIPPED"],
+  "Out for Delivery":        ["SHIPPED"],
+  "Completed":               ["DELIVERED"],
+  "Exception":               ["QC_FAILED", "CANCELLED"],
+};
+
 export const getOrders = async (req: Request, res: Response) => {
-  const { page, limit } = req.query as Record<string, string>;
+  const { page, limit, status, statuses: statusesParam, search } = req.query as Record<string, string>;
 
   let clientId: string | undefined;
 
@@ -20,9 +41,25 @@ export const getOrders = async (req: Request, res: Response) => {
   }
   // ADMIN and STAFF receive all orders (clientId stays undefined)
 
+  // Two ways to filter by status:
+  //  • `statuses` — a comma-separated list of raw DB enums (used for role scopes
+  //    like shipping-only that span several statuses).
+  //  • `status` — a single display label, mapped to its DB enum(s) here.
+  // Only valid enums survive; "All"/empty = no status filter.
+  let statuses: string[] | undefined;
+  if (statusesParam) {
+    const list = statusesParam.split(",").map((s) => s.trim()).filter((s) => VALID_DB_STATUSES.has(s));
+    if (list.length) statuses = list;
+  } else if (status && status !== "All") {
+    statuses =
+      DISPLAY_STATUS_TO_DB_ENUMS[status] ??
+      (VALID_DB_STATUSES.has(status) ? [status] : undefined);
+  }
+
   const { orders, pagination } = await ordersService.getOrders(
     { page, limit },
-    clientId
+    clientId,
+    { statuses, search }
   );
 
   return ApiResponse.success(res, orders, "Orders fetched successfully", 200, pagination);

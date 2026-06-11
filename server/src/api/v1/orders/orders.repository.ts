@@ -4,13 +4,17 @@ import { signImageFields } from "../../../config/storage";
 
 interface OrderFilters {
   clientId?: string;
+  /** DB OrderStatus enum values to match (controller maps display labels → enums). */
+  statuses?: string[];
+  /** Free-text match across order number, company name, and item names/notes. */
+  search?: string;
   skip: number;
   take: number;
 }
 
 export const ordersRepository = {
   async findAll(filters: OrderFilters) {
-    const { clientId, skip, take } = filters;
+    const { clientId, statuses, search, skip, take } = filters;
 
     const where: Record<string, unknown> = {
       deletedAt: null,
@@ -19,12 +23,38 @@ export const ordersRepository = {
     if (clientId) {
       where.clientId = clientId;
     }
+    if (statuses && statuses.length) {
+      where.status = { in: statuses };
+    }
+    const term = search?.trim();
+    if (term) {
+      where.OR = [
+        { orderNumber: { contains: term, mode: "insensitive" } },
+        { client: { companyName: { contains: term, mode: "insensitive" } } },
+        {
+          items: {
+            some: {
+              OR: [
+                { notes: { contains: term, mode: "insensitive" } },
+                { product: { name: { contains: term, mode: "insensitive" } } },
+              ],
+            },
+          },
+        },
+      ];
+    }
 
     const [orders, total] = await Promise.all([
       prisma.order.findMany({
         where,
         skip,
         take,
+        // Trimmed to exactly what the list views render (admin all-orders,
+        // client dashboard, client orders list). Heavy/unused-in-list fields
+        // (gstInvoice JSON, product.images[] arrays, item.imageUrl, the money
+        // breakdown, delivery address) are intentionally omitted — they're only
+        // read by the [id] detail pages, which use findById. This is the main
+        // payload-bloat fix for the slow admin orders panel.
         select: {
           id: true,
           orderNumber: true,
@@ -32,13 +62,6 @@ export const ordersRepository = {
           completedStages: true,
           createdAt: true,
           totalINR: true,
-          subtotalINR: true,
-          shippingCostINR: true,
-          taxINR: true,
-          advanceAmountINR: true,
-          deliveryPreference: true,
-          deliveryAddress: true,
-          gstInvoice: true,
           clientId: true,
           client: {
             select: {
@@ -51,11 +74,8 @@ export const ordersRepository = {
               id: true,
               quantity: true,
               unitPriceCNY: true,
-              unitPriceINR: true,
-              totalINR: true,
               notes: true,
-              imageUrl: true,
-              product: { select: { name: true, images: true } },
+              product: { select: { name: true } },
             },
           },
           shipment: { select: { estimatedDelivery: true, deliveredAt: true, carrier: true, trackingNumber: true } },

@@ -11,10 +11,14 @@ export const createRequest = async (req: Request, res: Response) => {
 };
 
 export const getRequests = async (req: Request, res: Response) => {
-  const { page, limit, status } = req.query as Record<string, string>;
+  const { page, limit, statuses, search } = req.query as Record<string, string>;
   const clientId = req.user?.clientId;
+  // A tab maps to one or more enum statuses, sent as a comma-separated list.
+  const statusList = statuses
+    ? statuses.split(",").map((s) => s.trim()).filter(Boolean)
+    : undefined;
   const { requests, pagination } = await requestsService.getRequests(
-    { page, limit, status },
+    { page, limit, statuses: statusList, search },
     req.user!.userId,
     req.user!.role,
     clientId

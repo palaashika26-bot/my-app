@@ -1,5 +1,5 @@
 ﻿'use client';
-import React, { useState, useMemo, useEffect, Suspense } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import AdminLayout from '@/components/AdminLayout';
@@ -11,10 +11,14 @@ import { ordersCache } from '@/lib/api/ordersCache';
 import { useToast } from '@/components/ui/Toast';
 import { Search, Download, Eye, ChevronDown, ChevronUp, Mail } from 'lucide-react';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
-import { isWarehouseShippingOrderStatus } from '@/lib/staffRoles';
 
 const statusOptions: OrderStatus[] = ['Payment Pending','Payment Confirmed','Sourcing','At China Warehouse','Repacking Warehouse','Ready for Shipping','Shipped from China','In Transit','Arrived India Warehouse','Out for Delivery','Completed','Exception'];
 const pageSizes = [10, 25, 50];
+
+// DB OrderStatus enums a shipping/warehouse-scoped admin may see (everything past
+// the procurement stages Payment Pending / Payment Confirmed / Sourcing). Pushed
+// to the server so the scope spans the whole dataset, not just the loaded page.
+const SHIPPING_SCOPE_ENUMS = ['QC_PENDING','QC_PASSED','REPACKING','SHIPPED','DELIVERED','QC_FAILED','CANCELLED'];
 
 const ORDER_STATUS_MAP: Record<string, string> = {
   PAYMENT_PENDING: 'Payment Pending',
@@ -79,25 +83,65 @@ function AdminAllOrdersContent() {
   const searchParams = useSearchParams();
   const [orders, setOrders] = useState<ReturnType<typeof mapApiAdminOrder>[]>([]);
   const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [clientFilter, setClientFilter] = useState('All');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+  const [pageMeta, setPageMeta] = useState<{ total: number; totalPages: number }>({ total: 0, totalPages: 1 });
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [sortBy, setSortBy] = useState<'orderId'|'date'|'amount'>('date');
+  const [sortDir, setSortDir] = useState<'asc'|'desc'>('desc');
 
-  const fetchOrders = (signal?: AbortSignal) => {
+  useEffect(() => {
+    const filter = searchParams.get('filter');
+    if (filter === 'completed') setStatusFilter('Completed');
+    else if (filter === 'exception') setStatusFilter('Exception');
+  }, [searchParams]);
+
+  // Debounce the search box so each keystroke doesn't fire a server query.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q.trim()), 350);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  // Status / search / page-size / scope changes reset to the first page.
+  useEffect(() => { setPage(1); }, [statusFilter, debouncedQ, perPage, perms.ordersScope]);
+
+  // Status, search, role scope and pagination are all applied server-side.
+  const fetchOrders = useCallback((signal?: AbortSignal) => {
     setLoading(true);
-    ordersApi.getOrders({ limit: 50 }, signal)
+    const params: { page: number; limit: number; status?: string; statuses?: string; search?: string } = {
+      page,
+      limit: perPage,
+      search: debouncedQ || undefined,
+    };
+    if (statusFilter !== 'All') {
+      params.status = statusFilter;
+    } else if (perms.ordersScope === 'shipping_only') {
+      params.statuses = SHIPPING_SCOPE_ENUMS.join(',');
+    }
+    ordersApi.getOrders(params, signal)
       .then(r => {
         const rawOrders = r.data?.data ?? [];
+        const meta = r.data?.pagination;
         ordersCache.setList(rawOrders);
         setOrders(rawOrders.map(mapApiAdminOrder));
+        setPageMeta({ total: meta?.total ?? rawOrders.length, totalPages: Math.max(1, meta?.totalPages ?? 1) });
       })
-      .catch(() => { setOrders([]); })
+      .catch(() => { setOrders([]); setPageMeta({ total: 0, totalPages: 1 }); })
       .finally(() => setLoading(false));
-  };
+  }, [page, perPage, statusFilter, debouncedQ, perms.ordersScope]);
 
-  // Initial fetch with cancellation on unmount
+  // Fetch on any server-side filter/page change, cancelling the prior request.
   useEffect(() => {
     const abortController = new AbortController();
     fetchOrders(abortController.signal);
     return () => abortController.abort();
-  }, []);
+  }, [fetchOrders]);
 
   // Re-fetch when the user returns to this tab — only if a token exists (prevents 401 redirect loop)
   useEffect(() => {
@@ -108,43 +152,12 @@ function AdminAllOrdersContent() {
     }
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, []);
-  const [q, setQ] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
+  }, [fetchOrders]);
 
-  useEffect(() => {
-    const filter = searchParams.get('filter');
-    if (filter === 'completed') setStatusFilter('Completed');
-    else if (filter === 'exception') setStatusFilter('Exception');
-  }, [searchParams]);
-  const [clientFilter, setClientFilter] = useState('All');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const [sortBy, setSortBy] = useState<'orderId'|'date'|'amount'>('date');
-  const [sortDir, setSortDir] = useState<'asc'|'desc'>('desc');
-
+  // Client dropdown + column sort are refinements over the current page; status,
+  // search and role scope are already applied server-side across all rows.
   const filtered = useMemo(() => {
-    let arr = orders.filter((o) => {
-      if (perms.ordersScope === 'shipping_only' && !isWarehouseShippingOrderStatus(String(o.status))) {
-        return false;
-      }
-      if (
-        q &&
-        !(
-          o.orderId.toLowerCase().includes(q.toLowerCase()) ||
-          (o.client || '').toLowerCase().includes(q.toLowerCase()) ||
-          (o.itemNames || '').toLowerCase().includes(q.toLowerCase())
-        )
-      ) {
-        return false;
-      }
-      if (statusFilter !== 'All' && o.status !== statusFilter) return false;
-      if (clientFilter !== 'All' && o.client !== clientFilter) return false;
-      return true;
-    });
+    let arr = orders.filter((o) => clientFilter === 'All' || o.client === clientFilter);
     const sortKey = sortBy === 'amount' && !perms.canSeeOrderListAmounts ? 'date' : sortBy;
     arr = [...arr].sort((a, b) => {
       const av = String(a[sortKey as keyof typeof a] || '');
@@ -153,10 +166,10 @@ function AdminAllOrdersContent() {
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return arr;
-  }, [orders, q, statusFilter, clientFilter, sortBy, sortDir, perms.ordersScope, perms.canSeeOrderListAmounts]);
+  }, [orders, clientFilter, sortBy, sortDir, perms.canSeeOrderListAmounts]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
-  const pageRows = filtered.slice((page-1)*perPage, page*perPage);
+  const totalPages = pageMeta.totalPages;
+  const pageRows = filtered;
   const allOnPageSelected = pageRows.length > 0 && pageRows.every(r => selected[r.id]);
 
   function changeStatus(id: string, ns: string) {
@@ -330,12 +343,12 @@ function AdminAllOrdersContent() {
           </table>
         </div>
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2 p-3 border-t border-border bg-muted/20">
-          <div className="text-xs text-muted-foreground">Showing <span className="font-600 text-foreground">{(page-1)*perPage + 1}–{Math.min(page*perPage, filtered.length)}</span> of <span className="font-600 text-foreground">{filtered.length}</span> orders</div>
+          <div className="text-xs text-muted-foreground">Showing <span className="font-600 text-foreground">{pageMeta.total === 0 ? 0 : (page-1)*perPage + 1}–{(page-1)*perPage + pageRows.length}</span> of <span className="font-600 text-foreground">{pageMeta.total}</span> orders</div>
           <div className="flex items-center gap-2">
             <select value={perPage} onChange={e => { setPerPage(+e.target.value); setPage(1); }} className="input-field text-xs py-1 px-2">{pageSizes.map(s => <option key={s}>{s}</option>)}</select>
-            <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page === 1} className="px-2 py-1 text-xs font-500 rounded hover:bg-muted disabled:opacity-40">Prev</button>
+            <button onClick={() => { setSelected({}); setPage(p => Math.max(1, p-1)); }} disabled={page <= 1 || loading} className="px-2 py-1 text-xs font-500 rounded hover:bg-muted disabled:opacity-40">Prev</button>
             <span className="text-xs font-600 font-tabular">{page} / {totalPages}</span>
-            <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page === totalPages} className="px-2 py-1 text-xs font-500 rounded hover:bg-muted disabled:opacity-40">Next</button>
+            <button onClick={() => { setSelected({}); setPage(p => Math.min(totalPages, p+1)); }} disabled={page >= totalPages || loading} className="px-2 py-1 text-xs font-500 rounded hover:bg-muted disabled:opacity-40">Next</button>
           </div>
         </div>
       </div>

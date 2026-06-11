@@ -12,6 +12,22 @@ import { Search, Download, Camera, Eye, Send, AlertTriangle } from 'lucide-react
 
 const tabs = ['All Requests','Pending Quotations','Awaiting Approval','Approved','Rejected','Cancelled','Exception'];
 
+const PER_PAGE = 25;
+
+// Each tab → the SourcingRequest enum statuses it covers (pushed to the server so
+// filtering + pagination span the whole dataset, not just the first page).
+// undefined = no status filter (All). 'Exception' has no matching request status,
+// so it resolves to an empty result without a round-trip.
+const TAB_TO_STATUSES: Record<string, string[] | undefined> = {
+  'All Requests': undefined,
+  'Pending Quotations': ['SUBMITTED', 'REVIEWING'],
+  'Awaiting Approval': ['QUOTED', 'PARTIALLY_ACCEPTED'],
+  'Approved': ['ACCEPTED', 'CONVERTED'],
+  'Rejected': ['REJECTED'],
+  'Cancelled': ['CANCELLED'],
+  'Exception': [],
+};
+
 interface DisplayRequest {
   id: string;
   requestId: string;
@@ -29,17 +45,6 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-function matchesTab(status: string, tab: string): boolean {
-  if (tab === 'All Requests') return true;
-  if (tab === 'Pending Quotations') return ['SUBMITTED', 'REVIEWING', 'Quotation in Progress'].includes(status);
-  if (tab === 'Awaiting Approval') return ['QUOTED', 'Awaiting Approval'].includes(status);
-  if (tab === 'Approved') return ['ACCEPTED', 'CONVERTED', 'Sourcing', 'At China Warehouse', 'Payment Pending', 'Completed'].includes(status);
-  if (tab === 'Rejected') return ['REJECTED'].includes(status);
-  if (tab === 'Cancelled') return ['CANCELLED', 'Cancelled'].includes(status);
-  if (tab === 'Exception') return status === 'Exception';
-  return true;
-}
-
 function AdminRequestsContent() {
   const { addToast } = useToast();
   const perms = useAdminPermissions();
@@ -50,24 +55,55 @@ function AdminRequestsContent() {
   const [reloadKey, setReloadKey] = useState(0);
   const [tab, setTab] = useState('All Requests');
   const [q, setQ] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
   const [clientFilter, setClientFilter] = useState('All');
   const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [page, setPage] = useState(1);
+  const [pageMeta, setPageMeta] = useState<{ total: number; totalPages: number }>({ total: 0, totalPages: 1 });
 
   useEffect(() => {
     const filter = searchParams.get('filter');
     if (filter === 'awaiting-approval') setTab('Awaiting Approval');
   }, [searchParams]);
 
+  // Debounce the search box so each keystroke doesn't fire a server query.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q.trim()), 350);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  // Switching tab or changing the search resets to the first page.
+  useEffect(() => { setPage(1); }, [tab, debouncedQ]);
+
   useEffect(() => {
     const ac = new AbortController();
+    const statuses = TAB_TO_STATUSES[tab];
+
+    // 'Exception' maps to no request status — show empty without a round-trip.
+    if (tab === 'Exception') {
+      setRequests([]);
+      setPageMeta({ total: 0, totalPages: 1 });
+      setLoading(false);
+      setError(null);
+      return () => ac.abort();
+    }
 
     async function load(attempt = 0) {
       setLoading(true);
       setError(null);
       try {
-        const r = await requestsApi.getRequests({ limit: 50 }, ac.signal);
+        const r = await requestsApi.getRequests(
+          {
+            page,
+            limit: PER_PAGE,
+            statuses: statuses && statuses.length ? statuses.join(',') : undefined,
+            search: debouncedQ || undefined,
+          },
+          ac.signal
+        );
         if (ac.signal.aborted) return;
         const apiData = r.data?.data ?? [];
+        const meta = r.data?.pagination;
         const mapped: DisplayRequest[] = apiData.map((req: any) => ({
           id: req.id,
           requestId: req.requestNumber,
@@ -81,6 +117,7 @@ function AdminRequestsContent() {
           source: undefined,
         }));
         setRequests(mapped);
+        setPageMeta({ total: meta?.total ?? mapped.length, totalPages: Math.max(1, meta?.totalPages ?? 1) });
         setLoading(false);
       } catch (e: any) {
         if (ac.signal.aborted || e?.code === 'ERR_CANCELED') return;
@@ -94,15 +131,16 @@ function AdminRequestsContent() {
 
     load();
     return () => ac.abort();
-  }, [reloadKey]);
+  }, [reloadKey, tab, debouncedQ, page]);
 
   const uniqueClients = useMemo(() => ['All', ...new Set(requests.map(r => r.client).filter(Boolean))], [requests]);
 
-  const filtered = useMemo(() => requests.filter(r => {
-    if (q && !(r.requestId.toLowerCase().includes(q.toLowerCase()) || (r.client||'').toLowerCase().includes(q.toLowerCase()) || r.itemNames.toLowerCase().includes(q.toLowerCase()))) return false;
-    if (clientFilter !== 'All' && r.client !== clientFilter) return false;
-    return matchesTab(r.status, tab);
-  }), [requests, q, clientFilter, tab]);
+  // Tab + search are applied server-side; only the client dropdown (a refinement
+  // over the current page) is applied here.
+  const filtered = useMemo(
+    () => requests.filter(r => clientFilter === 'All' || r.client === clientFilter),
+    [requests, clientFilter]
+  );
 
   function deleteSelected() {
     const ids = Object.keys(selected).filter(k => selected[k]);
@@ -192,6 +230,18 @@ function AdminRequestsContent() {
             )}
           </tbody>
         </table></div>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 p-3 border-t border-border bg-muted/20">
+          <div className="text-xs text-muted-foreground">
+            {pageMeta.total > 0
+              ? <>Page <span className="font-600 text-foreground">{page}</span> of <span className="font-600 text-foreground">{pageMeta.totalPages}</span> · <span className="font-600 text-foreground">{pageMeta.total}</span> request(s)</>
+              : 'No requests'}
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => { setSelected({}); setPage(p => Math.max(1, p - 1)); }} disabled={page <= 1 || loading} className="px-2 py-1 text-xs font-500 rounded hover:bg-muted disabled:opacity-40">Prev</button>
+            <span className="text-xs font-600 font-tabular">{page} / {pageMeta.totalPages}</span>
+            <button onClick={() => { setSelected({}); setPage(p => Math.min(pageMeta.totalPages, p + 1)); }} disabled={page >= pageMeta.totalPages || loading} className="px-2 py-1 text-xs font-500 rounded hover:bg-muted disabled:opacity-40">Next</button>
+          </div>
+        </div>
       </div>
     </AdminLayout>
   );

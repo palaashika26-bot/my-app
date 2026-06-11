@@ -8,11 +8,17 @@ interface OrderQuery {
 }
 
 export const ordersService = {
-  async getOrders(query: OrderQuery, clientId?: string) {
+  async getOrders(
+    query: OrderQuery,
+    clientId?: string,
+    filters?: { statuses?: string[]; search?: string }
+  ) {
     const { page, limit, skip, take } = getPagination(query);
 
     const [orders, total] = await ordersRepository.findAll({
       clientId,
+      statuses: filters?.statuses,
+      search: filters?.search,
       skip,
       take,
     });

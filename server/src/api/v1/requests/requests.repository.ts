@@ -42,7 +42,9 @@ const fullInclude = {
 
 interface RequestFilters {
   clientId?: string;
-  status?: string;
+  /** Enum statuses to match (a tab maps to one or more SourcingRequest statuses). */
+  statuses?: string[];
+  /** Free-text match across request number, company name, and item names. */
   search?: string;
   skip: number;
   take: number;
@@ -105,11 +107,19 @@ export const requestsRepository = {
   },
 
   async findAll(filters: RequestFilters) {
-    const { clientId, status, skip, take } = filters;
+    const { clientId, statuses, search, skip, take } = filters;
 
     const where: Record<string, unknown> = {};
     if (clientId) where.clientId = clientId;
-    if (status) where.status = status;
+    if (statuses && statuses.length) where.status = { in: statuses };
+    const term = search?.trim();
+    if (term) {
+      where.OR = [
+        { requestNumber: { contains: term, mode: "insensitive" } },
+        { client: { companyName: { contains: term, mode: "insensitive" } } },
+        { items: { some: { productName: { contains: term, mode: "insensitive" } } } },
+      ];
+    }
 
     const [requests, total] = await Promise.all([
       prisma.sourcingRequest.findMany({

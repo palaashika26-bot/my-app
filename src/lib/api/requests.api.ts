@@ -57,8 +57,10 @@ export const requestsApi = {
   createRequest: (data: CreateRequestPayload) =>
     uploadClient.post('/requests', data),
 
-  getRequests: (params?: { page?: number; limit?: number; status?: string }, signal?: AbortSignal) =>
-    axiosClient.get('/requests', { params, signal }),
+  getRequests: (
+    params?: { page?: number; limit?: number; statuses?: string; search?: string },
+    signal?: AbortSignal
+  ) => axiosClient.get('/requests', { params, signal }),
 
   getRequestById: (id: string, signal?: AbortSignal) =>
     axiosClient.get(`/requests/${id}`, { signal }),
