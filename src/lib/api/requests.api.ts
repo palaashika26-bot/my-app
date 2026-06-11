@@ -1,8 +1,11 @@
-import axiosClient from './axiosClient';
+import axiosClient, { uploadClient } from './axiosClient';
 
 // Images are uploaded directly to object storage (see src/lib/upload.ts); request
 // bodies and responses now carry only short storage URLs, so the standard client
-// (30s) is sufficient everywhere — no upload-heavy timeout needed.
+// (30s) is sufficient for reads. Request *creation* still uses the long-timeout
+// uploadClient (120s): on a cold-start backend or a slow mobile connection the
+// 30s client would abort while the server kept going, creating the row but
+// reporting a "network error" to the user (and inviting duplicate submissions).
 
 export interface RequestItemPayload {
   type: 'CATALOG' | 'CUSTOM';
@@ -52,7 +55,7 @@ export interface RespondToCounterItemPayload {
 
 export const requestsApi = {
   createRequest: (data: CreateRequestPayload) =>
-    axiosClient.post('/requests', data),
+    uploadClient.post('/requests', data),
 
   getRequests: (params?: { page?: number; limit?: number; status?: string }, signal?: AbortSignal) =>
     axiosClient.get('/requests', { params, signal }),

@@ -23,6 +23,33 @@ interface Item {
   refImages: RefImage[];
 }
 
+// After an inconclusive failure (timeout / network abort with no HTTP status),
+// the request may already have been created server-side. Re-fetch the client's
+// own recent requests and look for one matching the just-submitted product
+// names created in the last few minutes, so we can report success instead of a
+// false failure (which would otherwise cause duplicate submissions). Returns the
+// matched request, or null if it can't be confirmed (e.g. still offline).
+async function confirmRequestCreated(submittedNames: string[]): Promise<any | null> {
+  try {
+    const res = await requestsApi.getRequests({ limit: 5 });
+    const list: any[] = (res as any)?.data?.data ?? [];
+    if (!list.length) return null;
+    const wanted = new Set(submittedNames.map(n => n.toLowerCase()));
+    const cutoff = Date.now() - 3 * 60 * 1000; // created within the last 3 minutes
+    return (
+      [...list]
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .find(r => {
+          if (new Date(r.createdAt).getTime() < cutoff) return false;
+          const names: string[] = (r.items ?? []).map((i: any) => String(i.productName ?? '').toLowerCase());
+          return names.some(n => wanted.has(n));
+        }) ?? null
+    );
+  } catch {
+    return null; // verification itself failed — caller falls back to a soft message
+  }
+}
+
 export default function NewRequestPage() {
   const router = useRouter();
   const { addToast } = useToast();
@@ -252,15 +279,41 @@ export default function NewRequestPage() {
         { fieldErrors: info.fieldErrors, raw: err }
       );
 
-      // Friendly description per status, but always fall back to the server's
-      // actual message rather than a generic "please try again".
+      // An inconclusive failure (timeout / network abort with NO HTTP status) does
+      // not mean the request failed — the server may have created it after the
+      // client gave up. Confirm against the server before showing anything, so a
+      // successful submission is never reported as a "network error" (which made
+      // users resubmit and create duplicates).
+      if (!info.status && (info.isNetworkError || info.isTimeout)) {
+        console.log('[form] Inconclusive failure — verifying whether the request was actually created…');
+        const confirmed = await confirmRequestCreated(validItems.map(it => it.name.trim()));
+        if (confirmed) {
+          console.log(`[form] Verified created despite client error: ${confirmed.id}`);
+          requestsCache.set(confirmed.id, confirmed);
+          addToast({
+            type: 'success',
+            title: 'Request submitted!',
+            description: `${confirmed.requestNumber} created. Our team will contact you within 24 hours.`,
+          });
+          router.push(`/client-dashboard/requests/${confirmed.id}`);
+          return;
+        }
+        // Couldn't confirm either way — soft, non-destructive message so the user
+        // checks before resubmitting rather than blindly retrying.
+        addToast({
+          type: 'error',
+          title: 'Could not confirm submission',
+          description: 'Your request may have been received. Please check My Requests before resubmitting.',
+        });
+        return;
+      }
+
+      // A definitive HTTP error — surface the server's actual reason.
       let description = info.message;
       if (info.status === 401) {
         description = 'Your session expired. Please log in again.';
       } else if (info.status === 403) {
         description = 'You do not have permission to submit requests. Please check your account.';
-      } else if (info.isNetworkError || info.isTimeout) {
-        description = 'Network error. Please check your connection and try again.';
       }
 
       addToast({
