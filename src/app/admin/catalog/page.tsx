@@ -7,6 +7,7 @@ import ImportProductsModal from '@/components/ImportProductsModal';
 import { productsApi } from '@/lib/api/products.api';
 import type { CreateProductPayload } from '@/lib/api/products.api';
 import type { ApiProduct } from '@/lib/types/api.types';
+import { uploadFiles } from '@/lib/upload';
 
 const SUBCATEGORIES: Record<string, string[]> = {
   Electronics: ['LED Lights & Strips', 'Power Adapters & Chargers', 'Cables & Connectors', 'Smart Home Devices', 'Batteries & Power Banks'],
@@ -195,9 +196,14 @@ export default function AdminCatalogPage() {
   const [form, setForm] = useState<Omit<CatalogProduct, 'id'>>(emptyForm());
   const [deleteTarget, setDeleteTarget] = useState<CatalogProduct | null>(null);
   const [saving, setSaving] = useState(false);
+  const [mediaUploading, setMediaUploading] = useState(false);
   const imgInputRef = useRef<HTMLInputElement>(null);
   const vidInputRef = useRef<HTMLInputElement>(null);
   const catImgRef   = useRef<HTMLInputElement>(null);
+  // Map storage-path → local object URL for previewing freshly-uploaded media
+  // (existing media already arrives as displayable signed URLs).
+  const mediaPreview = useRef<Map<string, string>>(new Map());
+  const previewSrc = (val: string) => mediaPreview.current.get(val) ?? val;
 
   const [categories, setCategories] = useState<StripCategory[]>([]);
   const [catsLoaded, setCatsLoaded] = useState(false);
@@ -354,30 +360,32 @@ export default function AdminCatalogPage() {
   function removeSpec(i: number) { setF('specifications', form.specifications.filter((_, idx) => idx !== i)); }
   function setSpec(i: number, field: 'key' | 'value', val: string) { const arr = [...form.specifications]; arr[i] = { ...arr[i], [field]: val }; setF('specifications', arr); }
 
+  // Upload media straight to object storage; persist only the returned paths and
+  // keep a local object URL for in-form preview (raw paths aren't displayable).
+  async function uploadMedia(files: File[], key: 'images' | 'videos') {
+    if (files.length === 0) return;
+    setMediaUploading(true);
+    try {
+      const uploaded = await uploadFiles(files, 'catalog');
+      uploaded.forEach((u, i) => mediaPreview.current.set(u.url, URL.createObjectURL(files[i])));
+      setForm(f => ({ ...f, [key]: [...f[key], ...uploaded.map(u => u.url)] }));
+    } catch {
+      addToast({ type: 'error', title: 'Upload failed', description: 'Please check your connection and try again.' });
+    } finally {
+      setMediaUploading(false);
+    }
+  }
+
   function handleImgUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files || []);
-    const remaining = 8 - form.images.length;
-    files.slice(0, remaining).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = ev => {
-        setForm(f => ({ ...f, images: [...f.images, ev.target?.result as string] }));
-      };
-      reader.readAsDataURL(file);
-    });
+    const files = Array.from(e.target.files || []).slice(0, 8 - form.images.length);
     e.target.value = '';
+    uploadMedia(files, 'images');
   }
 
   function handleVidUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files || []);
-    const remaining = 2 - form.videos.length;
-    files.slice(0, remaining).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = ev => {
-        setForm(f => ({ ...f, videos: [...f.videos, ev.target?.result as string] }));
-      };
-      reader.readAsDataURL(file);
-    });
+    const files = Array.from(e.target.files || []).slice(0, 2 - form.videos.length);
     e.target.value = '';
+    uploadMedia(files, 'videos');
   }
 
   async function handleSave() {
@@ -751,8 +759,8 @@ export default function AdminCatalogPage() {
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-xs font-600 text-muted-foreground uppercase">Images <span className="text-muted-foreground/60">(up to 8, first = main)</span></label>
                     {form.images.length < 8 && (
-                      <button type="button" onClick={() => imgInputRef.current?.click()} className="text-xs text-[#4A3B52] font-600 flex items-center gap-0.5 hover:underline">
-                        <Plus className="w-3 h-3" /> Upload
+                      <button type="button" disabled={mediaUploading} onClick={() => imgInputRef.current?.click()} className="text-xs text-[#4A3B52] font-600 flex items-center gap-0.5 hover:underline disabled:opacity-50">
+                        <Plus className="w-3 h-3" /> {mediaUploading ? 'Uploading…' : 'Upload'}
                       </button>
                     )}
                   </div>
@@ -761,7 +769,7 @@ export default function AdminCatalogPage() {
                     <div className="flex flex-wrap gap-2">
                       {form.images.map((img, i) => (
                         <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-border">
-                          <img src={img} alt={`img${i}`} className="w-full h-full object-cover" />
+                          <img src={previewSrc(img)} alt={`img${i}`} className="w-full h-full object-cover" />
                           {i === 0 && <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[8px] text-center py-0.5">MAIN</span>}
                           <button type="button" onClick={() => setF('images', form.images.filter((_, idx) => idx !== i))}
                             className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-red-600">
@@ -782,8 +790,8 @@ export default function AdminCatalogPage() {
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-xs font-600 text-muted-foreground uppercase">Videos <span className="text-muted-foreground/60">(up to 2, mp4/mov)</span></label>
                     {form.videos.length < 2 && (
-                      <button type="button" onClick={() => vidInputRef.current?.click()} className="text-xs text-[#4A3B52] font-600 flex items-center gap-0.5 hover:underline">
-                        <Plus className="w-3 h-3" /> Upload
+                      <button type="button" disabled={mediaUploading} onClick={() => vidInputRef.current?.click()} className="text-xs text-[#4A3B52] font-600 flex items-center gap-0.5 hover:underline disabled:opacity-50">
+                        <Plus className="w-3 h-3" /> {mediaUploading ? 'Uploading…' : 'Upload'}
                       </button>
                     )}
                   </div>
@@ -792,7 +800,7 @@ export default function AdminCatalogPage() {
                     <div className="flex flex-wrap gap-2">
                       {form.videos.map((vid, i) => (
                         <div key={i} className="relative w-24 h-16 rounded-lg overflow-hidden border border-border bg-muted flex items-center justify-center">
-                          <video src={vid} className="w-full h-full object-cover" />
+                          <video src={previewSrc(vid)} className="w-full h-full object-cover" />
                           <div className="absolute inset-0 flex items-center justify-center bg-black/30">
                             <span className="text-white text-lg">\u25B6</span>
                           </div>
@@ -841,7 +849,7 @@ export default function AdminCatalogPage() {
 
             <div className="flex gap-2 px-6 py-4 border-t border-border flex-shrink-0">
               <button onClick={closeModal} className="btn-secondary flex-1 py-2.5 text-sm">Cancel</button>
-              <button onClick={handleSave} disabled={saving || !form.name.trim() || !form.priceCny.trim()} className="btn-primary flex-1 py-2.5 text-sm">
+              <button onClick={handleSave} disabled={saving || mediaUploading || !form.name.trim() || !form.priceCny.trim()} className="btn-primary flex-1 py-2.5 text-sm">
                 {saving ? 'Saving...' : modalMode === 'add' ? 'Add Product' : 'Save Changes'}
               </button>
             </div>

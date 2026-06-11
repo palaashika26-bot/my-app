@@ -1364,13 +1364,13 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                               {pmt.status}
                             </span>
                           </div>
-                          {pmt.proofImageBase64 && (
+                          {(pmt.proofUrl || pmt.proofImageBase64) && (
                             <button
-                              onClick={() => setLightboxProof(pmt.proofImageBase64)}
+                              onClick={() => setLightboxProof(pmt.proofUrl || pmt.proofImageBase64)}
                               className="w-full"
                             >
                               <img
-                                src={pmt.proofImageBase64}
+                                src={pmt.proofThumbUrl || pmt.proofUrl || pmt.proofImageBase64}
                                 alt="Payment proof"
                                 className="w-full max-h-32 object-contain rounded-lg border border-border bg-muted hover:opacity-80 cursor-pointer"
                               />

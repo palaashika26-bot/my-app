@@ -5,7 +5,8 @@ export const paymentsApi = {
     orderId: string;
     type: 'ADVANCE' | 'BALANCE';
     amountINR: number;
-    proofImageBase64: string;
+    proofUrl: string;
+    proofThumbUrl?: string;
     proofFileName?: string;
     notes?: string;
   }) => axiosClient.post('/payments', data),
@@ -20,7 +21,8 @@ export const paymentsApi = {
     requestId: string;
     type: 'ADVANCE' | 'FULL';
     amountINR: number;
-    proofImageBase64: string;
+    proofUrl: string;
+    proofThumbUrl?: string;
     proofFileName?: string;
     notes?: string;
   }) => axiosClient.post('/payments/request', data),
@@ -35,7 +37,8 @@ export const paymentsApi = {
     logisticsRequestId: string;
     type: 'ADVANCE' | 'FULL';
     amountINR: number;
-    proofImageBase64: string;
+    proofUrl: string;
+    proofThumbUrl?: string;
     proofFileName?: string;
     notes?: string;
   }) => axiosClient.post('/payments/logistics', data),

@@ -3,6 +3,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import AdminLayout from '@/components/AdminLayout';
 import { useToast } from '@/components/ui/Toast';
 import { supportApi, type SupportTicketListItem, type SupportTicketDetail } from '@/lib/api/support.api';
+import { uploadFiles } from '@/lib/upload';
+import { attachmentKind } from '@/lib/attachments';
 import { ArrowLeft, Paperclip, X, FileText, Send, Loader2, RefreshCw, Search } from 'lucide-react';
 
 const statusStyle: Record<string, string> = {
@@ -14,13 +16,11 @@ const statusStyle: Record<string, string> = {
 const statusLabel: Record<string, string> = { OPEN: 'Open', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved', CLOSED: 'Closed' };
 const STATUS_TABS = ['All', 'OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'];
 
-function toBase64(file: File): Promise<string> {
-  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(file); });
-}
 function MsgAttachment({ url, onZoom }: { url: string; onZoom: (u: string) => void }) {
-  if (url.startsWith('data:image/')) return <img src={url} alt="attachment" onClick={() => onZoom(url)} className="w-20 h-20 object-cover rounded-lg border border-border cursor-zoom-in" />;
-  if (url.startsWith('data:video/')) return <video src={url} controls className="w-32 h-20 rounded-lg border border-border bg-black" />;
-  return <a href={url} download className="inline-flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-lg border border-border bg-muted/30"><FileText className="w-3.5 h-3.5 text-red-500" /> File</a>;
+  const kind = attachmentKind(url);
+  if (kind === 'image') return <img src={url} alt="attachment" onClick={() => onZoom(url)} className="w-20 h-20 object-cover rounded-lg border border-border cursor-zoom-in" />;
+  if (kind === 'video') return <video src={url} controls className="w-32 h-20 rounded-lg border border-border bg-black" />;
+  return <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-lg border border-border bg-muted/30"><FileText className="w-3.5 h-3.5 text-red-500" /> File</a>;
 }
 
 export default function AdminSupportTicketsPage() {
@@ -32,7 +32,8 @@ export default function AdminSupportTicketsPage() {
   const [active, setActive] = useState<SupportTicketDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [reply, setReply] = useState('');
-  const [files, setFiles] = useState<{ name: string; base64: string }[]>([]);
+  const [files, setFiles] = useState<{ name: string; url: string }[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -72,21 +73,28 @@ export default function AdminSupportTicketsPage() {
 
   async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(e.target.files || []);
-    if (files.length + picked.length > 3) { addToast({ type: 'warning', title: 'Max 3 files per message' }); e.target.value = ''; return; }
-    const results: { name: string; base64: string }[] = [];
-    for (const file of picked) {
-      if (file.size > 10 * 1024 * 1024) { addToast({ type: 'warning', title: `"${file.name}" exceeds 10 MB` }); continue; }
-      results.push({ name: file.name, base64: await toBase64(file) });
-    }
-    setFiles(prev => [...prev, ...results].slice(0, 3));
     e.target.value = '';
+    if (files.length + picked.length > 3) { addToast({ type: 'warning', title: 'Max 3 files per message' }); return; }
+    const valid = picked.filter(file => {
+      if (file.size > 10 * 1024 * 1024) { addToast({ type: 'warning', title: `"${file.name}" exceeds 10 MB` }); return false; }
+      return true;
+    });
+    if (valid.length === 0) return;
+
+    setUploading(true);
+    try {
+      const uploaded = await uploadFiles(valid, 'support');
+      const results = uploaded.map((u, i) => ({ name: valid[i].name, url: u.url }));
+      setFiles(prev => [...prev, ...results].slice(0, 3));
+    } catch { addToast({ type: 'error', title: 'Upload failed', description: 'Please try again.' }); }
+    finally { setUploading(false); }
   }
 
   async function send() {
     if (!active || (!reply.trim() && files.length === 0)) return;
     setSending(true);
     try {
-      await supportApi.addMessage(active.id, { text: reply.trim(), attachments: files.map(f => f.base64) });
+      await supportApi.addMessage(active.id, { text: reply.trim(), attachments: files.map(f => f.url) });
       setReply(''); setFiles([]);
       const res = await supportApi.get(active.id);
       if (res.data.success) setActive(res.data.data);
@@ -166,9 +174,9 @@ export default function AdminSupportTicketsPage() {
             )}
             <div className="flex items-end gap-2">
               <input ref={fileInputRef} type="file" style={{ display: 'none' }} accept="image/*,video/*,.pdf" multiple onChange={handleFiles} />
-              <button onClick={() => fileInputRef.current?.click()} disabled={files.length >= 3} className="p-2.5 text-muted-foreground hover:text-foreground rounded-lg border border-border disabled:opacity-40"><Paperclip className="w-4 h-4" /></button>
+              <button onClick={() => fileInputRef.current?.click()} disabled={uploading || files.length >= 3} className="p-2.5 text-muted-foreground hover:text-foreground rounded-lg border border-border disabled:opacity-40">{uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}</button>
               <textarea value={reply} onChange={e => setReply(e.target.value)} rows={1} placeholder="Reply to the client…" className="input-field flex-1 resize-none text-sm" onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
-              <button onClick={send} disabled={sending || (!reply.trim() && files.length === 0)} className="btn-primary px-4 py-2.5 disabled:opacity-50">{sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</button>
+              <button onClick={send} disabled={sending || uploading || (!reply.trim() && files.length === 0)} className="btn-primary px-4 py-2.5 disabled:opacity-50">{sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</button>
             </div>
           </div>
         </div>

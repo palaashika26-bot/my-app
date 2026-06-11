@@ -981,9 +981,9 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
                             'bg-amber-100 text-amber-700'
                           }`}>{pmt.status}</span>
                         </div>
-                        {pmt.proofImageBase64 && (
-                          <button onClick={() => setLightboxProof(pmt.proofImageBase64)} className="w-full">
-                            <img src={pmt.proofImageBase64} alt="Proof" className="w-full max-h-32 object-contain rounded-lg border border-border bg-muted hover:opacity-80 cursor-pointer" />
+                        {(pmt.proofUrl || pmt.proofImageBase64) && (
+                          <button onClick={() => setLightboxProof(pmt.proofUrl || pmt.proofImageBase64)} className="w-full">
+                            <img src={pmt.proofThumbUrl || pmt.proofUrl || pmt.proofImageBase64} alt="Proof" className="w-full max-h-32 object-contain rounded-lg border border-border bg-muted hover:opacity-80 cursor-pointer" />
                             <p className="text-[10px] text-muted-foreground mt-1">Click to enlarge</p>
                           </button>
                         )}

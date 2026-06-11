@@ -5,6 +5,7 @@ import ClientLayout from '@/components/ClientLayout';
 import { useToast } from '@/components/ui/Toast';
 import { supportApi, type SupportTicketListItem } from '@/lib/api/support.api';
 import { ordersApi } from '@/lib/api/orders.api';
+import { uploadFiles } from '@/lib/upload';
 import { ChevronDown, Paperclip, X, FileText, Play, ChevronRight, Clock, CheckCircle2, XCircle, AlertOctagon } from 'lucide-react';
 
 const statusStyle: Record<string, string> = {
@@ -25,14 +26,12 @@ const policyFaqs = [
   { q: 'What if my items are damaged in transit?', a: 'Photograph the damaged goods (and the packaging) immediately and raise a complaint here. Our insurance covers transit damage and we process replacements priority.' },
 ];
 
-interface Attachment { name: string; type: 'image' | 'video' | 'pdf'; base64: string; size: number; }
+// url = uploaded storage path (persisted); preview = local object URL (display only).
+interface Attachment { name: string; type: 'image' | 'video' | 'pdf'; url: string; preview: string; size: number; }
 const IMAGE_PDF_LIMIT = 5 * 1024 * 1024;
 const VIDEO_LIMIT = 50 * 1024 * 1024;
 const MAX_FILES = 5;
 
-function toBase64(file: File): Promise<string> {
-  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(file); });
-}
 function fmtSize(bytes: number) { return bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`; }
 
 export default function AfterSalesPage() {
@@ -43,6 +42,7 @@ export default function AfterSalesPage() {
   const [issueType, setIssueType] = useState(issueTypes[0]);
   const [desc, setDesc] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [submitting, setSubmitting] = useState(false);
@@ -71,18 +71,42 @@ export default function AfterSalesPage() {
 
   async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(e.target.files || []);
-    if (attachments.length + picked.length > MAX_FILES) { addToast({ type: 'warning', title: `Max ${MAX_FILES} attachments per complaint` }); e.target.value = ''; return; }
-    const results: Attachment[] = [];
+    e.target.value = '';
+    if (attachments.length + picked.length > MAX_FILES) { addToast({ type: 'warning', title: `Max ${MAX_FILES} attachments per complaint` }); return; }
+
+    // Filter by per-file size limit before uploading.
+    const valid: File[] = [];
     for (const file of picked) {
       const isVideo = file.type.startsWith('video/');
       const limit = isVideo ? VIDEO_LIMIT : IMAGE_PDF_LIMIT;
       if (file.size > limit) { addToast({ type: 'warning', title: `"${file.name}" exceeds ${isVideo ? '50 MB' : '5 MB'} and was skipped` }); continue; }
-      const base64 = await toBase64(file);
-      const type = file.type.startsWith('image/') ? 'image' : isVideo ? 'video' : 'pdf';
-      results.push({ name: file.name, type, base64, size: file.size });
+      valid.push(file);
     }
-    setAttachments(prev => [...prev, ...results].slice(0, MAX_FILES));
-    e.target.value = '';
+    if (valid.length === 0) return;
+
+    // Upload straight to object storage; only the returned paths are persisted.
+    setUploading(true);
+    try {
+      const uploaded = await uploadFiles(valid, 'support');
+      const results: Attachment[] = uploaded.map((u, i) => {
+        const f = valid[i];
+        const type = f.type.startsWith('image/') ? 'image' : f.type.startsWith('video/') ? 'video' : 'pdf';
+        return { name: f.name, type, url: u.url, preview: URL.createObjectURL(f), size: f.size };
+      });
+      setAttachments(prev => [...prev, ...results].slice(0, MAX_FILES));
+    } catch {
+      addToast({ type: 'error', title: 'Upload failed', description: 'Please check your connection and try again.' });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function removeAttachment(idx: number) {
+    setAttachments(prev => {
+      const a = prev[idx];
+      if (a?.preview) URL.revokeObjectURL(a.preview);
+      return prev.filter((_, j) => j !== idx);
+    });
   }
 
   async function submit() {
@@ -94,9 +118,10 @@ export default function AfterSalesPage() {
         category: issueType,
         description: desc.trim(),
         orderId: orderId || null,
-        attachments: attachments.map(a => a.base64),
+        attachments: attachments.map(a => a.url),
       });
       addToast({ type: 'success', title: 'Complaint submitted', description: 'Our team will contact you shortly.' });
+      attachments.forEach(a => a.preview && URL.revokeObjectURL(a.preview));
       setDesc(''); setAttachments([]);
       loadComplaints();
     } catch {
@@ -142,7 +167,7 @@ export default function AfterSalesPage() {
                   {attachments.map((a, i) => (
                     <div key={i} className="flex items-center gap-1.5 bg-muted/40 rounded-lg px-2 py-1.5 border border-border">
                       {a.type === 'image' ? (
-                        <button type="button" onClick={() => setLightbox(a.base64)}><img src={a.base64} alt={a.name} className="w-9 h-9 object-cover rounded cursor-zoom-in" /></button>
+                        <button type="button" onClick={() => setLightbox(a.preview)}><img src={a.preview} alt={a.name} className="w-9 h-9 object-cover rounded cursor-zoom-in" /></button>
                       ) : a.type === 'video' ? (
                         <div className="w-9 h-9 bg-slate-200 rounded flex items-center justify-center"><Play className="w-4 h-4 text-slate-600" /></div>
                       ) : (
@@ -152,20 +177,20 @@ export default function AfterSalesPage() {
                         <span className="text-[10px] font-500 max-w-[90px] truncate">{a.name}</span>
                         <span className="text-[9px] text-muted-foreground">{fmtSize(a.size)}</span>
                       </div>
-                      <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))} className="ml-0.5 text-muted-foreground hover:text-foreground"><X className="w-3 h-3" /></button>
+                      <button type="button" onClick={() => removeAttachment(i)} className="ml-0.5 text-muted-foreground hover:text-foreground"><X className="w-3 h-3" /></button>
                     </div>
                   ))}
                 </div>
               )}
 
               <input ref={fileInputRef} type="file" style={{ display: 'none' }} accept="image/*,video/mp4,video/mov,video/quicktime,video/avi,video/webm,.pdf" multiple onChange={handleFiles} />
-              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={attachments.length >= MAX_FILES} className="btn-secondary px-3 py-1.5 text-xs inline-flex items-center gap-1.5 disabled:opacity-40">
-                <Paperclip className="w-3.5 h-3.5" /> Attach Files
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading || attachments.length >= MAX_FILES} className="btn-secondary px-3 py-1.5 text-xs inline-flex items-center gap-1.5 disabled:opacity-40">
+                <Paperclip className="w-3.5 h-3.5" /> {uploading ? 'Uploading…' : 'Attach Files'}
                 {attachments.length > 0 && <span className="ml-1 text-muted-foreground">{attachments.length}/{MAX_FILES}</span>}
               </button>
             </div>
 
-            <button onClick={submit} disabled={submitting} className="btn-primary w-full py-2.5 text-sm disabled:opacity-50">{submitting ? 'Submitting…' : 'Submit Complaint'}</button>
+            <button onClick={submit} disabled={submitting || uploading} className="btn-primary w-full py-2.5 text-sm disabled:opacity-50">{submitting ? 'Submitting…' : 'Submit Complaint'}</button>
           </div>
         </div>
 

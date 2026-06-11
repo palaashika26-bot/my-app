@@ -21,6 +21,9 @@ export type UploadScope =
   | "request-item"
   | "payment-proof"
   | "dispute"
+  | "support"
+  | "catalog"
+  | "warehouse"
   | "logistics-packing"
   | "logistics-slip";
 
@@ -28,6 +31,9 @@ const SCOPE_PREFIX: Record<UploadScope, string> = {
   "request-item": "request-items",
   "payment-proof": "payment-proofs",
   dispute: "dispute-attachments",
+  support: "support-attachments",
+  catalog: "catalog",
+  warehouse: "warehouse-photos",
   "logistics-packing": "logistics-packing",
   "logistics-slip": "logistics-slips",
 };
@@ -46,6 +52,8 @@ const EXT_BY_CONTENT_TYPE: Record<string, string> = {
   "video/mp4": "mp4",
   "video/quicktime": "mov",
   "video/webm": "webm",
+  // Documents — support / dispute attachments can be PDFs.
+  "application/pdf": "pdf",
 };
 
 export const MAX_UPLOAD_BATCH = 12;
@@ -78,7 +86,7 @@ function client(): SupabaseClient {
 
 const bucket = () => client().storage.from(config.SUPABASE_STORAGE_BUCKET);
 
-function isStoragePath(value: string): boolean {
+export function isStoragePath(value: string): boolean {
   return STORAGE_PREFIXES.some((p) => value.startsWith(p));
 }
 
@@ -169,6 +177,39 @@ export async function signImageFields<T extends Record<string, any>>(
     for (const f of spec.arrays ?? []) {
       if (Array.isArray(row[f])) row[f] = row[f].map(conv).filter((x: any) => x != null);
     }
+  }
+}
+
+/**
+ * Reverse of signing: given a value that may be a signed/public Supabase URL for
+ * our bucket, return the raw storage path so it can be persisted. Already-raw
+ * paths are returned unchanged; legacy `data:`/external URLs pass through (so old
+ * rows and externally-hosted images keep working). Used on WRITE paths where an
+ * admin form may re-submit the signed URL it was shown on read (e.g. catalog).
+ */
+export function toStoragePath(value: unknown): unknown {
+  if (typeof value !== "string" || !value) return value;
+  if (isStoragePath(value)) return value;
+  const bucket = config.SUPABASE_STORAGE_BUCKET;
+  for (const marker of [`/object/sign/${bucket}/`, `/object/public/${bucket}/`]) {
+    const idx = value.indexOf(marker);
+    if (idx !== -1) {
+      const path = decodeURIComponent(value.slice(idx + marker.length).split("?")[0]);
+      if (isStoragePath(path)) return path;
+    }
+  }
+  return value;
+}
+
+/** Normalize the named array/string fields of a write payload to raw storage paths (in place). */
+export function normalizeStoragePathFields(
+  data: Record<string, any>,
+  fields: string[]
+): void {
+  for (const f of fields) {
+    const v = data[f];
+    if (Array.isArray(v)) data[f] = v.map(toStoragePath);
+    else if (typeof v === "string") data[f] = toStoragePath(v);
   }
 }
 

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
 import { TOKEN_KEY } from '@/lib/api/axiosClient';
+import { uploadFiles } from '@/lib/upload';
 import {
   ArrowLeft,
   Package,
@@ -349,14 +350,15 @@ export default function WarehouseOrderDetailPage({
     }
     setUploading(true);
     try {
-      const base64Photos = await Promise.all(selectedFiles.map(readFileAsDataUrl));
+      // Upload to object storage; persist only the returned paths (never base64).
+      const uploaded = await uploadFiles(selectedFiles, 'warehouse');
       const res = await apiFetch(`/api/orders/${orderId}/warehouse-photos`, {
         method: 'POST',
-        body: JSON.stringify({ photos: base64Photos, note: warehouseNote }),
+        body: JSON.stringify({ photos: uploaded.map(u => u.url), note: warehouseNote }),
       });
       const data = await res.json();
       if (data?.success) {
-        setUploadedPhotos(data.data?.photoUrls ?? [...uploadedPhotos, ...base64Photos]);
+        setUploadedPhotos(data.data?.photoUrls ?? [...uploadedPhotos, ...uploaded.map(u => u.url)]);
         setSelectedFiles([]);
         setPreviews([]);
         setUploadSuccess(true);

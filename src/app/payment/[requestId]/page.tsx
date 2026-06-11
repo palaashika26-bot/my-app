@@ -9,6 +9,7 @@ import { requestsApi } from '@/lib/api/requests.api';
 import { paymentsApi } from '@/lib/api/payments.api';
 import { getRequestById as getStoreRequest, updateRequest as updateStoreRequest } from '@/lib/requestsStore';
 import { savePaymentTimestamp } from '@/lib/paymentStore';
+import { uploadFile, type UploadedFile } from '@/lib/upload';
 
 const BANK_ACCOUNTS = [
   {
@@ -64,7 +65,9 @@ export default function PaymentPage({ params }: { params: Promise<{ requestId: s
 
   const [request, setRequest] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [proofDataUrl, setProofDataUrl] = useState<string | null>(null);
+  const [proofPreview, setProofPreview] = useState<string | null>(null);
+  const [proofUploaded, setProofUploaded] = useState<UploadedFile | null>(null);
+  const [proofUploading, setProofUploading] = useState(false);
   const [proofName, setProofName] = useState('');
   const [proofSize, setProofSize] = useState(0);
   const [notes, setNotes] = useState('');
@@ -181,8 +184,17 @@ export default function PaymentPage({ params }: { params: Promise<{ requestId: s
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   })();
 
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+  function removeProof() {
+    if (proofPreview) URL.revokeObjectURL(proofPreview);
+    setProofPreview(null);
+    setProofUploaded(null);
+    setProofName('');
+    setProofSize(0);
+  }
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
     const ALLOWED = ['image/jpeg', 'image/png', 'image/webp'];
     if (!ALLOWED.includes(file.type)) {
@@ -193,16 +205,28 @@ export default function PaymentPage({ params }: { params: Promise<{ requestId: s
       addToast({ type: 'error', title: 'File too large', description: 'Maximum file size is 5 MB.' });
       return;
     }
+
+    // Upload straight to object storage; only the returned storage path is kept
+    // (a local object URL is used purely for the preview below).
+    if (proofPreview) URL.revokeObjectURL(proofPreview);
     setProofName(file.name);
     setProofSize(file.size);
-    const reader = new FileReader();
-    reader.onload = ev => setProofDataUrl(ev.target?.result as string);
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    setProofPreview(URL.createObjectURL(file));
+    setProofUploaded(null);
+    setProofUploading(true);
+    try {
+      const uploaded = await uploadFile(file, 'payment-proof');
+      setProofUploaded(uploaded);
+    } catch {
+      addToast({ type: 'error', title: 'Upload failed', description: 'Please check your connection and try again.' });
+      removeProof();
+    } finally {
+      setProofUploading(false);
+    }
   }
 
   async function submit() {
-    if (!proofDataUrl || !request) return;
+    if (!proofUploaded || !request) return;
     if (paymentAmount <= 0) {
       addToast({ type: 'error', title: 'Enter a valid amount', description: 'Please enter the payment amount.' });
       return;
@@ -216,7 +240,8 @@ export default function PaymentPage({ params }: { params: Promise<{ requestId: s
           requestId,
           type: (isBalancePayment || paymentMode === 'full') ? 'FULL' : 'ADVANCE',
           amountINR: paymentAmount,
-          proofImageBase64: proofDataUrl,
+          proofUrl: proofUploaded.url,
+          proofThumbUrl: proofUploaded.thumbUrl,
           proofFileName: proofName || undefined,
           notes: notes.trim() || undefined,
         }),
@@ -505,22 +530,31 @@ export default function PaymentPage({ params }: { params: Promise<{ requestId: s
               Upload a screenshot or photo of your payment confirmation.
             </p>
 
-            {proofDataUrl ? (
+            {proofPreview ? (
               <div className="space-y-3">
-                <img
-                  src={proofDataUrl}
-                  alt="Payment proof preview"
-                  className="w-full max-h-52 object-contain rounded-xl border border-border bg-muted"
-                />
+                <div className="relative">
+                  <img
+                    src={proofPreview}
+                    alt="Payment proof preview"
+                    className="w-full max-h-52 object-contain rounded-xl border border-border bg-muted"
+                  />
+                  {proofUploading && (
+                    <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/40">
+                      <span className="w-6 h-6 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    </div>
+                  )}
+                </div>
                 <div className="flex items-center justify-between text-xs">
                   <div>
                     <span className="text-muted-foreground truncate max-w-[180px] inline-block">{proofName}</span>
-                    {proofSize > 0 && (
-                      <span className="text-muted-foreground ml-2">({(proofSize / 1024).toFixed(0)} KB)</span>
-                    )}
+                    {proofUploading
+                      ? <span className="text-muted-foreground ml-2">Uploading…</span>
+                      : proofSize > 0 && (
+                        <span className="text-muted-foreground ml-2">({(proofSize / 1024).toFixed(0)} KB)</span>
+                      )}
                   </div>
                   <button
-                    onClick={() => { setProofDataUrl(null); setProofName(''); setProofSize(0); }}
+                    onClick={removeProof}
                     className="text-muted-foreground hover:text-red-500 ml-2 flex-shrink-0"
                   >
                     ✕ Remove
@@ -560,7 +594,7 @@ export default function PaymentPage({ params }: { params: Promise<{ requestId: s
 
             <button
               onClick={submit}
-              disabled={!proofDataUrl || submitting || submitted || acceptedItems.length === 0 || paymentAmount <= 0}
+              disabled={!proofUploaded || proofUploading || submitting || submitted || acceptedItems.length === 0 || paymentAmount <= 0}
               className="btn-primary w-full py-3 mt-4 inline-flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {submitting

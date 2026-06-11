@@ -5,7 +5,7 @@ import { ApiError } from "../../../utils/ApiError";
 import prisma from "../../../config/prisma";
 import { disputesRepository } from "../disputes/disputes.repository";
 import { notifyUser, notifyAdminsAndStaff } from "../../../utils/notify";
-import { signImageFields } from "../../../config/storage";
+import { signImageFields, isStoragePath, normalizeStoragePathFields } from "../../../config/storage";
 
 export const getOrders = async (req: Request, res: Response) => {
   const { page, limit } = req.query as Record<string, string>;
@@ -331,6 +331,8 @@ export const getWarehouseReport = async (req: Request, res: Response) => {
     const payload = includePhotos
       ? { ...rest, repackPhotos: photos }
       : { ...rest, repackPhotos: [], photoCount: photos.length };
+    // Convert storage-path photos to signed read URLs (legacy base64 passes through).
+    if (includePhotos) await signImageFields(payload, { arrays: ["repackPhotos"] });
     return ApiResponse.success(res, payload, "Warehouse report fetched");
   }
 
@@ -376,6 +378,9 @@ export const upsertWarehouseReport = async (req: Request, res: Response) => {
   for (const key of allowed) {
     if (key in req.body) data[key] = req.body[key];
   }
+
+  // A caller may resubmit signed photo URLs it was shown — store raw paths only.
+  normalizeStoragePathFields(data, ["repackPhotos"]);
 
   // Auto-stamp notification flags when warehouse content is updated
   const isContentUpdate = contentFields.some(k => k in req.body);
@@ -427,10 +432,11 @@ export const uploadWarehousePhotos = async (req: Request, res: Response) => {
     throw ApiError.badRequest("photos array is required");
   }
 
-  // Store base64 data URLs directly in the repackPhotos array
-  const photoUrls: string[] = photos.map((b64: string) => {
-    if (b64.startsWith("data:")) return b64;
-    return `data:image/jpeg;base64,${b64}`;
+  // New clients send object-storage PATHS; legacy clients sent base64. Keep paths
+  // and existing data: URLs as-is; only wrap bare base64 for back-compat.
+  const photoUrls: string[] = photos.map((v: string) => {
+    if (v.startsWith("data:") || isStoragePath(v)) return v;
+    return `data:image/jpeg;base64,${v}`;
   });
 
   // Append to existing repackPhotos (cap at 30)
@@ -479,7 +485,10 @@ export const uploadWarehousePhotos = async (req: Request, res: Response) => {
     ]);
   }
 
-  return ApiResponse.success(res, { photoUrls: merged }, "Photos uploaded");
+  // Sign storage paths for the optimistic UI (legacy base64 passes through).
+  const responsePayload = { photoUrls: [...merged] };
+  await signImageFields(responsePayload, { arrays: ["photoUrls"] });
+  return ApiResponse.success(res, responsePayload, "Photos uploaded");
 };
 
 // PATCH /api/v1/orders/:id/repack-approval

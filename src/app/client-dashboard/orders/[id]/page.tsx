@@ -6,6 +6,7 @@ import ClientLayout from '@/components/ClientLayout';
 import { useToast } from '@/components/ui/Toast';
 import { ordersApi } from '@/lib/api/orders.api';
 import { TOKEN_KEY } from '@/lib/api/axiosClient';
+import { uploadFiles } from '@/lib/upload';
 import type { ApiOrder } from '@/lib/types/api.types';
 
 function getToken() {
@@ -363,12 +364,14 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   // Disputes fetched for this order (for replacement status display)
   const [orderDisputes, setOrderDisputes] = useState<any[]>([]);
 
-  // Dispute modals state
-  interface DisputeFile { name: string; dataUrl: string; mimeType: string; }
+  // Dispute modals state. url/thumbUrl = uploaded storage paths (persisted);
+  // preview = local object URL for the in-modal thumbnail only.
+  interface DisputeFile { name: string; url: string; thumbUrl?: string; mimeType: string; preview: string; }
 
   const [replacementOpen, setReplacementOpen] = useState(false);
   const [replacementReason, setReplacementReason] = useState('');
   const [replacementFiles, setReplacementFiles] = useState<DisputeFile[]>([]);
+  const [replacementUploading, setReplacementUploading] = useState(false);
   const [replacementSubmitting, setReplacementSubmitting] = useState(false);
   const [replacementToast, setReplacementToast] = useState('');
 
@@ -376,6 +379,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [issueType, setIssueType] = useState('');
   const [issueDescription, setIssueDescription] = useState('');
   const [issueFiles, setIssueFiles] = useState<DisputeFile[]>([]);
+  const [issueUploading, setIssueUploading] = useState(false);
   const [issueSubmitting, setIssueSubmitting] = useState(false);
   const [issueToast, setIssueToast] = useState('');
 
@@ -614,56 +618,63 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   // DELIVERED through the status endpoint which doesn't touch the Shipment row.
   const withinDisputeWindow = isDelivered && (deliveredAt === null || (daysSinceDelivery !== null && daysSinceDelivery <= 5));
 
-  // Read any file (image or video) to a base64 data URL
-  function readFileAsBase64(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
+  // Upload dispute proof files straight to object storage; only the returned
+  // storage paths are persisted (a local object URL drives the in-modal preview).
+  async function uploadDisputeFiles(
+    e: React.ChangeEvent<HTMLInputElement>,
+    setFiles: React.Dispatch<React.SetStateAction<DisputeFile[]>>,
+    setUploading: React.Dispatch<React.SetStateAction<boolean>>
+  ) {
+    const picked = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (!picked.length) return;
+    setUploading(true);
+    try {
+      const uploaded = await uploadFiles(picked, 'dispute');
+      const results: DisputeFile[] = uploaded.map((u, i) => ({
+        name: picked[i].name,
+        url: u.url,
+        thumbUrl: u.thumbUrl,
+        mimeType: picked[i].type,
+        preview: URL.createObjectURL(picked[i]),
+      }));
+      setFiles(prev => [...prev, ...results]);
+    } catch {
+      addToast({ type: 'error', title: 'Upload failed', description: 'Please check your connection and try again.' });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function removeDisputeFile(
+    idx: number,
+    setFiles: React.Dispatch<React.SetStateAction<DisputeFile[]>>
+  ) {
+    setFiles(prev => {
+      const f = prev[idx];
+      if (f?.preview) URL.revokeObjectURL(f.preview);
+      return prev.filter((_, j) => j !== idx);
     });
   }
 
-  // Serialize all selected files into a single JSON string for videoProofUrl
-  function serializeFiles(files: { name: string; dataUrl: string }[]): string {
-    if (files.length === 0) return '';
-    if (files.length === 1) return files[0].dataUrl;
-    return JSON.stringify(files.map(f => ({ name: f.name, data: f.dataUrl })));
+  function handleReplacementFilesChange(e: React.ChangeEvent<HTMLInputElement>) {
+    return uploadDisputeFiles(e, setReplacementFiles, setReplacementUploading);
   }
 
-  async function handleReplacementFilesChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const picked = Array.from(e.target.files ?? []);
-    if (!picked.length) return;
-    const results: { name: string; dataUrl: string; mimeType: string }[] = [];
-    for (const file of picked) {
-      const dataUrl = await readFileAsBase64(file);
-      results.push({ name: file.name, dataUrl, mimeType: file.type });
-    }
-    setReplacementFiles(prev => [...prev, ...results]);
-    e.target.value = '';
-  }
-
-  async function handleIssueFilesChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const picked = Array.from(e.target.files ?? []);
-    if (!picked.length) return;
-    const results: { name: string; dataUrl: string; mimeType: string }[] = [];
-    for (const file of picked) {
-      const dataUrl = await readFileAsBase64(file);
-      results.push({ name: file.name, dataUrl, mimeType: file.type });
-    }
-    setIssueFiles(prev => [...prev, ...results]);
-    e.target.value = '';
+  function handleIssueFilesChange(e: React.ChangeEvent<HTMLInputElement>) {
+    return uploadDisputeFiles(e, setIssueFiles, setIssueUploading);
   }
 
   async function handleSubmitReplacement() {
     if (replacementSubmitting || !replacementReason.trim()) return;
     setReplacementSubmitting(true);
     try {
-      const attachments = replacementFiles.map(f => f.dataUrl);
+      const attachments = replacementFiles.map(f => f.url);
+      const attachmentThumbs = replacementFiles.map(f => f.thumbUrl ?? f.url);
       const videoProofUrl = attachments.length > 0 ? attachments[0] : undefined;
       const res = await apiFetch(`/api/orders/${id}/disputes`, {
         method: 'POST',
-        body: JSON.stringify({ type: 'REPLACEMENT', reason: replacementReason.trim(), videoProofUrl, attachments }),
+        body: JSON.stringify({ type: 'REPLACEMENT', reason: replacementReason.trim(), videoProofUrl, attachments, attachmentThumbs }),
       });
       const data = await res.json();
       if (data.success) {
@@ -686,12 +697,13 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     if (issueSubmitting || !issueType || !issueDescription.trim()) return;
     setIssueSubmitting(true);
     try {
-      const attachments = issueFiles.map(f => f.dataUrl);
+      const attachments = issueFiles.map(f => f.url);
+      const attachmentThumbs = issueFiles.map(f => f.thumbUrl ?? f.url);
       const videoProofUrl = attachments.length > 0 ? attachments[0] : undefined;
       const reason = `${issueType}: ${issueDescription.trim()}`;
       const res = await apiFetch(`/api/orders/${id}/disputes`, {
         method: 'POST',
-        body: JSON.stringify({ type: 'ISSUE', reason, videoProofUrl, attachments }),
+        body: JSON.stringify({ type: 'ISSUE', reason, videoProofUrl, attachments, attachmentThumbs }),
       });
       const data = await res.json();
       if (data.success) {
@@ -1460,7 +1472,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                     {replacementFiles.map((f, i) => (
                       <div key={i} className="relative group">
                         {f.mimeType.startsWith('image/') ? (
-                          <img src={f.dataUrl} alt={f.name} className="w-16 h-16 object-cover rounded-lg border border-border" />
+                          <img src={f.preview} alt={f.name} className="w-16 h-16 object-cover rounded-lg border border-border" />
                         ) : (
                           <div className="w-16 h-16 rounded-lg border border-border bg-amber-50 flex flex-col items-center justify-center gap-1">
                             <Play className="w-5 h-5 text-amber-600" />
@@ -1469,7 +1481,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                         )}
                         <button
                           type="button"
-                          onClick={() => setReplacementFiles(prev => prev.filter((_, j) => j !== i))}
+                          onClick={() => removeDisputeFile(i, setReplacementFiles)}
                           className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                         >
                           <X className="w-3 h-3" />
@@ -1481,16 +1493,17 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                 <button
                   type="button"
                   onClick={() => replacementFileRef.current?.click()}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed border-amber-400 hover:bg-amber-50 text-sm text-amber-700 w-full justify-center"
+                  disabled={replacementUploading}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed border-amber-400 hover:bg-amber-50 text-sm text-amber-700 w-full justify-center disabled:opacity-50"
                 >
-                  <Paperclip className="w-4 h-4" /> Add photos or videos
+                  <Paperclip className="w-4 h-4" /> {replacementUploading ? 'Uploading…' : 'Add photos or videos'}
                 </button>
               </div>
               <div className="flex gap-3 pt-1">
                 <button onClick={() => { setReplacementOpen(false); setReplacementReason(''); setReplacementFiles([]); }} className="btn-secondary flex-1 py-2.5 text-sm">Cancel</button>
                 <button
                   onClick={handleSubmitReplacement}
-                  disabled={replacementSubmitting || !replacementReason.trim()}
+                  disabled={replacementSubmitting || replacementUploading || !replacementReason.trim()}
                   className="btn-primary flex-1 py-2.5 text-sm disabled:opacity-40"
                 >
                   {replacementSubmitting ? 'Submitting...' : 'Submit Request'}
@@ -1570,7 +1583,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                     {issueFiles.map((f, i) => (
                       <div key={i} className="relative group">
                         {f.mimeType.startsWith('image/') ? (
-                          <img src={f.dataUrl} alt={f.name} className="w-16 h-16 object-cover rounded-lg border border-border" />
+                          <img src={f.preview} alt={f.name} className="w-16 h-16 object-cover rounded-lg border border-border" />
                         ) : (
                           <div className="w-16 h-16 rounded-lg border border-border bg-orange-50 flex flex-col items-center justify-center gap-1">
                             <Play className="w-5 h-5 text-orange-600" />
@@ -1579,7 +1592,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                         )}
                         <button
                           type="button"
-                          onClick={() => setIssueFiles(prev => prev.filter((_, j) => j !== i))}
+                          onClick={() => removeDisputeFile(i, setIssueFiles)}
                           className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                         >
                           <X className="w-3 h-3" />
@@ -1591,16 +1604,17 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                 <button
                   type="button"
                   onClick={() => issueFileRef.current?.click()}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed border-orange-400 hover:bg-orange-50 text-sm text-orange-700 w-full justify-center"
+                  disabled={issueUploading}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed border-orange-400 hover:bg-orange-50 text-sm text-orange-700 w-full justify-center disabled:opacity-50"
                 >
-                  <Paperclip className="w-4 h-4" /> Add photos or videos
+                  <Paperclip className="w-4 h-4" /> {issueUploading ? 'Uploading…' : 'Add photos or videos'}
                 </button>
               </div>
               <div className="flex gap-3 pt-1">
                 <button onClick={() => { setIssueOpen(false); setIssueType(''); setIssueDescription(''); setIssueFiles([]); }} className="btn-secondary flex-1 py-2.5 text-sm">Cancel</button>
                 <button
                   onClick={handleSubmitIssue}
-                  disabled={issueSubmitting || !issueType || !issueDescription.trim()}
+                  disabled={issueSubmitting || issueUploading || !issueType || !issueDescription.trim()}
                   className="btn-primary flex-1 py-2.5 text-sm disabled:opacity-40"
                 >
                   {issueSubmitting ? 'Submitting...' : 'Submit Issue Report'}
