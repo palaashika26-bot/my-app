@@ -6,7 +6,7 @@ import ClientLayout from '@/components/ClientLayout';
 import { useToast } from '@/components/ui/Toast';
 import { requestsApi } from '@/lib/api/requests.api';
 import { requestsCache } from '@/lib/api/requestsCache';
-import { uploadFiles, MAX_UPLOAD_BYTES } from '@/lib/upload';
+import { uploadFiles, MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES } from '@/lib/upload';
 import { Camera, Upload, ArrowLeft, ArrowRight, Plus, X, Check, ImageIcon } from 'lucide-react';
 
 interface RefImage {
@@ -37,6 +37,7 @@ export default function NewRequestPage() {
   const [agree, setAgree] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingItem, setUploadingItem] = useState<number | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<Record<number, number>>({});
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   function updateItem(i: number, key: keyof Item, val: any) {
@@ -45,8 +46,6 @@ export default function NewRequestPage() {
   function addItem() { if (items.length < 5) setItems([...items, { name: '', desc: '', qty: '', url: '', refImages: [] }]); }
   function removeItem(i: number) { if (items.length > 1) setItems(items.filter((_, idx) => idx !== i)); }
 
-  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-
   async function handleRefImages(itemIdx: number, e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = '';
@@ -54,38 +53,113 @@ export default function NewRequestPage() {
     const toAdd = files.slice(0, 5 - current.length);
     if (toAdd.length === 0) return;
 
-    if (toAdd.some(f => !ALLOWED_TYPES.includes(f.type))) {
-      addToast({ type: 'error', title: 'Only JPG, PNG or WEBP images are allowed' });
-      return;
-    }
-    if (toAdd.some(f => f.size > MAX_UPLOAD_BYTES)) {
-      addToast({ type: 'error', title: 'Image too large', description: 'Max 10MB per image.' });
+    // Validate file types - check original type as well as HEIC support
+    const invalidFiles = toAdd.filter(f => {
+      // Allow HEIC/HEIF formats on mobile
+      const isHeic = f.type.includes('heic') || f.type.includes('heif');
+      return !ALLOWED_IMAGE_TYPES.includes(f.type) && !isHeic;
+    });
+    
+    if (invalidFiles.length > 0) {
+      addToast({
+        type: 'error',
+        title: 'Invalid file format',
+        description: `Only JPG, PNG, HEIC (iPhone) or WebP are supported. Found: ${invalidFiles[0].type || 'unknown'}`
+      });
       return;
     }
 
-    // Upload straight to object storage; only the returned storage paths are kept
-    // (a local object URL is used purely for the in-form preview).
+    if (toAdd.some(f => f.size > MAX_UPLOAD_BYTES)) {
+      addToast({
+        type: 'error',
+        title: 'Image too large',
+        description: `Max 10MB per image. Largest selected: ${Math.round(Math.max(...toAdd.map(f => f.size)) / 1024 / 1024)}MB`
+      });
+      return;
+    }
+
+    // Pre-check total size
+    const totalSize = toAdd.reduce((sum, f) => sum + f.size, 0);
+    console.log(`[form] Image upload started: ${toAdd.length} files, ${Math.round(totalSize / 1024 / 1024)}MB total`);
+
+    // Upload to object storage; only the returned storage paths are kept
     setUploadingItem(itemIdx);
+    setUploadProgress({ ...uploadProgress, [itemIdx]: 0 });
+    
     try {
-      const uploaded = await uploadFiles(toAdd, 'request-item');
-      const withPreview: RefImage[] = uploaded.map((u, i) => ({
-        ...u,
-        preview: URL.createObjectURL(toAdd[i]),
-      }));
+      const uploaded = await uploadFiles(toAdd, 'request-item', (fileIndex, fileName, progress) => {
+        console.log(`[form] Upload progress: file ${fileIndex}/${toAdd.length} (${fileName}): ${progress}%`);
+        setUploadProgress(prev => ({ ...prev, [itemIdx]: progress }));
+      });
+
+      // Create preview URLs safely - these will be revoked on cleanup
+      const withPreview: RefImage[] = uploaded.map((u, i) => {
+        const previewUrl = URL.createObjectURL(toAdd[i]);
+        console.log(`[form] Preview created for: ${toAdd[i].name}`);
+        return {
+          ...u,
+          preview: previewUrl,
+        };
+      });
+
       updateItem(itemIdx, 'refImages', [...current, ...withPreview]);
-    } catch {
-      addToast({ type: 'error', title: 'Upload failed', description: 'Please check your connection and try again.' });
+      addToast({
+        type: 'success',
+        title: 'Images uploaded',
+        description: `Successfully uploaded ${toAdd.length} image${toAdd.length > 1 ? 's' : ''}`
+      });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`[form] Upload failed: ${errorMsg}`, err);
+      addToast({
+        type: 'error',
+        title: 'Upload failed',
+        description: errorMsg.includes('HEIC') || errorMsg.includes('conversion')
+          ? 'Image conversion failed. Try a different image format.'
+          : errorMsg.includes('No upload URL')
+          ? 'Backend error. Please try again in a moment.'
+          : 'Please check your connection and try again.'
+      });
     } finally {
       setUploadingItem(null);
+      setUploadProgress(prev => {
+        const newProgress = { ...prev };
+        delete newProgress[itemIdx];
+        return newProgress;
+      });
     }
   }
 
   function removeRefImage(itemIdx: number, imgIdx: number) {
     const img = items[itemIdx].refImages[imgIdx];
-    if (img?.preview) URL.revokeObjectURL(img.preview);
+    if (img?.preview) {
+      try {
+        URL.revokeObjectURL(img.preview);
+        console.log(`[form] Preview revoked for image ${imgIdx}`);
+      } catch {
+        // Ignore errors during cleanup
+      }
+    }
     const next = items[itemIdx].refImages.filter((_, i) => i !== imgIdx);
     updateItem(itemIdx, 'refImages', next);
   }
+
+  // Cleanup object URLs on unmount
+  React.useEffect(() => {
+    return () => {
+      items.forEach((item, idx) => {
+        item.refImages.forEach((img, imgIdx) => {
+          if (img?.preview) {
+            try {
+              URL.revokeObjectURL(img.preview);
+            } catch {
+              // Ignore
+            }
+          }
+        });
+      });
+    };
+  }, []);
 
   async function submit() {
     const validItems = items.filter(it => it.name.trim());
@@ -94,7 +168,9 @@ export default function NewRequestPage() {
       return;
     }
 
+    console.log(`[form] Submit started: ${validItems.length} items`);
     setSubmitting(true);
+    
     try {
       const notes = [
         special,
@@ -119,12 +195,21 @@ export default function NewRequestPage() {
         })),
       };
 
+      console.log(`[form] Calling API with payload:`, {
+        itemCount: payload.items.length,
+        totalBudget: payload.totalBudgetINR,
+        imageCount: payload.items.reduce((sum, it) => sum + (it.referenceImageUrls?.length ?? 0), 0)
+      });
+
       // No client-side race timeout here: the payload carries only storage paths
       // (images were already uploaded on selection), but createRequest still goes
       // through uploadClient (120s) to survive slow/cold-start backends. The old
       // 8s race fired "failed" while the POST actually succeeded on the server.
       const response = await requestsApi.createRequest(payload);
       const request = (response as any)?.data?.data;
+      
+      console.log(`[form] API response:`, request ? `Created request ${request.id}` : 'No request in response');
+      
       if (request) {
         requestsCache.set(request.id, request);
         addToast({
@@ -132,18 +217,44 @@ export default function NewRequestPage() {
           title: 'Request submitted!',
           description: `${request.requestNumber} created. Our team will contact you within 24 hours.`,
         });
+        console.log(`[form] Navigating to request detail: ${request.id}`);
         router.push(`/client-dashboard/requests/${request.id}`);
       } else {
         // 2xx but an unexpected body shape — don't claim success, but don't claim
         // a hard failure either (the request may exist); send them to their list.
-        addToast({ type: 'error', title: 'Could not confirm submission', description: 'Please check My Requests before resubmitting.' });
+        console.warn('[form] Response received but no request data found');
+        addToast({
+          type: 'error',
+          title: 'Could not confirm submission',
+          description: 'Please check My Requests before resubmitting.'
+        });
       }
-    } catch {
-      addToast({ type: 'error', title: 'Failed to submit request', description: 'Please try again.' });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`[form] Submit failed: ${errorMsg}`, err);
+      
+      // Provide detailed error message based on error type
+      let description = 'Please try again.';
+      if (errorMsg.includes('401') || errorMsg.includes('Unauthorized')) {
+        description = 'Your session expired. Please log in again.';
+      } else if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
+        description = 'You do not have permission to submit requests. Please check your account.';
+      } else if (errorMsg.includes('Network') || errorMsg.includes('timeout')) {
+        description = 'Network error. Please check your connection and try again.';
+      } else if (errorMsg.includes('400')) {
+        description = 'Invalid form data. Please check and try again.';
+      }
+      
+      addToast({
+        type: 'error',
+        title: 'Failed to submit request',
+        description
+      });
     } finally {
       setSubmitting(false);
     }
   }
+
 
   return (
     <ClientLayout>
@@ -196,9 +307,12 @@ export default function NewRequestPage() {
                     ))}
                     {it.refImages.length < 5 && (
                       <button type="button" disabled={uploadingItem === i} onClick={() => fileInputRefs.current[i]?.click()}
-                        className="w-16 h-16 rounded-lg border-2 border-dashed border-border flex flex-col items-center justify-center gap-1 text-muted-foreground hover:border-[#4A3B52]/50 hover:text-[#4A3B52] transition-colors disabled:opacity-50">
+                        className="w-16 h-16 rounded-lg border-2 border-dashed border-border flex flex-col items-center justify-center gap-1 text-muted-foreground hover:border-[#4A3B52]/50 hover:text-[#4A3B52] transition-colors disabled:opacity-50 relative">
                         {uploadingItem === i ? (
-                          <span className="w-5 h-5 border-2 border-[#4A3B52]/30 border-t-[#4A3B52] rounded-full animate-spin" />
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="w-5 h-5 border-2 border-[#4A3B52]/30 border-t-[#4A3B52] rounded-full animate-spin" />
+                            <span className="text-[8px] font-600">{uploadProgress[i] || 0}%</span>
+                          </div>
                         ) : (
                           <>
                             <ImageIcon className="w-5 h-5" />
@@ -209,12 +323,12 @@ export default function NewRequestPage() {
                     )}
                   </div>
                   <input
-                    type="file" multiple accept="image/jpeg,image/png,image/webp"
+                    type="file" multiple accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
                     ref={el => { fileInputRefs.current[i] = el; }}
                     className="hidden"
                     onChange={e => handleRefImages(i, e)}
                   />
-                  <p className="text-[11px] text-muted-foreground">JPG, PNG accepted · Max 5 images per item</p>
+                  <p className="text-[11px] text-muted-foreground">JPG, PNG, HEIC (iPhone), WebP · Max 5 images per item</p>
                 </div>
               </div>
             ))}

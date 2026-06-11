@@ -24,7 +24,7 @@ export interface UploadedFile {
   thumbUrl?: string;
 }
 
-export const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+export const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'];
 // Raw byte cap measured BEFORE compression. Images are re-encoded to WebP client-
 // side before upload, so what actually lands in storage is typically well under 1 MB.
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -42,6 +42,54 @@ async function requestSignedUploads(
   const res = await axiosClient.post('/uploads/sign', { scope, contentTypes });
   const data = res.data?.data ?? {};
   return { bucket: data.bucket, uploads: data.uploads ?? [] };
+}
+
+// Convert HEIC/HEIF images to JPEG before processing
+// Returns the original file if conversion isn't needed or fails (best-effort)
+async function convertHeicToJpeg(file: File): Promise<File> {
+  // Check if this is an HEIC/HEIF file
+  if (!file.type.includes('heic') && !file.type.includes('heif')) {
+    return file;
+  }
+
+  try {
+    // Use canvas to convert HEIC to JPEG
+    const bitmap = await createImageBitmap(file);
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      console.warn('[upload] Could not get canvas context for HEIC conversion, using original');
+      return file;
+    }
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close?.();
+
+    return new Promise((resolve) => {
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            console.warn('[upload] HEIC to JPEG conversion failed, using original');
+            resolve(file);
+            return;
+          }
+          // Create a new File from the blob with .jpg extension
+          const newFile = new File([blob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), {
+            type: 'image/jpeg',
+            lastModified: file.lastModified,
+          });
+          console.log(`[upload] HEIC converted: ${file.name} (${file.size} bytes) → JPEG (${newFile.size} bytes)`);
+          resolve(newFile);
+        },
+        'image/jpeg',
+        0.95 // High quality JPEG
+      );
+    });
+  } catch (err) {
+    console.warn(`[upload] HEIC conversion failed: ${err instanceof Error ? err.message : 'Unknown error'}, using original`);
+    return file;
+  }
 }
 
 // Re-encode an image to WebP via canvas, downscaling so its longest edge is at
@@ -100,9 +148,14 @@ async function putToSignedUrl(
   bucket: string,
   upload: SignedUpload,
   body: Blob,
-  contentType: string
+  contentType: string,
+  fileName: string = 'unknown'
 ): Promise<void> {
   const supabase = getBrowserSupabase();
+  
+  // Log upload attempt for debugging
+  console.log(`[upload] Starting upload: ${fileName} (${body.size} bytes, ${contentType})`);
+  
   const { error } = await supabase.storage
     .from(bucket)
     .uploadToSignedUrl(upload.path, upload.token, body, { contentType });
@@ -112,45 +165,89 @@ async function putToSignedUrl(
     // which is separate from the backend's SUPABASE_URL — a wrong/suffixed value
     // here is the usual reason a signed upload silently fails after /sign succeeds.
     console.error(
-      `[upload] uploadToSignedUrl failed — host="${process.env.NEXT_PUBLIC_SUPABASE_URL}" ` +
-        `bucket="${bucket}" path="${upload.path}" :: ${error.message}`,
+      `[upload] uploadToSignedUrl failed for ${fileName} — host="${process.env.NEXT_PUBLIC_SUPABASE_URL}" ` +
+        `bucket="${bucket}" path="${upload.path}" size=${body.size} contentType=${contentType} :: ${error.message}`,
       error
     );
     throw error;
   }
+  console.log(`[upload] Upload completed: ${fileName}`);
 }
 
 /**
  * Upload one file (image or short video) plus a generated thumbnail for images.
  * Returns the storage PATHS to persist.
  */
-export async function uploadFile(file: File, scope: UploadScope): Promise<UploadedFile> {
-  // Compress the full image to WebP (best-effort) and build a small thumbnail.
-  // Only the compressed bytes are uploaded — raw base64 is never stored anywhere.
-  const main = await compressToWebP(file);
-  const thumb = await makeThumbnail(file);
-  const contentTypes = [main.contentType, ...(thumb ? ['image/webp'] : [])];
-  const { bucket, uploads } = await requestSignedUploads(scope, contentTypes);
-  if (!uploads.length) throw new Error('No upload URL returned by the server');
-
-  await putToSignedUrl(bucket, uploads[0], main.body, main.contentType);
-
-  let thumbUrl: string | undefined;
-  if (thumb && uploads[1]) {
-    try {
-      await putToSignedUrl(bucket, uploads[1], thumb, 'image/webp');
-      thumbUrl = uploads[1].path;
-    } catch {
-      // Thumbnail is best-effort; the full image is used as a fallback on read.
+export async function uploadFile(file: File, scope: UploadScope, onProgress?: (progress: number) => void): Promise<UploadedFile> {
+  const originalFileName = file.name;
+  const originalSize = file.size;
+  
+  try {
+    // Log upload start
+    console.log(`[upload] Starting file: ${originalFileName} (${originalSize} bytes, type: ${file.type})`);
+    onProgress?.(5);
+    
+    // Convert HEIC to JPEG if needed
+    let processedFile = file;
+    if (file.type.includes('heic') || file.type.includes('heif')) {
+      console.log(`[upload] HEIC/HEIF detected, converting to JPEG...`);
+      processedFile = await convertHeicToJpeg(file);
+      if (processedFile !== file) {
+        console.log(`[upload] Conversion successful: ${processedFile.size} bytes`);
+      }
     }
-  }
+    onProgress?.(10);
 
-  return { url: uploads[0].path, thumbUrl };
+    // Compress the full image to WebP (best-effort) and build a small thumbnail.
+    // Only the compressed bytes are uploaded — raw base64 is never stored anywhere.
+    const main = await compressToWebP(processedFile);
+    onProgress?.(40);
+    
+    const thumb = await makeThumbnail(processedFile);
+    onProgress?.(50);
+    
+    const contentTypes = [main.contentType, ...(thumb ? ['image/webp'] : [])];
+    const { bucket, uploads } = await requestSignedUploads(scope, contentTypes);
+    onProgress?.(55);
+    
+    if (!uploads.length) throw new Error('No upload URL returned by the server');
+
+    await putToSignedUrl(bucket, uploads[0], main.body, main.contentType, originalFileName);
+    onProgress?.(80);
+
+    let thumbUrl: string | undefined;
+    if (thumb && uploads[1]) {
+      try {
+        await putToSignedUrl(bucket, uploads[1], thumb, 'image/webp', `${originalFileName}.thumb`);
+        thumbUrl = uploads[1].path;
+      } catch {
+        // Thumbnail is best-effort; the full image is used as a fallback on read.
+        console.warn('[upload] Thumbnail upload failed, will use full image as fallback');
+      }
+    }
+    onProgress?.(100);
+
+    console.log(`[upload] File complete: ${originalFileName}`);
+    return { url: uploads[0].path, thumbUrl };
+  } catch (err) {
+    console.error(`[upload] Upload failed for ${originalFileName}:`, err);
+    throw err;
+  }
 }
 
 /** Upload several files sequentially (keeps signed-URL requests small and ordered). */
-export async function uploadFiles(files: File[], scope: UploadScope): Promise<UploadedFile[]> {
+export async function uploadFiles(files: File[], scope: UploadScope, onFileProgress?: (fileIndex: number, fileName: string, progress: number) => void): Promise<UploadedFile[]> {
   const out: UploadedFile[] = [];
-  for (const file of files) out.push(await uploadFile(file, scope));
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    try {
+      out.push(await uploadFile(file, scope, (progress) => {
+        onFileProgress?.(i, file.name, progress);
+      }));
+    } catch (err) {
+      console.error(`[upload] Failed to upload file ${i}: ${file.name}`, err);
+      throw err;
+    }
+  }
   return out;
 }

@@ -8,24 +8,45 @@ const TOKEN_KEY = 'elios_access_token';
 // invisible to middleware. The cookie is not httpOnly (client JS writes it), but
 // its integrity comes from the JWT signature, which the middleware verifies
 // against JWT_ACCESS_SECRET; a tampered cookie fails verification.
+
+// Safari ITP (Intelligent Tracking Prevention) restricts third-party cookies,
+// but first-party cookies should work. We set Path=/ to ensure it's treated as
+// first-party and avoid SameSite=None which requires Secure flag.
 const TOKEN_COOKIE_MAX_AGE = 24 * 60 * 60; // seconds; matches the access-token lifetime
 
 export function setAccessToken(token: string): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem(TOKEN_KEY, token);
-  const secure = window.location.protocol === 'https:' ? ';secure' : '';
-  document.cookie = `${TOKEN_KEY}=${token};path=/;max-age=${TOKEN_COOKIE_MAX_AGE};samesite=lax${secure}`;
+  
+  // Set cookie with proper handling for Safari and other browsers
+  const secure = window.location.protocol === 'https:' ? ';Secure' : '';
+  // Use SameSite=Lax (not Strict) to allow cross-site requests while Safari ITP doesn't block this
+  document.cookie = `${TOKEN_KEY}=${token};Path=/;Max-Age=${TOKEN_COOKIE_MAX_AGE};SameSite=Lax${secure}`;
+  
+  // Log for debugging
+  console.log('[auth] Access token set to cookie and localStorage');
 }
 
 export function clearAccessToken(): void {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(TOKEN_KEY);
-  document.cookie = `${TOKEN_KEY}=;path=/;max-age=0`;
+  document.cookie = `${TOKEN_KEY}=;Path=/;Max-Age=0`;
+  console.log('[auth] Access token cleared');
 }
 
 function getAccessToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem(TOKEN_KEY);
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) {
+    // Try to extract from cookie as fallback (useful if localStorage was cleared)
+    const cookieValue = document.cookie.split('; ').find(row => row.startsWith(`${TOKEN_KEY}=`))?.split('=')[1];
+    if (cookieValue) {
+      console.log('[auth] Token recovered from cookie');
+      localStorage.setItem(TOKEN_KEY, cookieValue);
+      return cookieValue;
+    }
+  }
+  return token;
 }
 
 // ── Token refresh ─────────────────────────────────────────────────────────────
@@ -54,11 +75,16 @@ function refreshAccessToken(): Promise<string | null> {
         const newToken = res?.data?.data?.accessToken as string | undefined;
         if (newToken) {
           setAccessToken(newToken);
+          console.log('[auth] Token refreshed successfully');
           return newToken;
         }
+        console.warn('[auth] Refresh response missing accessToken');
         return null;
       })
-      .catch(() => null) // refresh token missing/expired/revoked → genuine logout
+      .catch((err) => {
+        console.error('[auth] Token refresh failed:', err.response?.status || err.message);
+        return null;
+      }) // refresh token missing/expired/revoked → genuine logout
       .finally(() => {
         refreshPromise = null;
       });
@@ -86,10 +112,11 @@ function handleLogout(error: unknown) {
   if (hasStaleSession) {
     localStorage.removeItem('bk_role');
     localStorage.removeItem('bk_user');
-    document.cookie = 'bk_role=;path=/;max-age=0';
+    document.cookie = 'bk_role=;Path=/;Max-Age=0';
   }
 
-  if ((hadToken || hasStaleSession) && !window.location.pathname.startsWith('/login')) {
+  if ((hadToken || hasStaleSession) && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+    console.log('[auth] Session invalid, redirecting to login');
     window.location.href = '/login';
   }
   return Promise.reject(error);
@@ -106,6 +133,27 @@ const tokenInterceptor = (config: any) => {
   return config;
 };
 
+// Log network errors with details for debugging mobile issues
+function logNetworkError(error: any, endpoint: string): void {
+  const status = error?.response?.status;
+  const statusText = error?.response?.statusText;
+  const message = error?.message;
+  const isNetworkError = error?.code === 'ERR_NETWORK' || !error?.response;
+  
+  const errorDetails = {
+    endpoint,
+    status,
+    statusText,
+    message,
+    isNetworkError,
+    isTimeout: error?.code === 'ECONNABORTED',
+    isMobile: typeof navigator !== 'undefined' && /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent),
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
+  };
+  
+  console.error('[axios] Request failed:', errorDetails);
+}
+
 function createClient(timeout: number) {
   const client = axios.create({
     baseURL: resolveApiBaseUrl(),
@@ -114,12 +162,28 @@ function createClient(timeout: number) {
     timeout,
   });
 
-  client.interceptors.request.use(tokenInterceptor, (error) => Promise.reject(error));
+  client.interceptors.request.use(tokenInterceptor, (error) => {
+    console.error('[axios] Request interceptor error:', error);
+    return Promise.reject(error);
+  });
 
   client.interceptors.response.use(
     (response) => response,
     async (error: any) => {
-      if (typeof window === 'undefined' || error?.response?.status !== 401) {
+      const endpoint = error?.config?.url || 'unknown';
+      
+      if (typeof window === 'undefined') {
+        logNetworkError(error, endpoint);
+        return Promise.reject(error);
+      }
+
+      // Log all errors for debugging
+      if (error?.response?.status !== 401) {
+        logNetworkError(error, endpoint);
+      }
+
+      // Only attempt refresh for 401 on non-auth endpoints
+      if (error?.response?.status !== 401) {
         return Promise.reject(error);
       }
 
@@ -134,9 +198,11 @@ function createClient(timeout: number) {
         !isAuthEndpoint(original.url) &&
         !!getAccessToken()
       ) {
+        console.log(`[axios] Token expired, attempting refresh for ${endpoint}`);
         const newToken = await refreshAccessToken();
         if (newToken) {
           original._retry = true;
+          console.log(`[axios] Token refreshed, retrying ${endpoint}`);
           // Replaying through the client re-runs tokenInterceptor, which attaches
           // the freshly-refreshed access token in place of the stale one.
           return client(original);
@@ -144,6 +210,7 @@ function createClient(timeout: number) {
       }
 
       // No token, refresh failed, or a retried request still 401'd → log out.
+      console.warn(`[axios] Token refresh failed or missing for ${endpoint}, logging out`);
       return handleLogout(error);
     },
   );
