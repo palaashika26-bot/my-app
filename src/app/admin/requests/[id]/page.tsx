@@ -65,6 +65,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
 
   const [apiRequest, setApiRequest] = useState<any>(null);
   const [apiLoading, setApiLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [lineItems, setLineItems] = useState<RequestLineItem[]>([]);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [draftUnitCny, setDraftUnitCny] = useState('');
@@ -134,6 +135,8 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
   }
 
   function fetchRequest() {
+    setApiLoading(true);
+    setLoadError(false);
     const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Request timed out')), 15000));
     Promise.race([
       requestsApi.getRequestById(id),
@@ -148,10 +151,16 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
             fetchRequestPayments();
           }
         } else {
-          const row = null;
+          // Request finished but returned no data (e.g. deleted/not found).
+          setLoadError(true);
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        // Surface load failures instead of silently rendering an empty page —
+        // a transient backend error (e.g. a redeploy) otherwise looks identical
+        // to a broken page with placeholders and no rows.
+        setLoadError(true);
+      })
       .finally(() => setApiLoading(false));
   }
 
@@ -499,6 +508,27 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
               {[1,2,3,4,5].map(i => <div key={i} className="h-8 bg-muted rounded" />)}
             </div>
           </div>
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  // Load finished but we have no request to show (network/timeout error or the
+  // request was not found). Show a clear error + retry instead of an empty page.
+  if (!apiRequest && (loadError || !apiLoading)) {
+    return (
+      <AdminLayout>
+        <Link href="/admin/requests" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4">
+          <ArrowLeft className="w-4 h-4" /> Back to Requests
+        </Link>
+        <div className="bg-card rounded-xl border border-border shadow-card p-8 text-center max-w-md mx-auto mt-8">
+          <p className="text-sm font-600 text-foreground mb-1">Couldn’t load this request</p>
+          <p className="text-xs text-muted-foreground mb-4">
+            The server may be temporarily unavailable. Please try again.
+          </p>
+          <button type="button" onClick={fetchRequest} className="btn-primary px-4 py-2 text-sm">
+            Retry
+          </button>
         </div>
       </AdminLayout>
     );
