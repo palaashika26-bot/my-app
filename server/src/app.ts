@@ -76,13 +76,19 @@ app.use(cookieParser());
 app.use(sanitizeInput);
 
 // ── 7. Health check (public, no auth required) ────────────────────────────────
-app.get("/api/v1/health", (req: Request, res: Response) => {
+// Two paths are registered:
+//   • /health          — used by UptimeRobot / keep-alive pings and Render's
+//                        own health-check probe (no path prefix needed).
+//   • /api/v1/health   — used by railway.json and any internal callers.
+const healthHandler = (_req: Request, res: Response): void => {
   res.json({
     success: true,
     message: "Elios API is running",
     timestamp: new Date(),
   });
-});
+};
+app.get("/health", healthHandler);
+app.get("/api/v1/health", healthHandler);
 
 // ── 8. API v1 routes ──────────────────────────────────────────────────────────
 app.use("/api/v1", v1Router);
