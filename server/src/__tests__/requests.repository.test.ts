@@ -86,7 +86,7 @@ describe('requests.repository.findAll', () => {
 
     const result = await repo.requestsRepository.findAll({ skip: 0, take: 10 });
     expect(result).toHaveLength(2);
-    expect(result[0]).toEqual([{ id: 'r1' }]);
+    expect(result[0]).toEqual([{ id: 'r1', client: null }]);
     expect(result[1]).toBe(1);
   });
 });

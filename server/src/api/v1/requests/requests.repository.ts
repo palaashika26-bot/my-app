@@ -66,9 +66,10 @@ interface RequestFilters {
   take: number;
 }
 
-async function generateOrderNumber(): Promise<string> {
+async function generateOrderNumber(tx?: Prisma.TransactionClient): Promise<string> {
+  const client = tx || prisma;
   const year = new Date().getFullYear();
-  const count = await prisma.order.count({
+  const count = await client.order.count({
     where: {
       createdAt: {
         gte: new Date(`${year}-01-01`),
@@ -293,38 +294,33 @@ export const requestsRepository = {
     advanceAmountINR?: number
   ) {
     const rate = await getExchangeRate();
-    // Keep the transaction short: only the writes run inside it, and the heavy
-    // re-fetch (fullInclude pulls items with base64 reference images) is moved
-    // out. Holding a pooled connection through that big include is what starves
-    // the low-connection_limit Supabase pooler and 500s the quote under the
-    // dashboard's concurrent polling. maxWait/timeout give headroom to acquire
-    // a connection and finish instead of failing fast.
-    await prisma.$transaction(
-      async (tx) => {
-        for (const item of items) {
-          const quotedINR = parseFloat((item.quotedRMB * rate).toFixed(2));
-          await tx.requestItem.update({
-            where: { id: item.id },
-            data: { quotedRMB: item.quotedRMB, quotedINR, status: "QUOTED" },
-          });
-        }
-
-        await tx.sourcingRequest.update({
-          where: { id: requestId },
-          data: {
-            status: "QUOTED",
-            quotedAt: new Date(),
-            staffNotes: staffNotes ?? undefined,
-            advanceAmountINR: advanceAmountINR ?? null,
-          },
-        });
-
-        await tx.requestActivity.create({
-          data: { requestId, userId: staffId, action: "Quotation sent to client" },
-        });
-      },
-      { maxWait: 10000, timeout: 20000 }
+    const queries = [];
+    for (const item of items) {
+      const quotedINR = parseFloat((item.quotedRMB * rate).toFixed(2));
+      queries.push(
+        prisma.requestItem.update({
+          where: { id: item.id },
+          data: { quotedRMB: item.quotedRMB, quotedINR, status: "QUOTED" },
+        })
+      );
+    }
+    queries.push(
+      prisma.sourcingRequest.update({
+        where: { id: requestId },
+        data: {
+          status: "QUOTED",
+          quotedAt: new Date(),
+          staffNotes: staffNotes ?? undefined,
+          advanceAmountINR: advanceAmountINR ?? null,
+        },
+      })
     );
+    queries.push(
+      prisma.requestActivity.create({
+        data: { requestId, userId: staffId, action: "Quotation sent to client" },
+      })
+    );
+    await prisma.$transaction(queries);
 
     return prisma.sourcingRequest.findUniqueOrThrow({
       where: { id: requestId },
@@ -347,7 +343,7 @@ export const requestsRepository = {
 
       if (!request) throw ApiError.notFound("Request not found");
 
-      const orderNumber = await generateOrderNumber();
+      const orderNumber = await generateOrderNumber(tx);
 
       // Exclude rejected/countered items — only include accepted or unresponded items
       const orderItems = request.items.filter(
@@ -481,9 +477,39 @@ export const requestsRepository = {
     clientId: string,
     items: { id: string; response: string; counterPriceINR?: number; counterNote?: string }[]
   ) {
-    return runTxn(async (tx) => {
-      for (const item of items) {
-        await tx.requestItem.update({
+    const currentItems = await prisma.requestItem.findMany({
+      where: { requestId },
+      select: { id: true, clientResponse: true },
+    });
+
+    const updatedResponses = currentItems.map((item) => {
+      const update = items.find((it) => it.id === item.id);
+      return update ? update.response : item.clientResponse;
+    });
+
+    const responses = updatedResponses.filter(Boolean);
+    const allResponded = responses.length === currentItems.length;
+
+    let newStatus = "QUOTED";
+    if (allResponded) {
+      const hasCountered = responses.some((r) => r === "COUNTERED");
+      const hasAccepted = responses.some((r) => r === "ACCEPTED");
+      const hasRejected = responses.some((r) => r === "REJECTED");
+      if (hasCountered) {
+        newStatus = "REVIEWING";
+      } else if (hasAccepted && !hasRejected) {
+        newStatus = "ACCEPTED";
+      } else if (!hasAccepted && hasRejected) {
+        newStatus = "REJECTED";
+      } else if (hasAccepted && hasRejected) {
+        newStatus = "PARTIALLY_ACCEPTED";
+      }
+    }
+
+    const queries = [];
+    for (const item of items) {
+      queries.push(
+        prisma.requestItem.update({
           where: { id: item.id },
           data: {
             clientResponse: item.response,
@@ -497,50 +523,30 @@ export const requestsRepository = {
                 ? "REJECTED"
                 : "COUNTERED",
           },
-        });
-      }
+        })
+      );
+    }
 
-      // Determine new request status
-      const allItems = await tx.requestItem.findMany({
-        where: { requestId },
-        select: { clientResponse: true },
-      });
-
-      const responses = allItems.map((i) => i.clientResponse).filter(Boolean);
-      const allResponded = responses.length === allItems.length;
-
-      let newStatus = "QUOTED";
-      if (allResponded) {
-        const hasCountered = responses.some((r) => r === "COUNTERED");
-        const hasAccepted = responses.some((r) => r === "ACCEPTED");
-        const hasRejected = responses.some((r) => r === "REJECTED");
-        if (hasCountered) {
-          newStatus = "REVIEWING";
-        } else if (hasAccepted && !hasRejected) {
-          newStatus = "ACCEPTED";
-        } else if (!hasAccepted && hasRejected) {
-          newStatus = "REJECTED";
-        } else if (hasAccepted && hasRejected) {
-          newStatus = "PARTIALLY_ACCEPTED";
-        }
-      }
-
-      const updated = await tx.sourcingRequest.update({
+    queries.push(
+      prisma.sourcingRequest.update({
         where: { id: requestId },
         data: { status: newStatus as any },
         include: mutationInclude,
-      });
+      })
+    );
 
-      await tx.requestActivity.create({
+    queries.push(
+      prisma.requestActivity.create({
         data: {
           requestId,
           userId: clientId,
-          action: `Client responded to quotation`,
+          action: "Client responded to quotation",
         },
-      });
+      })
+    );
 
-      return updated;
-    });
+    const results = await prisma.$transaction(queries);
+    return results[queries.length - 2] as any;
   },
 
   async respondToCounter(
@@ -549,10 +555,11 @@ export const requestsRepository = {
     items: { id: string; newQuotedRMB: number }[]
   ) {
     const rate = await getExchangeRate();
-    return runTxn(async (tx) => {
-      for (const item of items) {
-        const quotedINR = parseFloat((item.newQuotedRMB * rate).toFixed(2));
-        await tx.requestItem.update({
+    const queries = [];
+    for (const item of items) {
+      const quotedINR = parseFloat((item.newQuotedRMB * rate).toFixed(2));
+      queries.push(
+        prisma.requestItem.update({
           where: { id: item.id },
           data: {
             quotedRMB: item.newQuotedRMB,
@@ -563,25 +570,30 @@ export const requestsRepository = {
             counterNote: null,
             respondedAt: null,
           },
-        });
-      }
+        })
+      );
+    }
 
-      const updated = await tx.sourcingRequest.update({
+    queries.push(
+      prisma.sourcingRequest.update({
         where: { id: requestId },
         data: { status: "QUOTED" },
         include: mutationInclude,
-      });
+      })
+    );
 
-      await tx.requestActivity.create({
+    queries.push(
+      prisma.requestActivity.create({
         data: {
           requestId,
           userId: staffId,
           action: "Staff responded to client counter offer",
         },
-      });
+      })
+    );
 
-      return updated;
-    });
+    const results = await prisma.$transaction(queries);
+    return results[queries.length - 2] as any;
   },
 
   async createWithReferenceData(

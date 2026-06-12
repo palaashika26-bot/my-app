@@ -234,7 +234,7 @@ export default function PaymentPage({ params }: { params: Promise<{ requestId: s
     setSubmitting(true);
     setError(null);
     try {
-      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000));
+      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000));
       await Promise.race([
         paymentsApi.submitRequestPayment({
           requestId,
@@ -247,13 +247,20 @@ export default function PaymentPage({ params }: { params: Promise<{ requestId: s
         }),
         timeout,
       ]);
-    } catch {
-      updateStoreRequest(requestId, { status: 'Payment Pending' });
-      savePaymentTimestamp(requestId);
+      setSubmitted(true);
+      setTimeout(() => router.push('/client-dashboard/requests'), 2000);
+    } catch (err: any) {
+      if (err?.message === 'timeout') {
+        updateStoreRequest(requestId, { status: 'Payment Pending' });
+        savePaymentTimestamp(requestId);
+        setSubmitted(true);
+        setTimeout(() => router.push('/client-dashboard/requests'), 2000);
+      } else {
+        setError(err?.response?.data?.message || 'Payment submission failed. Please try again.');
+      }
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitted(true);
-    setTimeout(() => router.push('/client-dashboard/requests'), 2000);
-    setSubmitting(false);
   }
 
   if (loading) {
