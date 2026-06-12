@@ -1,4 +1,5 @@
 import { imageHosts } from './image-hosts.config.mjs';
+import withBundleAnalyzer from '@next/bundle-analyzer';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -56,4 +57,8 @@ const nextConfig = {
     ];
   },
 };
-export default nextConfig;
+
+// Bundle analyzer — run `ANALYZE=true npm run build` to open the HTML report.
+// No-op when ANALYZE env var is unset, so there is zero production impact.
+const withAnalyzer = withBundleAnalyzer({ enabled: process.env.ANALYZE === 'true' });
+export default withAnalyzer(nextConfig);

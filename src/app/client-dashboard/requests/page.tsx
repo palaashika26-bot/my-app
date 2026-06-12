@@ -10,7 +10,19 @@ import { Plus, Eye, Camera } from 'lucide-react';
 
 const tabs = ['All', 'Pending', 'Quotation Ready', 'In Progress', 'Completed'];
 
-// Map API RequestStatus → tab grouping
+// Server-side filter: each tab maps to the SourcingRequest enum statuses it
+// covers. undefined = no filter (All Requests).
+// This mirrors the admin-side TAB_TO_STATUSES so filtering is done on the DB,
+// not in-memory on a limit:50 dump of every request the client ever submitted.
+const TAB_TO_STATUSES: Record<string, string | undefined> = {
+  'All': undefined,
+  'Pending': 'SUBMITTED,REVIEWING',
+  'Quotation Ready': 'QUOTED,PARTIALLY_ACCEPTED',
+  'In Progress': 'ACCEPTED',
+  'Completed': 'CONVERTED',
+};
+
+// Map API RequestStatus → tab grouping (client-side guard for edge-case values)
 function matchesTab(status: string, tab: string): boolean {
   if (tab === 'All') return true;
   if (tab === 'Pending') return ['SUBMITTED', 'REVIEWING', 'Request Submitted', 'Awaiting Approval'].includes(status);
@@ -51,22 +63,33 @@ function AllRequestsContent() {
     if (filter === 'awaiting-approval') setTab('Pending');
   }, [searchParams]);
 
+  // Re-fetch whenever the active tab changes. Filtering is applied server-side
+  // so only the rows for the selected tab are fetched (not a full dump of 50).
   useEffect(() => {
     const abortController = new AbortController();
+    const statuses = TAB_TO_STATUSES[tab];
 
     async function load(attempt = 0) {
+      setLoading(true);
       // 25s, not 5s: the Render free instance sleeps on inactivity and can take
       // ~50s to wake, so a short timeout shows an empty list on the first load
       // (especially on slower mobile networks) even though requests exist.
       const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 25000));
       try {
         const r: any = await Promise.race([
-          requestsApi.getRequests({ limit: 50 }, abortController.signal),
+          requestsApi.getRequests(
+            {
+              limit: 25,
+              statuses: statuses || undefined,
+            },
+            abortController.signal
+          ),
           timeout,
         ]);
         if (abortController.signal.aborted) return;
         const apiData = r.data?.data ?? [];
-        requestsCache.setList(apiData);
+        // Only cache the full list when "All" is selected (used by detail page)
+        if (!statuses) requestsCache.setList(apiData);
         const mapped: DisplayRequest[] = apiData.map((req: any) => ({
           id: req.id,
           requestId: req.requestNumber,
@@ -91,8 +114,9 @@ function AllRequestsContent() {
 
     load();
     return () => abortController.abort();
-  }, []);
+  }, [tab]);
 
+  // Client-side guard: handles any status values not covered by TAB_TO_STATUSES
   const filtered = useMemo(
     () => requests.filter((r) => matchesTab(r.status, tab)),
     [requests, tab]

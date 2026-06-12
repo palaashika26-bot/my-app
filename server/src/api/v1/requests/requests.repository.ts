@@ -40,6 +40,23 @@ const fullInclude = {
   },
 };
 
+// Slimmer include for post-mutation responses. Omits `activities` because:
+// 1. The client always re-fetches the full detail via getRequestById after a
+//    mutation, so the mutation return value is typically discarded.
+// 2. Activities can grow large (dozens of rows) and Prisma nests each with a
+//    user join, making mutation responses unnecessarily heavy.
+// Used by: rejectRequest, cancelRequest, respondToQuotation, respondToCounter.
+const mutationInclude = {
+  client: {
+    include: {
+      user: {
+        select: { firstName: true, lastName: true, email: true, phone: true },
+      },
+    },
+  },
+  items: { include: itemInclude },
+};
+
 interface RequestFilters {
   clientId?: string;
   /** Enum statuses to match (a tab maps to one or more SourcingRequest statuses). */
@@ -126,13 +143,26 @@ export const requestsRepository = {
         where,
         skip,
         take,
-        include: {
-          // Don't nest the required `user` relation here. Some legacy client
-          // rows point at a deleted User, and Prisma then 500s the whole
-          // findMany ("Inconsistent query result: Field user is required to
-          // return data, got null"). Select the client scalars the list needs
-          // plus userId, and stitch the users in separately below so an
-          // orphaned client just yields user: null instead of throwing.
+        // Trimmed to exactly what the list views render (admin requests list,
+        // client dashboard requests list). Heavy unused-in-list scalar fields
+        // (notes, referenceNote, staffNotes, cancelReason, logisticsNote,
+        // logisticsWeight, logisticsMode, logisticsPricePerKg, advanceAmountINR)
+        // are intentionally omitted — they're only needed by the [id] detail
+        // pages which use findById. This is the main payload-bloat fix for
+        // the slow requests list. Same pattern as orders.repository.ts findAll.
+        //
+        // Don't nest the required `user` relation directly. Some legacy client
+        // rows point at a deleted User and Prisma 500s the whole findMany
+        // ("Inconsistent query result: Field user is required to return data,
+        // got null"). Select client scalars + userId, stitch users in separately
+        // below so an orphaned client yields user: null instead of throwing.
+        select: {
+          id: true,
+          requestNumber: true,
+          status: true,
+          createdAt: true,
+          totalBudgetINR: true,
+          clientId: true,
           client: { select: { id: true, companyName: true, userId: true } },
           items: { select: { id: true, productName: true, status: true } },
         },
@@ -407,7 +437,7 @@ export const requestsRepository = {
           rejectedAt: new Date(),
           staffNotes: reason ?? undefined,
         },
-        include: fullInclude,
+        include: mutationInclude,
       });
 
       await tx.requestActivity.create({
@@ -431,7 +461,7 @@ export const requestsRepository = {
           cancelledAt: new Date(),
           cancelReason: reason ?? undefined,
         },
-        include: fullInclude,
+        include: mutationInclude,
       });
 
       await tx.requestActivity.create({
@@ -498,7 +528,7 @@ export const requestsRepository = {
       const updated = await tx.sourcingRequest.update({
         where: { id: requestId },
         data: { status: newStatus as any },
-        include: fullInclude,
+        include: mutationInclude,
       });
 
       await tx.requestActivity.create({
@@ -538,7 +568,7 @@ export const requestsRepository = {
       const updated = await tx.sourcingRequest.update({
         where: { id: requestId },
         data: { status: "QUOTED" },
-        include: fullInclude,
+        include: mutationInclude,
       });
 
       await tx.requestActivity.create({
