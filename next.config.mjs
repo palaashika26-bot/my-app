@@ -1,5 +1,4 @@
 import { imageHosts } from './image-hosts.config.mjs';
-import withBundleAnalyzer from '@next/bundle-analyzer';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -20,12 +19,6 @@ const nextConfig = {
   typescript: {
     // Type errors now fail the build (codebase is clean at 0 errors).
     ignoreBuildErrors: false,
-  },
-
-  eslint: {
-    // Still ignored: ESLint reports ~6,900 mostly-formatting errors and the lint
-    // setup needs migrating to flat config first. Re-enable after a lint cleanup pass.
-    ignoreDuringBuilds: true,
   },
 
   images: {
@@ -59,6 +52,19 @@ const nextConfig = {
 };
 
 // Bundle analyzer — run `ANALYZE=true npm run build` to open the HTML report.
-// No-op when ANALYZE env var is unset, so there is zero production impact.
-const withAnalyzer = withBundleAnalyzer({ enabled: process.env.ANALYZE === 'true' });
-export default withAnalyzer(nextConfig);
+// Uses a try/require so the build never fails on Vercel when devDependencies
+// are not installed. The import() equivalent is synchronous here via createRequire.
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
+let exportedConfig = nextConfig;
+if (process.env.ANALYZE === 'true') {
+  try {
+    const withBundleAnalyzer = require('@next/bundle-analyzer')({ enabled: true });
+    exportedConfig = withBundleAnalyzer(nextConfig);
+  } catch {
+    console.warn('[next.config] @next/bundle-analyzer not found — skipping. Run npm install to enable.');
+  }
+}
+
+export default exportedConfig;
