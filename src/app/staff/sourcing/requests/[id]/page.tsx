@@ -9,7 +9,6 @@ import { requestsApi } from '@/lib/api/requests.api';
 import { paymentsApi } from '@/lib/api/payments.api';
 import { useToast } from '@/components/ui/Toast';
 import { ArrowLeft, Camera, Check, X, MessageSquare, Send, Pencil, Upload, ImageIcon } from 'lucide-react';
-import { notFound } from 'next/navigation';
 import type { RequestLineItem, PerProductQuoteStatus } from '@/lib/mockData';
 import { defaultLineItemsFromRequest, loadRfqLineItems, persistRfqLineItems } from '@/lib/rfqLineItems';
 import { useExchangeRate } from '@/lib/useExchangeRate';
@@ -65,6 +64,7 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
   const mockReq = mockRequests.find(r => r.id === id);
   const [apiRequest, setApiRequest] = useState<any>(null);
   const [apiLoading, setApiLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   const [lineItems, setLineItems] = useState<RequestLineItem[]>(() =>
     mockReq ? defaultLineItemsFromRequest(mockReq) : []
@@ -109,11 +109,37 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
     return () => { document.body.style.overflow = ''; };
   }, [lightboxUrl, lightboxProof]);
 
+  const fetchAttempts = useRef(0);
+
+  // Auto-retry once on failure: the hosted backend (Render free tier) sleeps when
+  // idle, so the first request after a wake can take 30–60s. A failed first
+  // attempt usually just woke it; the retry then succeeds. The skeleton stays up
+  // across the retry.
+  function handleFetchFailure() {
+    if (mockReq) setLineItems(loadRfqLineItems(mockReq));
+    if (fetchAttempts.current < 1) {
+      fetchAttempts.current += 1;
+      setTimeout(fetchRequest, 2000);
+    } else {
+      setLoadError(true);
+      setApiLoading(false);
+    }
+  }
+
   function fetchRequest() {
-    requestsApi.getRequestById(id)
-      .then((r) => {
+    setApiLoading(true);
+    setLoadError(false);
+    // 30s matches the axios client timeout; make it explicit and add an auto-retry
+    // so a cold-starting backend doesn't leave the page on a 404 / empty state.
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 30000));
+    Promise.race([
+      requestsApi.getRequestById(id),
+      timeout,
+    ])
+      .then((r: any) => {
         const req = r.data?.data;
         if (req) {
+          fetchAttempts.current = 0;
           setApiRequest(req);
           // Hydrate the Stage 2 logistics estimate from the persisted request.
           if (req.logisticsWeight != null) setLogisticsWeight(req.logisticsWeight);
@@ -146,12 +172,14 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
           if (['ACCEPTED', 'PARTIALLY_ACCEPTED', 'CONVERTED'].includes(req.status)) {
             fetchRequestPayments();
           }
+          setApiLoading(false);
+        } else {
+          handleFetchFailure();
         }
       })
       .catch(() => {
-        if (mockReq) setLineItems(loadRfqLineItems(mockReq));
-      })
-      .finally(() => setApiLoading(false));
+        handleFetchFailure();
+      });
   }
 
   function fetchRequestPayments() {
@@ -201,7 +229,61 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
     fetchRequest();
   }, [id]);
 
-  if (!apiLoading && !apiRequest && !mockReq) return notFound();
+  // ── Skeleton while loading ─────────────────────────────────────────────────
+  if (apiLoading) {
+    return (
+      <div className="w-full max-w-full overflow-x-hidden pb-20">
+        <Link href="/staff/sourcing/requests" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4">
+          <ArrowLeft className="w-4 h-4" /> Back
+        </Link>
+        <div className="animate-pulse space-y-4">
+          <div className="bg-card rounded-xl border border-border shadow-card p-4">
+            <div className="h-6 bg-muted rounded w-48 mb-2" />
+            <div className="h-4 bg-muted rounded w-64" />
+          </div>
+          <div className="grid lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2 space-y-4">
+              <div className="bg-card rounded-xl border border-border shadow-card p-4">
+                <div className="h-4 bg-muted rounded w-40 mb-4" />
+                {[1,2,3].map(i => <div key={i} className="h-12 bg-muted rounded mb-2" />)}
+              </div>
+              <div className="bg-card rounded-xl border border-border shadow-card p-4">
+                <div className="h-4 bg-muted rounded w-28 mb-4" />
+                {[1,2].map(i => <div key={i} className="h-8 bg-muted rounded mb-2" />)}
+              </div>
+            </div>
+            <div className="space-y-3">
+              {[1,2,3,4,5].map(i => <div key={i} className="h-8 bg-muted rounded" />)}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Error card (network / timeout — shown after auto-retry fails) ──────────
+  if (!apiRequest && (loadError || !mockReq)) {
+    return (
+      <div className="w-full max-w-full overflow-x-hidden pb-20">
+        <Link href="/staff/sourcing/requests" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4">
+          <ArrowLeft className="w-4 h-4" /> Back
+        </Link>
+        <div className="bg-card rounded-xl border border-border shadow-card p-8 text-center max-w-md mx-auto mt-8">
+          <p className="text-sm font-600 text-foreground mb-1">Couldn't load this request</p>
+          <p className="text-xs text-muted-foreground mb-4">
+            The server may be temporarily unavailable. Please try again.
+          </p>
+          <button
+            type="button"
+            onClick={() => { fetchAttempts.current = 0; fetchRequest(); }}
+            className="btn-primary px-4 py-2 text-sm"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const displayStatus = apiRequest?.status ?? (mockReq?.status as string) ?? 'SUBMITTED';
   const displayRequestId = apiRequest?.requestNumber ?? mockReq?.requestId ?? id;
