@@ -163,14 +163,16 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
       timeout,
     ])
       .then((r: any) => {
-        if (signal?.aborted) return;
+        if (signal?.aborted) return false;
         const req = r.data?.data;
         if (req) {
           requestsCache.set(id, req);
           applyApiRequest(req);
+          return true;
         }
+        return false;
       })
-      .catch(() => {});
+      .catch(() => false);
   }
 
   function fetchPayments(signal?: AbortSignal) {
@@ -196,12 +198,24 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
       setApiLoading(true);
     }
 
-    // Initial background fetch
-    Promise.allSettled([
-      fetchRequestData(abortController.signal),
-      fetchPayments(abortController.signal),
-    ]).finally(() => {
-      if (!abortController.signal.aborted && !cached) setApiLoading(false);
+    // Initial background fetch. Auto-retry once if it fails with no cache to fall
+    // back on: the hosted backend (Render free tier) sleeps when idle, so the
+    // first request after a wake can be slow/fail; the retry usually succeeds
+    // (and the 30s poll below is a further safety net).
+    const signal = abortController.signal;
+    fetchPayments(signal);
+    fetchRequestData(signal).then((ok) => {
+      if (signal.aborted) return;
+      if (ok || cached) {
+        if (!cached) setApiLoading(false);
+        return;
+      }
+      setTimeout(() => {
+        if (signal.aborted) return;
+        fetchRequestData(signal).finally(() => {
+          if (!signal.aborted) setApiLoading(false);
+        });
+      }, 2000);
     });
 
     // Poll every 30s for fresh data (catches status changes from admin)

@@ -6,7 +6,7 @@ import ClientLayout from '@/components/ClientLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { requestsApi } from '@/lib/api/requests.api';
 import { requestsCache } from '@/lib/api/requestsCache';
-import { Plus, Eye, Camera } from 'lucide-react';
+import { Plus, Eye } from 'lucide-react';
 
 const tabs = ['All', 'Pending', 'Quotation Ready', 'In Progress', 'Completed'];
 
@@ -130,7 +130,6 @@ function AllRequestsContent() {
           <p className="text-sm text-muted-foreground mt-1">Sourcing requests submitted to EliosWholesale</p>
         </div>
         <div className="flex gap-2">
-          <Link href="/client-dashboard/requests/photo" className="btn-secondary px-4 py-2 text-sm inline-flex items-center gap-2"><Camera className="w-4 h-4" /> Photo Request</Link>
           <Link href="/client-dashboard/requests/new" className="btn-primary px-4 py-2 text-sm inline-flex items-center gap-2"><Plus className="w-4 h-4" /> New Request</Link>
         </div>
       </div>
@@ -163,7 +162,7 @@ function AllRequestsContent() {
                 <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">No requests in this filter.</td></tr>
               ) : filtered.map(r => (
                 <tr key={r.id} className="table-row-hover">
-                  <td className="px-4 py-3.5"><div className="flex items-center gap-2">{r.source === 'photo_scan' && <Camera className="w-3.5 h-3.5 text-[#4A3B52]" />}<span className="text-sm font-600 text-primary font-tabular">{r.requestId}</span></div></td>
+                  <td className="px-4 py-3.5"><span className="text-sm font-600 text-primary font-tabular">{r.requestId}</span></td>
                   <td className="px-4 py-3.5 text-sm text-muted-foreground font-tabular">{r.date}</td>
                   <td className="px-4 py-3.5"><p className="text-sm font-500">{r.items} items</p><p className="text-xs text-muted-foreground truncate max-w-[200px]">{r.itemNames}</p></td>
                   <td className="px-4 py-3.5"><StatusBadge status={r.status as any} /></td>
