@@ -70,7 +70,6 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
     mockReq ? defaultLineItemsFromRequest(mockReq) : []
   );
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
-  const [draftUnitCny, setDraftUnitCny] = useState('');
   const [draftRmb, setDraftRmb] = useState('');
   const [msg, setMsg] = useState('');
   const [rejectReason, setRejectReason] = useState('');
@@ -310,22 +309,19 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
 
   function beginEdit(line: RequestLineItem) {
     setEditingLineId(line.id);
-    setDraftUnitCny(line.unitPriceCny != null ? String(line.unitPriceCny) : '');
-    setDraftRmb(String(line.rmbCostPerUnit || ''));
+    setDraftRmb(line.rmbCostPerUnit ? String(line.rmbCostPerUnit) : '');
   }
 
   function cancelEdit() {
     setEditingLineId(null);
-    setDraftUnitCny('');
     setDraftRmb('');
   }
 
   function saveLine(lineId: string) {
-    const n = parseFloat(draftUnitCny.replace(/,/g, ''));
-    const unitCny = Number.isFinite(n) && n > 0 ? n : undefined;
-    const unitInr = unitCny != null ? Math.round(unitCny * CNY_TO_INR) : undefined;
     const r = parseFloat(draftRmb.replace(/,/g, ''));
     const rmb = Number.isFinite(r) && r > 0 ? r : undefined;
+    const unitCny = rmb;
+    const unitInr = unitCny != null ? Math.round(unitCny * CNY_TO_INR) : undefined;
     setLineItems(prev => {
       const next = prev.map(l =>
         l.id === lineId
@@ -344,12 +340,11 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
       return next;
     });
     setEditingLineId(null);
-    setDraftUnitCny('');
     setDraftRmb('');
     addToast({
       type: 'success',
-      title: unitCny != null ? 'Price saved' : 'Line cleared',
-      description: unitCny != null ? 'Unit price updated for this product.' : 'This line is pending a unit price.',
+      title: rmb != null ? 'Price saved' : 'Line cleared',
+      description: rmb != null ? 'Price updated for this product.' : 'This line is pending a price.',
     });
   }
 
@@ -621,7 +616,7 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
           <div className="bg-card rounded-xl border border-border shadow-card p-4">
             <h3 className="font-700 mb-1">Per-product quotations</h3>
             <p className="text-xs text-muted-foreground mb-3">
-              Enter cost and sell unit price in CNY (¥) for each product, then Save.
+              Enter cost in CNY (¥) for each product, then Save.
               <span className="ml-1 font-600 text-[#4A3B52]">¥1 = ₹{CNY_TO_INR.toFixed(2)}</span>
             </p>
 
@@ -716,37 +711,29 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
                         )}
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-[10px] uppercase text-muted-foreground font-600 block mb-1">Cost ¥ (CNY)</label>
-                        {editing ? (
+                    <div>
+                      <label className="text-[10px] uppercase text-muted-foreground font-600 block mb-1">Cost ¥ (CNY)</label>
+                      {editing ? (
+                        <div>
                           <div className="relative">
                             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">¥</span>
                             <input type="number" min={0} className="input-field py-1.5 text-sm font-tabular w-full pl-5" value={draftRmb} onChange={e => setDraftRmb(e.target.value)} placeholder="Cost" />
                           </div>
-                        ) : (
-                          <span className="text-sm font-tabular text-muted-foreground">{line.rmbCostPerUnit ? `¥${line.rmbCostPerUnit}` : '—'}</span>
-                        )}
-                      </div>
-                      <div>
-                        <label className="text-[10px] uppercase text-muted-foreground font-600 block mb-1">Unit ¥ (CNY)</label>
-                        {editing ? (
-                          <div>
-                            <div className="relative">
-                              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">¥</span>
-                              <input type="number" min={0} className="input-field py-1.5 text-sm font-tabular w-full pl-5" value={draftUnitCny} onChange={e => setDraftUnitCny(e.target.value)} placeholder="CNY" />
-                            </div>
-                            {(() => {
-                              const n = parseFloat(draftUnitCny.replace(/,/g, ''));
-                              return Number.isFinite(n) && n > 0 ? (
-                                <span className="text-[11px] text-muted-foreground font-tabular">≈ ₹{Math.round(n * CNY_TO_INR).toLocaleString('en-IN')}</span>
-                              ) : null;
-                            })()}
-                          </div>
-                        ) : (
-                          <span className="text-sm font-tabular">{line.unitPriceCny != null ? `¥${line.unitPriceCny}` : '—'}</span>
-                        )}
-                      </div>
+                          {(() => {
+                            const r = parseFloat(draftRmb.replace(/,/g, ''));
+                            return Number.isFinite(r) && r > 0 ? (
+                              <span className="text-[11px] text-muted-foreground font-tabular">≈ ₹{Math.round(r * CNY_TO_INR).toLocaleString('en-IN')}</span>
+                            ) : null;
+                          })()}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-sm font-tabular">{line.rmbCostPerUnit ? `¥${line.rmbCostPerUnit}` : '—'}</span>
+                          {line.unitPriceInr != null && (
+                            <span className="text-[11px] text-muted-foreground font-tabular">₹{line.unitPriceInr.toLocaleString('en-IN')}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center justify-end pt-1 border-t border-border">
                       {editing ? (
@@ -767,14 +754,13 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
 
             {/* Desktop: full table layout */}
             <div className="hidden sm:block overflow-x-auto">
-              <table className="w-full text-sm min-w-[1040px]">
+              <table className="w-full text-sm min-w-[800px]">
                 <thead>
                   <tr className="border-b border-border text-[11px] uppercase text-muted-foreground">
                     <th className="py-2 text-left font-600 w-16">Image</th>
                     <th className="py-2 text-left font-600">Product</th>
                     <th className="text-right font-600 w-16">Qty</th>
                     <th className="text-right font-600 w-28">Cost ¥ (CNY)</th>
-                    <th className="text-right font-600 w-36">Unit ¥ (CNY)</th>
                     <th className="text-left font-600 pl-3 w-36">Status</th>
                     <th className="text-right font-600 w-40">Actions</th>
                   </tr>
@@ -831,31 +817,21 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
                         <td className="text-right font-tabular align-top py-3">{line.quantity}</td>
                         <td className="text-right align-middle py-3">
                           {editing ? (
-                            <div className="relative w-full max-w-[6rem] ml-auto">
-                              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">¥</span>
-                              <input type="number" min={0} className="input-field py-1.5 text-sm font-tabular w-full pl-5" value={draftRmb} onChange={e => setDraftRmb(e.target.value)} placeholder="Cost" />
-                            </div>
-                          ) : (
-                            <span className="font-tabular text-muted-foreground">{line.rmbCostPerUnit ? `¥${line.rmbCostPerUnit}` : '—'}</span>
-                          )}
-                        </td>
-                        <td className="text-right align-middle py-3">
-                          {editing ? (
                             <div className="flex flex-col items-end gap-1">
-                              <div className="relative w-full max-w-[7.5rem] ml-auto">
+                              <div className="relative w-full max-w-[6rem] ml-auto">
                                 <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">¥</span>
-                                <input type="number" min={0} className="input-field py-1.5 text-sm font-tabular w-full pl-5" value={draftUnitCny} onChange={e => setDraftUnitCny(e.target.value)} placeholder="CNY" />
+                                <input type="number" min={0} className="input-field py-1.5 text-sm font-tabular w-full pl-5" value={draftRmb} onChange={e => setDraftRmb(e.target.value)} placeholder="Cost" />
                               </div>
                               {(() => {
-                                const n = parseFloat(draftUnitCny.replace(/,/g, ''));
-                                return Number.isFinite(n) && n > 0 ? (
-                                  <span className="text-[11px] text-muted-foreground font-tabular">≈ ₹{Math.round(n * CNY_TO_INR).toLocaleString('en-IN')} INR</span>
+                                const r = parseFloat(draftRmb.replace(/,/g, ''));
+                                return Number.isFinite(r) && r > 0 ? (
+                                  <span className="text-[11px] text-muted-foreground font-tabular">≈ ₹{Math.round(r * CNY_TO_INR).toLocaleString('en-IN')}</span>
                                 ) : null;
                               })()}
                             </div>
                           ) : (
                             <div className="flex flex-col items-end gap-0.5">
-                              <span className="font-tabular">{line.unitPriceCny != null ? `¥${line.unitPriceCny}` : '—'}</span>
+                              <span className="font-tabular text-muted-foreground">{line.rmbCostPerUnit ? `¥${line.rmbCostPerUnit}` : '—'}</span>
                               {line.unitPriceInr != null && (
                                 <span className="text-[11px] text-muted-foreground font-tabular">₹{line.unitPriceInr.toLocaleString('en-IN')}</span>
                               )}

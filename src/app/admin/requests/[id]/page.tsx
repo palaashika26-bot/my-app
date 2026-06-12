@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 import React, { useState, use, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -68,7 +68,6 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
   const [loadError, setLoadError] = useState(false);
   const [lineItems, setLineItems] = useState<RequestLineItem[]>([]);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
-  const [draftUnitCny, setDraftUnitCny] = useState('');
   const [draftRmb, setDraftRmb] = useState('');
   const [msg, setMsg] = useState('');
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -252,23 +251,20 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
 
   function beginEdit(line: RequestLineItem) {
     setEditingLineId(line.id);
-    setDraftUnitCny(line.unitPriceCny != null ? String(line.unitPriceCny) : '');
-    setDraftRmb(String(line.rmbCostPerUnit));
+    setDraftRmb(line.rmbCostPerUnit ? String(line.rmbCostPerUnit) : '');
   }
 
   function cancelEdit() {
     setEditingLineId(null);
-    setDraftUnitCny('');
     setDraftRmb('');
   }
 
   function saveLine(lineId: string) {
     if (qs !== 'full') return;
-    const n = parseFloat(draftUnitCny.replace(/,/g, ''));
-    const unitCny = Number.isFinite(n) && n > 0 ? n : undefined;
-    const unitInr = unitCny != null ? Math.round(unitCny * CNY_TO_INR) : undefined;
     const r = parseFloat(draftRmb.replace(/,/g, ''));
     const rmb = Number.isFinite(r) && r > 0 ? r : undefined;
+    const unitCny = rmb;
+    const unitInr = unitCny != null ? Math.round(unitCny * CNY_TO_INR) : undefined;
     setLineItems(prev => {
       const next = prev.map(l =>
         l.id === lineId
@@ -287,12 +283,11 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
       return next;
     });
     setEditingLineId(null);
-    setDraftUnitCny('');
     setDraftRmb('');
     addToast({
       type: 'success',
-      title: unitCny != null ? 'Price saved' : 'Line cleared',
-      description: unitCny != null ? 'Unit price updated for this product.' : 'This line is pending a unit price.',
+      title: rmb != null ? 'Price saved' : 'Line cleared',
+      description: rmb != null ? 'Price updated for this product.' : 'This line is pending a price.',
     });
   }
 
@@ -721,7 +716,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
               <h3 className="font-700 mb-1">{showFullQuoteCols ? 'Per-product quotations' : 'Items Requested'}</h3>
               {showFullQuoteCols && (
                 <p className="text-xs text-muted-foreground mb-3">
-                  Enter cost and sell unit price in CNY (¥) for each product, then Save.
+                  Enter cost in CNY (¥) for each product, then Save.
                   <span className="ml-1 font-600 text-[#4A3B52]">¥1 = ₹{CNY_TO_INR.toFixed(2)}</span>
                 </p>
               )}
@@ -837,27 +832,9 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
 
                       {/* Price inputs — full quote only */}
                       {showFullQuoteCols && (
-                        <div className="grid grid-cols-2 gap-2">
+                        <div>
                           <div>
                             <label className="text-[10px] uppercase text-muted-foreground font-600 block mb-1">Cost ¥ (CNY)</label>
-                            {editing ? (
-                              <div className="relative">
-                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">¥</span>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  className="input-field py-1.5 text-sm font-tabular w-full pl-5"
-                                  value={draftRmb}
-                                  onChange={e => setDraftRmb(e.target.value)}
-                                  placeholder="Cost"
-                                />
-                              </div>
-                            ) : (
-                              <span className="text-sm font-tabular text-muted-foreground">¥{line.rmbCostPerUnit}</span>
-                            )}
-                          </div>
-                          <div>
-                            <label className="text-[10px] uppercase text-muted-foreground font-600 block mb-1">Unit ¥ (CNY)</label>
                             {editing ? (
                               <div>
                                 <div className="relative">
@@ -866,40 +843,35 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                                     type="number"
                                     min={0}
                                     className="input-field py-1.5 text-sm font-tabular w-full pl-5"
-                                    value={draftUnitCny}
-                                    onChange={e => setDraftUnitCny(e.target.value)}
-                                    placeholder="CNY"
+                                    value={draftRmb}
+                                    onChange={e => setDraftRmb(e.target.value)}
+                                    placeholder="Cost"
                                   />
                                 </div>
                                 {(() => {
-                                  const n = parseFloat(draftUnitCny.replace(/,/g, ''));
-                                  return Number.isFinite(n) && n > 0 ? (
+                                  const r = parseFloat(draftRmb.replace(/,/g, ''));
+                                  return Number.isFinite(r) && r > 0 ? (
                                     <span className="text-[11px] text-muted-foreground font-tabular">
-                                      ≈ ₹{Math.round(n * CNY_TO_INR).toLocaleString('en-IN')}
+                                      ≈ ₹{Math.round(r * CNY_TO_INR).toLocaleString('en-IN')}
                                     </span>
                                   ) : null;
                                 })()}
                               </div>
                             ) : (
-                              <span className="text-sm font-tabular">{line.unitPriceCny != null ? `¥${line.unitPriceCny}` : '—'}</span>
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-sm font-tabular text-muted-foreground">¥{line.rmbCostPerUnit}</span>
+                                {line.unitPriceInr != null && (
+                                  <span className="text-[11px] text-muted-foreground font-tabular">₹{line.unitPriceInr.toLocaleString('en-IN')}</span>
+                                )}
+                              </div>
                             )}
                           </div>
                         </div>
                       )}
 
-                      {/* Margin + actions */}
+                      {/* Actions */}
                       {showFullQuoteCols && (
-                        <div className="flex items-center justify-between pt-1 border-t border-border">
-                          <div>
-                            <span className="text-[10px] uppercase text-muted-foreground font-600">BK Margin</span>
-                            <div className="text-sm font-tabular font-500">
-                              {marginInr != null ? (
-                                <span className={marginInr >= 0 ? 'text-emerald-600' : 'text-red-600'}>
-                                  ₹{marginInr.toLocaleString('en-IN')}
-                                </span>
-                              ) : '—'}
-                            </div>
-                          </div>
+                        <div className="flex items-center justify-end pt-1 border-t border-border">
                           <div className="flex gap-2">
                             {editing ? (
                               <>
@@ -930,7 +902,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
 
               {/* ── DESKTOP: full table layout ── */}
               <div className="hidden sm:block overflow-x-auto">
-                <table className="w-full text-sm min-w-[960px]">
+                <table className="w-full text-sm min-w-[800px]">
                   <thead>
                     <tr className="border-b border-border text-[11px] uppercase text-muted-foreground">
                       <th className="py-2 text-left font-600 w-16">Image</th>
@@ -940,8 +912,6 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                         <>
                           <th className="text-right font-600 w-32 text-blue-700">Client Target</th>
                           <th className="text-right font-600 w-28">Cost ¥ (CNY)</th>
-                          <th className="text-right font-600 w-36">Unit ¥ (CNY)</th>
-                          <th className="text-right font-600 w-28 text-[#4A3B52]">BK Margin ₹</th>
                           <th className="text-left font-600 pl-3 w-36">Status</th>
                           <th className="text-right font-600 w-40">Actions</th>
                         </>
@@ -1022,56 +992,37 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                                   <span className="font-tabular text-blue-700 font-500 text-xs">₹{line.targetPriceINR.toLocaleString('en-IN')}</span>
                                 ) : <span className="text-muted-foreground">—</span>}
                               </td>
-                              <td className="text-right align-middle">
-                                {editing ? (
-                                  <div className="relative w-full max-w-[6rem] ml-auto">
-                                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">¥</span>
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      className="input-field py-1.5 text-sm font-tabular w-full pl-5"
-                                      value={draftRmb}
-                                      onChange={e => setDraftRmb(e.target.value)}
-                                      placeholder="Cost"
-                                    />
-                                  </div>
-                                ) : (
-                                  <span className="font-tabular text-muted-foreground">¥{line.rmbCostPerUnit}</span>
-                                )}
-                              </td>
-                              <td className="text-right align-middle">
+                              <td className="text-right align-middle py-3">
                                 {editing ? (
                                   <div className="flex flex-col items-end gap-1">
-                                    <div className="relative w-full max-w-[7.5rem] ml-auto">
+                                    <div className="relative w-full max-w-[6rem] ml-auto">
                                       <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">¥</span>
                                       <input
                                         type="number"
                                         min={0}
                                         className="input-field py-1.5 text-sm font-tabular w-full pl-5"
-                                        value={draftUnitCny}
-                                        onChange={e => setDraftUnitCny(e.target.value)}
-                                        placeholder="CNY"
+                                        value={draftRmb}
+                                        onChange={e => setDraftRmb(e.target.value)}
+                                        placeholder="Cost"
                                       />
                                     </div>
                                     {(() => {
-                                      const n = parseFloat(draftUnitCny.replace(/,/g, ''));
-                                      return Number.isFinite(n) && n > 0 ? (
+                                      const r = parseFloat(draftRmb.replace(/,/g, ''));
+                                      return Number.isFinite(r) && r > 0 ? (
                                         <span className="text-[11px] text-muted-foreground font-tabular">
-                                          ≈ ₹{Math.round(n * CNY_TO_INR).toLocaleString('en-IN')} INR
+                                          ≈ ₹{Math.round(r * CNY_TO_INR).toLocaleString('en-IN')}
                                         </span>
                                       ) : null;
                                     })()}
                                   </div>
                                 ) : (
-                                  <span className="font-tabular">{line.unitPriceCny != null ? `¥${line.unitPriceCny}` : '—'}</span>
+                                  <div className="flex flex-col items-end gap-0.5">
+                                    <span className="font-tabular text-muted-foreground">¥{line.rmbCostPerUnit}</span>
+                                    {line.unitPriceInr != null && (
+                                      <span className="text-[11px] text-muted-foreground font-tabular">₹{line.unitPriceInr.toLocaleString('en-IN')}</span>
+                                    )}
+                                  </div>
                                 )}
-                              </td>
-                              <td className="text-right font-tabular">
-                                {marginInr != null ? (
-                                  <span className={marginInr >= 0 ? 'text-emerald-600' : 'text-red-600'}>
-                                    ₹{marginInr.toLocaleString('en-IN')}
-                                  </span>
-                                ) : '—'}
                               </td>
                               <td className="pl-3 align-middle">
                                 <div className="flex flex-col gap-1">
@@ -1112,7 +1063,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                         </tr>
                         {line.clientResponse === 'COUNTERED' && line.counterPriceINR != null && (
                           <tr className="bg-amber-50">
-                            <td colSpan={showFullQuoteCols ? 9 : 4} className="px-4 pb-4 pt-0">
+                            <td colSpan={showFullQuoteCols ? 7 : 4} className="px-4 pb-4 pt-0">
                               <div className="border border-amber-300 rounded-xl p-4 bg-white space-y-3">
                                 <p className="text-sm font-700 text-amber-800">💬 CLIENT COUNTER OFFER</p>
                                 <div className="grid sm:grid-cols-2 gap-3">
