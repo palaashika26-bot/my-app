@@ -1,0 +1,40 @@
+# Pings the /api/keep-alive route on the Vercel frontend every 10 minutes.
+# That route in turn pings https://elios-server.onrender.com/health so the
+# Render free-tier backend never idles long enough to spin down (~15 min limit).
+#
+# Why GitHub Actions instead of Vercel Cron?
+#   Vercel Hobby plan restricts cron jobs to once-per-day. A 10-minute cadence
+#   requires either Vercel Pro or an external scheduler. GitHub Actions scheduled
+#   workflows are free for public repos and unlimited on private repos within the
+#   monthly free minutes allocation (2 000 min/month on Hobby GH plan — this
+#   workflow uses ~1 min/run × 144 runs/day ≈ 144 min/day, well within limits).
+
+name: Keep-Alive Ping
+
+on:
+  schedule:
+    # Runs every 10 minutes. GitHub Actions scheduler has ~1-minute jitter,
+    # which is fine — we just need to prevent the 15-minute Render idle timeout.
+    - cron: "*/10 * * * *"
+  # Allow manual trigger from the Actions tab for debugging
+  workflow_dispatch:
+
+jobs:
+  ping:
+    name: Ping Render backend via Vercel keep-alive route
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Ping /api/keep-alive
+        run: |
+          RESPONSE=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+            --max-time 25 \
+            "${{ secrets.VERCEL_KEEPALIVE_URL }}")
+          echo "HTTP status: $RESPONSE"
+          cat /tmp/response.json
+          if [ "$RESPONSE" -ne 200 ]; then
+            echo "❌ Keep-alive ping returned HTTP $RESPONSE"
+            exit 1
+          fi
+          echo "✅ Backend is alive"
