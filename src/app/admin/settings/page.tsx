@@ -1,8 +1,10 @@
 ﻿'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import AdminLayout from '@/components/AdminLayout';
 import { useToast } from '@/components/ui/Toast';
 import { Settings as SettingsIcon, Percent, Bell, Users as UsersIcon, Plus, X, Save } from 'lucide-react';
+import { settingsApi } from '@/lib/api/settings.api';
+import { invalidateExchangeRate } from '@/lib/useExchangeRate';
 
 const tabs = [
   { id: 'general',  label: 'General',       icon: SettingsIcon },
@@ -14,7 +16,20 @@ const tabs = [
 export default function AdminSettingsPage() {
   const { addToast } = useToast();
   const [tab, setTab] = useState('general');
-  const [general, setGeneral] = useState({ platform: 'EliosWholesale', supportEmail: 'support@elioswholesale.in', supportPhone: '+91 22 4567 8900', exchangeRate: '12.00', invoicePrefix: 'BK-ORD-', requestPrefix: 'BK-REQ-' });
+  const [general, setGeneral] = useState({ platform: 'EliosWholesale', supportEmail: 'support@elioswholesale.in', supportPhone: '+91 22 4567 8900', exchangeRate: '11.50', invoicePrefix: 'BK-ORD-', requestPrefix: 'BK-REQ-' });
+  const [savingGeneral, setSavingGeneral] = useState(false);
+
+  // Load the real, DB-backed CNY→INR rate into the General form.
+  useEffect(() => {
+    settingsApi.getExchangeRate()
+      .then(r => {
+        const rate = Number(r.data?.data?.rate);
+        if (Number.isFinite(rate) && rate > 0) {
+          setGeneral(g => ({ ...g, exchangeRate: rate.toFixed(2) }));
+        }
+      })
+      .catch(() => {});
+  }, []);
   const [gstRates, setGstRates] = useState([
     { category: 'Electronics', rate: 18 },
     { category: 'Mobile Accessories', rate: 18 },
@@ -38,7 +53,27 @@ export default function AdminSettingsPage() {
   const [showInvite, setShowInvite] = useState(false);
   const [invite, setInvite] = useState({ name: '', email: '', role: 'Order Manager' });
 
-  function save(section: string) { addToast({ type: 'success', title: 'Settings saved', description: `${section} settings updated.` }); }
+  async function save(section: string) {
+    if (section === 'General') {
+      const rate = parseFloat(general.exchangeRate);
+      if (!Number.isFinite(rate) || rate <= 0) {
+        addToast({ type: 'warning', title: 'Invalid exchange rate', description: 'Enter a positive number (e.g. 11.50).' });
+        return;
+      }
+      setSavingGeneral(true);
+      try {
+        await settingsApi.updateExchangeRate(rate);
+        invalidateExchangeRate();
+        addToast({ type: 'success', title: 'Settings saved', description: `Exchange rate updated to ₹${rate.toFixed(2)} / ¥1.` });
+      } catch (err: any) {
+        addToast({ type: 'error', title: 'Failed to save', description: err?.response?.data?.message || 'Please try again.' });
+      } finally {
+        setSavingGeneral(false);
+      }
+      return;
+    }
+    addToast({ type: 'success', title: 'Settings saved', description: `${section} settings updated.` });
+  }
   function addAdmin() { if (!invite.email) return; setAdmins(a => [...a, { id: `a${Date.now()}`, ...invite }]); setShowInvite(false); setInvite({ name: '', email: '', role: 'Order Manager' }); addToast({ type: 'success', title: 'Admin invited' }); }
   function removeAdmin(id: string) { setAdmins(a => a.filter(x => x.id !== id)); addToast({ type: 'success', title: 'Admin removed' }); }
 
@@ -62,8 +97,8 @@ export default function AdminSettingsPage() {
                 <input value={(general as any)[k]} onChange={e => setGeneral({...general, [k]: e.target.value})} className="input-field sm:col-span-2 font-tabular" />
               </div>
             ))}
-            <p className="text-[11px] text-muted-foreground">Last updated: 11 May 2026, 09:14 IST</p>
-            <button onClick={() => save('General')} className="btn-primary px-4 py-2 text-sm inline-flex items-center gap-2"><Save className="w-4 h-4" /> Save Settings</button>
+            <p className="text-[11px] text-muted-foreground">Exchange rate is saved platform-wide and applied to all CNY→INR prices.</p>
+            <button onClick={() => save('General')} disabled={savingGeneral} className="btn-primary px-4 py-2 text-sm inline-flex items-center gap-2 disabled:opacity-60"><Save className="w-4 h-4" /> {savingGeneral ? 'Saving…' : 'Save Settings'}</button>
           </div>
         )}
         {tab === 'gst' && (

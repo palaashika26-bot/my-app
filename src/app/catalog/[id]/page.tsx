@@ -6,6 +6,7 @@ import ClientLayout from '@/components/ClientLayout';
 import CatalogImage from '@/components/CatalogImage';
 import ImageLightbox from '@/components/ImageLightbox';
 import { Star, ChevronLeft, Heart, Minus, Plus, CheckCircle2, Truck, ShieldCheck, Tag } from 'lucide-react';
+import { useExchangeRate } from '@/lib/useExchangeRate';
 
 // ─── Product Interface (backend-ready) ───────────────────────────────────────
 interface Product {
@@ -62,7 +63,6 @@ const SEED_PRODUCTS: Product[] = [
 ];
 
 // ─── Data fetching (swap these functions for API calls in production) ─────────
-const CNY_TO_INR = 11.5;
 
 async function getProduct(id: string): Promise<Product | null> {
   try {
@@ -159,6 +159,7 @@ function StarRow({ rating }: { rating: number }) {
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const CNY_TO_INR = useExchangeRate();
   const [product, setProduct] = useState<Product | null>(null);
   const [related, setRelated] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);

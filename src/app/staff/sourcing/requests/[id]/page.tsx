@@ -12,8 +12,8 @@ import { ArrowLeft, Camera, Check, X, MessageSquare, Send, Pencil, Upload, Image
 import { notFound } from 'next/navigation';
 import type { RequestLineItem, PerProductQuoteStatus } from '@/lib/mockData';
 import { defaultLineItemsFromRequest, loadRfqLineItems, persistRfqLineItems } from '@/lib/rfqLineItems';
+import { useExchangeRate } from '@/lib/useExchangeRate';
 
-const CNY_TO_INR = 11.5;
 const DEFAULT_LOGISTICS_NOTE = 'This is an approx weight, exact will be given upon final repackaging. To be paid when in India.';
 
 function StatusPill({ status, revisionRequested, label: labelOverride }: { status: PerProductQuoteStatus; revisionRequested?: boolean; label?: string }) {
@@ -60,6 +60,7 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
   const { id } = use(params);
   const router = useRouter();
   const { addToast } = useToast();
+  const CNY_TO_INR = useExchangeRate();
 
   const mockReq = mockRequests.find(r => r.id === id);
   const [apiRequest, setApiRequest] = useState<any>(null);
@@ -303,7 +304,7 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
         await requestsApi.sendQuotation(id, {
           items: quoted.map(l => ({
             id: l.id,
-            quotedRMB: l.rmbCostPerUnit || (l.unitPriceCny ?? 0),
+            quotedRMB: l.unitPriceCny ?? l.rmbCostPerUnit ?? 0,
           })),
           advanceAmountINR: Number.isFinite(advAmt) && advAmt > 0 ? advAmt : undefined,
         });
@@ -538,7 +539,7 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
           <div className="bg-card rounded-xl border border-border shadow-card p-4">
             <h3 className="font-700 mb-1">Per-product quotations</h3>
             <p className="text-xs text-muted-foreground mb-3">
-              Enter RMB cost and unit price in CNY (¥) for each product, then Save.
+              Enter cost and sell unit price in CNY (¥) for each product, then Save.
               <span className="ml-1 font-600 text-[#4A3B52]">¥1 = ₹{CNY_TO_INR.toFixed(2)}</span>
             </p>
 
@@ -635,11 +636,11 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-[10px] uppercase text-muted-foreground font-600 block mb-1">RMB / unit</label>
+                        <label className="text-[10px] uppercase text-muted-foreground font-600 block mb-1">Cost ¥ (CNY)</label>
                         {editing ? (
                           <div className="relative">
                             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">¥</span>
-                            <input type="number" min={0} className="input-field py-1.5 text-sm font-tabular w-full pl-5" value={draftRmb} onChange={e => setDraftRmb(e.target.value)} placeholder="RMB" />
+                            <input type="number" min={0} className="input-field py-1.5 text-sm font-tabular w-full pl-5" value={draftRmb} onChange={e => setDraftRmb(e.target.value)} placeholder="Cost" />
                           </div>
                         ) : (
                           <span className="text-sm font-tabular text-muted-foreground">{line.rmbCostPerUnit ? `¥${line.rmbCostPerUnit}` : '—'}</span>
@@ -690,7 +691,7 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
                     <th className="py-2 text-left font-600 w-16">Image</th>
                     <th className="py-2 text-left font-600">Product</th>
                     <th className="text-right font-600 w-16">Qty</th>
-                    <th className="text-right font-600 w-28">RMB / unit</th>
+                    <th className="text-right font-600 w-28">Cost ¥ (CNY)</th>
                     <th className="text-right font-600 w-36">Unit ¥ (CNY)</th>
                     <th className="text-left font-600 pl-3 w-36">Status</th>
                     <th className="text-right font-600 w-40">Actions</th>
@@ -750,7 +751,7 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
                           {editing ? (
                             <div className="relative w-full max-w-[6rem] ml-auto">
                               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">¥</span>
-                              <input type="number" min={0} className="input-field py-1.5 text-sm font-tabular w-full pl-5" value={draftRmb} onChange={e => setDraftRmb(e.target.value)} placeholder="RMB" />
+                              <input type="number" min={0} className="input-field py-1.5 text-sm font-tabular w-full pl-5" value={draftRmb} onChange={e => setDraftRmb(e.target.value)} placeholder="Cost" />
                             </div>
                           ) : (
                             <span className="font-tabular text-muted-foreground">{line.rmbCostPerUnit ? `¥${line.rmbCostPerUnit}` : '—'}</span>

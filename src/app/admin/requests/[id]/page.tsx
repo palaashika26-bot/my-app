@@ -14,8 +14,8 @@ import { persistRfqLineItems } from '@/lib/rfqLineItems';
 import { loadPaymentProof, savePaymentConfirmed, loadPaymentConfirmed } from '@/lib/paymentStore';
 import { requestsApi } from '@/lib/api/requests.api';
 import { paymentsApi } from '@/lib/api/payments.api';
+import { useExchangeRate } from '@/lib/useExchangeRate';
 
-const CNY_TO_INR = 11.5;
 const DEFAULT_LOGISTICS_NOTE = 'This is an approx weight, exact will be given upon final repackaging. To be paid when in India.';
 
 function statusLabel(s: PerProductQuoteStatus, revisionRequested?: boolean) {
@@ -61,6 +61,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
   const router = useRouter();
   const perms = useAdminPermissions();
   const qs = perms.quotationScope;
+  const CNY_TO_INR = useExchangeRate();
 
   const [apiRequest, setApiRequest] = useState<any>(null);
   const [apiLoading, setApiLoading] = useState(true);
@@ -283,7 +284,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
         const advAmt = parseFloat(advanceAmountINR.replace(/,/g, ''));
         await Promise.race([
           requestsApi.sendQuotation(id, {
-            items: quoted.map(l => ({ id: l.id, quotedRMB: l.rmbCostPerUnit || (l.unitPriceCny ?? 0) })),
+            items: quoted.map(l => ({ id: l.id, quotedRMB: l.unitPriceCny ?? l.rmbCostPerUnit ?? 0 })),
             advanceAmountINR: Number.isFinite(advAmt) && advAmt > 0 ? advAmt : undefined,
           }),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Server is not responding. Please try again.')), 25000)),
@@ -674,7 +675,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
               <h3 className="font-700 mb-1">{showFullQuoteCols ? 'Per-product quotations' : 'Items Requested'}</h3>
               {showFullQuoteCols && (
                 <p className="text-xs text-muted-foreground mb-3">
-                  Enter RMB cost and unit price in CNY (¥) for each product, then Save.
+                  Enter cost and sell unit price in CNY (¥) for each product, then Save.
                   <span className="ml-1 font-600 text-[#4A3B52]">¥1 = ₹{CNY_TO_INR.toFixed(2)}</span>
                 </p>
               )}
@@ -792,7 +793,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                       {showFullQuoteCols && (
                         <div className="grid grid-cols-2 gap-2">
                           <div>
-                            <label className="text-[10px] uppercase text-muted-foreground font-600 block mb-1">RMB / unit</label>
+                            <label className="text-[10px] uppercase text-muted-foreground font-600 block mb-1">Cost ¥ (CNY)</label>
                             {editing ? (
                               <div className="relative">
                                 <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">¥</span>
@@ -802,7 +803,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                                   className="input-field py-1.5 text-sm font-tabular w-full pl-5"
                                   value={draftRmb}
                                   onChange={e => setDraftRmb(e.target.value)}
-                                  placeholder="RMB"
+                                  placeholder="Cost"
                                 />
                               </div>
                             ) : (
@@ -892,7 +893,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                       {showFullQuoteCols && (
                         <>
                           <th className="text-right font-600 w-32 text-blue-700">Client Target</th>
-                          <th className="text-right font-600 w-28">RMB / unit</th>
+                          <th className="text-right font-600 w-28">Cost ¥ (CNY)</th>
                           <th className="text-right font-600 w-36">Unit ¥ (CNY)</th>
                           <th className="text-right font-600 w-28 text-[#4A3B52]">BK Margin ₹</th>
                           <th className="text-left font-600 pl-3 w-36">Status</th>
@@ -985,7 +986,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
                                       className="input-field py-1.5 text-sm font-tabular w-full pl-5"
                                       value={draftRmb}
                                       onChange={e => setDraftRmb(e.target.value)}
-                                      placeholder="RMB"
+                                      placeholder="Cost"
                                     />
                                   </div>
                                 ) : (

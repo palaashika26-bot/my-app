@@ -15,6 +15,7 @@ import trackingRouter from "./tracking/tracking.routes";
 import uploadsRouter from "./uploads/uploads.routes";
 import supportRouter from "./support/support.routes";
 import logisticsRouter from "./logistics/logistics.routes";
+import settingsRouter from "./settings/settings.routes";
 
 const v1Router = Router();
 
@@ -34,5 +35,6 @@ v1Router.use("/tracking", trackingRouter);
 v1Router.use("/uploads", uploadsRouter);
 v1Router.use("/support", supportRouter);
 v1Router.use("/logistics", logisticsRouter);
+v1Router.use("/settings", settingsRouter);
 
 export default v1Router;

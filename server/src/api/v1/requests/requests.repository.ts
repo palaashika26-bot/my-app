@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { ApiError } from "../../../utils/ApiError";
 import { generateRequestNumber } from "../../../utils/generateRequestNumber";
 import { notifyUser } from "../../../utils/notify";
+import { getExchangeRate } from "../settings/settings.repository";
 
 // Interactive transactions default to a 5s timeout. On Render the round-trip to
 // the Supabase pooler is slow enough that updating items + request + activity
@@ -11,8 +12,6 @@ import { notifyUser } from "../../../utils/notify";
 // longer maxWait to acquire a connection from the small pool.
 const runTxn = <T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> =>
   prisma.$transaction(fn, { maxWait: 10000, timeout: 20000 });
-
-const RMB_TO_INR = 11.5;
 
 const itemInclude = {
   product: {
@@ -293,6 +292,7 @@ export const requestsRepository = {
     staffNotes?: string,
     advanceAmountINR?: number
   ) {
+    const rate = await getExchangeRate();
     // Keep the transaction short: only the writes run inside it, and the heavy
     // re-fetch (fullInclude pulls items with base64 reference images) is moved
     // out. Holding a pooled connection through that big include is what starves
@@ -302,7 +302,7 @@ export const requestsRepository = {
     await prisma.$transaction(
       async (tx) => {
         for (const item of items) {
-          const quotedINR = parseFloat((item.quotedRMB * RMB_TO_INR).toFixed(2));
+          const quotedINR = parseFloat((item.quotedRMB * rate).toFixed(2));
           await tx.requestItem.update({
             where: { id: item.id },
             data: { quotedRMB: item.quotedRMB, quotedINR, status: "QUOTED" },
@@ -548,9 +548,10 @@ export const requestsRepository = {
     staffId: string,
     items: { id: string; newQuotedRMB: number }[]
   ) {
+    const rate = await getExchangeRate();
     return runTxn(async (tx) => {
       for (const item of items) {
-        const quotedINR = parseFloat((item.newQuotedRMB * RMB_TO_INR).toFixed(2));
+        const quotedINR = parseFloat((item.newQuotedRMB * rate).toFixed(2));
         await tx.requestItem.update({
           where: { id: item.id },
           data: {

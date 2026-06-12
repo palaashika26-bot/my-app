@@ -884,3 +884,12 @@ model Notification {
   @@index([createdAt])
   @@map("notifications")
 }
+
+// Generic key-value store for platform-wide settings (e.g. cny_inr_rate).
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}

@@ -30,10 +30,9 @@ interface RequestLineItem {
   counterNote?: string;
 }
 import { useToast } from '@/components/ui/Toast';
+import { useExchangeRate } from '@/lib/useExchangeRate';
 
-const CNY_TO_INR = 11.5;
-
-const stages = ['Request Submitted', 'Quotation in Progress', 'Awaiting Approval', 'Payment Pending', 'Order Confirmed'];
+const stages =['Request Submitted', 'Quotation in Progress', 'Awaiting Approval', 'Payment Pending', 'Order Confirmed'];
 
 function ClientStatusPill({ status }: { status: PerProductQuoteStatus }) {
   const base = 'text-[10px] font-600 px-2 py-0.5 rounded';
@@ -78,6 +77,7 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
   const { id } = use(params);
   const router = useRouter();
   const { addToast } = useToast();
+  const CNY_TO_INR = useExchangeRate();
 
   const [apiRequest, setApiRequest] = useState<any>(null);
   const [apiLoading, setApiLoading] = useState(true);
