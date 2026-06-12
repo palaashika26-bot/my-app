@@ -87,6 +87,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
   const [advanceAmountINR, setAdvanceAmountINR] = useState('');
   const [quotationSent, setQuotationSent] = useState(false);
   const lastMsgSent = useRef(0);
+  const fetchAttempts = useRef(0);
   // Chat state
   const [chatMessages, setChatMessages] = useState<{ id: string; senderRole: string; text: string; createdAt: string }[]>([]);
   // Empty so the first poll fetches the full history (no `since` param). It is
@@ -134,10 +135,26 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
     setLineItems(apiLineItems);
   }
 
+  // Auto-retry the detail fetch once on failure: the hosted backend (Render free
+  // tier) sleeps when idle, so the first request after a wake can take 30–60s.
+  // A failed first attempt usually just woke it; the retry then succeeds. The
+  // skeleton stays up across the retry; only a second failure surfaces the error.
+  function handleFetchFailure() {
+    if (fetchAttempts.current < 1) {
+      fetchAttempts.current += 1;
+      setTimeout(fetchRequest, 2000);
+    } else {
+      setLoadError(true);
+      setApiLoading(false);
+    }
+  }
+
   function fetchRequest() {
     setApiLoading(true);
     setLoadError(false);
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Request timed out')), 15000));
+    // 30s matches the axios client timeout; the old 15s race gave up well before
+    // a cold-starting backend could respond, leaving apiRequest null (empty page).
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Request timed out')), 30000));
     Promise.race([
       requestsApi.getRequestById(id),
       timeout,
@@ -145,23 +162,22 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
       .then((r: any) => {
         const apiReq = r.data?.data;
         if (apiReq) {
+          fetchAttempts.current = 0;
           setApiRequest(apiReq);
           applyApiItems(apiReq);
           if (['ACCEPTED', 'PARTIALLY_ACCEPTED', 'CONVERTED'].includes(apiReq.status)) {
             fetchRequestPayments();
           }
+          setApiLoading(false);
         } else {
-          // Request finished but returned no data (e.g. deleted/not found).
-          setLoadError(true);
+          // Finished but no data (e.g. deleted/not found) — treat as a failure so
+          // the user gets a clear message instead of a silently empty page.
+          handleFetchFailure();
         }
       })
       .catch(() => {
-        // Surface load failures instead of silently rendering an empty page —
-        // a transient backend error (e.g. a redeploy) otherwise looks identical
-        // to a broken page with placeholders and no rows.
-        setLoadError(true);
-      })
-      .finally(() => setApiLoading(false));
+        handleFetchFailure();
+      });
   }
 
   function fetchRequestPayments() {
@@ -526,7 +542,7 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
           <p className="text-xs text-muted-foreground mb-4">
             The server may be temporarily unavailable. Please try again.
           </p>
-          <button type="button" onClick={fetchRequest} className="btn-primary px-4 py-2 text-sm">
+          <button type="button" onClick={() => { fetchAttempts.current = 0; fetchRequest(); }} className="btn-primary px-4 py-2 text-sm">
             Retry
           </button>
         </div>
