@@ -9,7 +9,7 @@ import { describeApiError } from '@/lib/api/axiosClient';
 import { resolveSubmitFailure } from '@/lib/api/submitRecovery';
 import { requestsCache } from '@/lib/api/requestsCache';
 import { uploadFiles, MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES } from '@/lib/upload';
-import { Camera, Upload, ArrowLeft, ArrowRight, Plus, X, Check, ImageIcon } from 'lucide-react';
+import { Upload, ArrowLeft, ArrowRight, Plus, X, Check, ImageIcon } from 'lucide-react';
 
 interface RefImage {
   preview: string;   // object URL for in-form display (not persisted)
@@ -283,11 +283,7 @@ export default function NewRequestPage() {
       <h1 className="text-2xl font-700 mb-1">New Sourcing Request</h1>
       <p className="text-sm text-muted-foreground mb-5">Tell us what you need — we'll source it from China.</p>
 
-      <Link href="/client-dashboard/requests/photo" className="flex items-center gap-4 p-4 rounded-2xl border-2 border-dashed border-[#5c5470]/40 bg-[#faf9f7] mb-6 hover:bg-[#f5f4f7] transition-colors">
-        <div className="w-12 h-12 rounded-xl bg-[#5c5470] text-white flex items-center justify-center flex-shrink-0"><Camera className="w-6 h-6" /></div>
-        <div className="flex-1"><p className="font-700 text-foreground">Have a product image?</p><p className="text-xs text-muted-foreground mt-0.5">Upload it and our AI will identify the product and specs.</p></div>
-        <ArrowRight className="w-5 h-5 text-[#4A3B52]" />
-      </Link>
+
 
       <div className="flex items-center gap-2 mb-6">
         {[1,2,3].map(n => (

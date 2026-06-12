@@ -8,7 +8,7 @@ import { requestsApi } from '@/lib/api/requests.api';
 
 import { useToast } from '@/components/ui/Toast';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
-import { Search, Download, Camera, Eye, Send, AlertTriangle } from 'lucide-react';
+import { Search, Download, Eye, Send, AlertTriangle } from 'lucide-react';
 
 const tabs = ['All Requests','Pending Quotations','Awaiting Approval','Approved','Rejected','Cancelled','Exception'];
 
@@ -203,7 +203,7 @@ function AdminRequestsContent() {
               filtered.map((r) => (
                 <tr key={r.id} className={`table-row-hover ${r.status === 'Exception' ? 'bg-red-50/40' : r.status === 'CANCELLED' ? 'bg-red-50/20' : ''}`}>
                   <td className="px-3 py-3"><input type="checkbox" checked={!!selected[r.id]} onChange={() => setSelected(s => ({ ...s, [r.id]: !s[r.id] }))} className="accent-accent" /></td>
-                  <td className="px-3 py-3"><div className="flex items-center gap-2">{r.source === 'photo_scan' && <Camera className="w-3.5 h-3.5 text-[#4A3B52]" aria-label="Photo-scan submission" />}<Link href={`/admin/requests/${r.id}`} className="font-tabular font-600 text-primary hover:text-[#4A3B52]">{r.requestId}</Link></div></td>
+                  <td className="px-3 py-3"><div className="flex items-center gap-2"><Link href={`/admin/requests/${r.id}`} className="font-tabular font-600 text-primary hover:text-[#4A3B52]">{r.requestId}</Link></div></td>
                   <td className="px-3 py-3"><p className="text-sm">{r.client}</p><p className="text-[11px] text-muted-foreground">{r.clientEmail}</p></td>
                   <td className="px-3 py-3">
                     <p className="text-sm">{r.items} items</p>

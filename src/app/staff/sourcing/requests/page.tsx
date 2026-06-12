@@ -4,7 +4,7 @@ import Link from 'next/link';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { requestsApi } from '@/lib/api/requests.api';
 import { useToast } from '@/components/ui/Toast';
-import { Search, Download, Camera, Eye, Send, AlertTriangle } from 'lucide-react';
+import { Search, Download, Eye, Send, AlertTriangle } from 'lucide-react';
 
 const tabs = ['All Requests', 'Pending Quotations', 'Awaiting Approval', 'Approved', 'Rejected', 'Exception'];
 
@@ -118,7 +118,7 @@ export default function SourcingRequestsPage() {
               filtered.map((r) => (
                 <tr key={r.id} className="table-row-hover">
                   <td className="px-3 py-3"><input type="checkbox" checked={!!selected[r.id]} onChange={() => setSelected(s => ({ ...s, [r.id]: !s[r.id] }))} className="accent-accent" /></td>
-                  <td className="px-3 py-3"><div className="flex items-center gap-2">{r.source === 'photo_scan' && <Camera className="w-3.5 h-3.5 text-[#4A3B52]" aria-label="Photo-scan submission" />}<Link href={`/staff/sourcing/requests/${r.id}`} className="font-tabular font-600 text-primary hover:text-[#4A3B52]">{r.requestId}</Link></div></td>
+                  <td className="px-3 py-3"><div className="flex items-center gap-2"><Link href={`/staff/sourcing/requests/${r.id}`} className="font-tabular font-600 text-primary hover:text-[#4A3B52]">{r.requestId}</Link></div></td>
                   <td className="px-3 py-3"><p className="text-sm">{r.client}</p><p className="text-[11px] text-muted-foreground">{r.clientEmail}</p></td>
                   <td className="px-3 py-3"><p className="text-sm">{r.items} items</p><p className="text-[11px] text-muted-foreground truncate max-w-[180px]">{r.itemNames}</p></td>
                   <td className="px-3 py-3 text-right font-tabular font-600">{r.totalBudget}</td>
