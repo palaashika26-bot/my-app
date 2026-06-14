@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
 import { TOKEN_KEY } from '@/lib/api/axiosClient';
+import { downscaleImageToDataUrl } from '@/lib/upload';
 import {
   ArrowLeft,
   Package,
@@ -349,7 +350,9 @@ export default function WarehouseOrderDetailPage({
     }
     setUploading(true);
     try {
-      const base64Photos = await Promise.all(selectedFiles.map(readFileAsDataUrl));
+      // Downscale before encoding — iPhone photos as raw base64 overflow Safari
+      // and bloat the request payload.
+      const base64Photos = await Promise.all(selectedFiles.map((f) => downscaleImageToDataUrl(f)));
       const res = await apiFetch(`/api/orders/${orderId}/warehouse-photos`, {
         method: 'POST',
         body: JSON.stringify({ photos: base64Photos, note: warehouseNote }),
@@ -376,7 +379,7 @@ export default function WarehouseOrderDetailPage({
     if (!files?.length) return;
     const remaining = 10 - repack.photos.length;
     const toProcess = Array.from(files).slice(0, remaining);
-    const dataUrls = await Promise.all(toProcess.map(readFileAsDataUrl));
+    const dataUrls = await Promise.all(toProcess.map((f) => downscaleImageToDataUrl(f)));
     setRepack(prev => ({ ...prev, photos: [...prev.photos, ...dataUrls] }));
   }
 
@@ -409,13 +412,17 @@ export default function WarehouseOrderDetailPage({
 
   async function handleFinalPackingList(files: FileList | null) {
     if (!files?.length) return;
-    const url = await readFileAsDataUrl(files[0]);
+    const file = files[0];
+    // Downscale images; pass PDFs through unchanged.
+    const url = file.type.startsWith('image/')
+      ? await downscaleImageToDataUrl(file)
+      : await readFileAsDataUrl(file);
     setOutbound(prev => ({ ...prev, finalPackingList: url }));
   }
 
   async function handleDeliverySlip(files: FileList | null) {
     if (!files?.length) return;
-    const url = await readFileAsDataUrl(files[0]);
+    const url = await downscaleImageToDataUrl(files[0]);
     setOutbound(prev => ({ ...prev, deliverySlip: url }));
   }
 
@@ -429,7 +436,12 @@ export default function WarehouseOrderDetailPage({
       // 1. Update warehouse report with sentToChina + trackingId
       const reportRes = await apiFetch(`/api/orders/${orderId}/warehouse-report`, {
         method: 'PATCH',
-        body: JSON.stringify({ outboundTrackingId: outbound.trackingId.trim(), sentToChina: true }),
+        body: JSON.stringify({
+          outboundTrackingId: outbound.trackingId.trim(),
+          packingListUrl: outbound.finalPackingList,
+          deliverySlipUrl: outbound.deliverySlip,
+          sentToChina: true,
+        }),
       });
       const reportData = await reportRes.json();
       if (!reportData?.success) throw new Error(reportData?.message ?? 'Failed');

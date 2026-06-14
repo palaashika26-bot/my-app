@@ -68,10 +68,8 @@ import ExceptionChat from '@/components/ExceptionChat';
 
 import { getEffectiveOrderStatus, getOrderQcBundle } from '@/lib/orderQcStore';
 import { ArrowLeft, Download, AlertTriangle, MapPin, CheckCircle2, XCircle, Circle, FileText, Info, Camera, X, ChevronLeft, ChevronRight, ZoomIn, MessageCircle, MessageSquare, Paperclip, Play, Package, Truck, Home, CreditCard, RefreshCw, Flag } from 'lucide-react';
-import { generateInvoice } from '@/lib/generateInvoice';
-import { generateGSTInvoice } from '@/lib/generateGSTInvoice';
-import { generateCommercialInvoice } from '@/lib/generateCommercialInvoice';
-import { generatePackingList } from '@/lib/generatePackingList';
+// Invoice/PDF generators (jsPDF) are dynamically imported inside click handlers
+// to keep jsPDF out of this page's initial bundle.
 import type { GSTData } from '@/components/GSTInvoicePopover';
 import { paymentsApi } from '@/lib/api/payments.api';
 import ProductImage from '@/components/ProductImage';
@@ -744,11 +742,11 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             </button>
           )}
           {(payments.some((p: any) => p.status === 'VERIFIED') || order?.status === 'Payment Confirmed' || order?.status === 'Completed') && (
-            <button onClick={() => generateInvoice(order)} className="px-4 py-2 text-sm font-600 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 inline-flex items-center gap-2"><Download className="w-4 h-4" /> Download Invoice</button>
+            <button onClick={async () => { const { generateInvoice } = await import('@/lib/generateInvoice'); generateInvoice(order); }} className="px-4 py-2 text-sm font-600 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 inline-flex items-center gap-2"><Download className="w-4 h-4" /> Download Invoice</button>
           )}
           {gstInvoiceData && (
             <button
-              onClick={() => generateGSTInvoice(order, gstInvoiceData)}
+              onClick={async () => { const { generateGSTInvoice } = await import('@/lib/generateGSTInvoice'); generateGSTInvoice(order, gstInvoiceData); }}
               className="px-4 py-2 text-sm font-600 rounded-lg border border-indigo-400 text-indigo-700 hover:bg-indigo-50 inline-flex items-center gap-2"
             >
               <FileText className="w-4 h-4" /> Download GST Invoice
@@ -1232,11 +1230,11 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             <ul className="space-y-2">
                 <li className="flex items-center justify-between text-sm py-2 border-b border-border">
                 <span className="flex items-center gap-2"><FileText className="w-4 h-4 text-muted-foreground" />Commercial Invoice</span>
-                <button onClick={() => generateCommercialInvoice(order)} className="text-[#4A3B52] text-xs font-600 hover:underline inline-flex items-center gap-1"><Download className="w-3.5 h-3.5" /> Download</button>
+                <button onClick={async () => { const { generateCommercialInvoice } = await import('@/lib/generateCommercialInvoice'); generateCommercialInvoice(order); }} className="text-[#4A3B52] text-xs font-600 hover:underline inline-flex items-center gap-1"><Download className="w-3.5 h-3.5" /> Download</button>
               </li>
               <li className="flex items-center justify-between text-sm py-2 border-b border-border last:border-0">
                 <span className="flex items-center gap-2"><FileText className="w-4 h-4 text-muted-foreground" />Packing List</span>
-                <button onClick={() => generatePackingList(order)} className="text-[#4A3B52] text-xs font-600 hover:underline inline-flex items-center gap-1"><Download className="w-3.5 h-3.5" /> Download</button>
+                <button onClick={async () => { const { generatePackingList } = await import('@/lib/generatePackingList'); generatePackingList(order); }} className="text-[#4A3B52] text-xs font-600 hover:underline inline-flex items-center gap-1"><Download className="w-3.5 h-3.5" /> Download</button>
               </li>
               {gstInvoiceData && (
                 <li className="flex items-center justify-between text-sm py-2">
@@ -1255,7 +1253,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                     })()}
                   </span>
                   <button
-                    onClick={() => generateGSTInvoice(order, gstInvoiceData)}
+                    onClick={async () => { const { generateGSTInvoice } = await import('@/lib/generateGSTInvoice'); generateGSTInvoice(order, gstInvoiceData); }}
                     className="text-indigo-600 text-xs font-600 hover:underline inline-flex items-center gap-1"
                   >
                     <Download className="w-3.5 h-3.5" /> Download

@@ -4,14 +4,13 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { mockRequests, mockClients } from '@/lib/adminMockData';
 import { requestsApi } from '@/lib/api/requests.api';
 import { paymentsApi } from '@/lib/api/payments.api';
 import { useToast } from '@/components/ui/Toast';
 import { ArrowLeft, Camera, Check, X, MessageSquare, Send, Pencil, Upload, ImageIcon } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import type { RequestLineItem, PerProductQuoteStatus } from '@/lib/mockData';
-import { defaultLineItemsFromRequest, loadRfqLineItems, persistRfqLineItems } from '@/lib/rfqLineItems';
+import { persistRfqLineItems } from '@/lib/rfqLineItems';
 
 const CNY_TO_INR = 11.5;
 const DEFAULT_LOGISTICS_NOTE = 'This is an approx weight, exact will be given upon final repackaging. To be paid when in India.';
@@ -61,13 +60,10 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
   const router = useRouter();
   const { addToast } = useToast();
 
-  const mockReq = mockRequests.find(r => r.id === id);
   const [apiRequest, setApiRequest] = useState<any>(null);
   const [apiLoading, setApiLoading] = useState(true);
 
-  const [lineItems, setLineItems] = useState<RequestLineItem[]>(() =>
-    mockReq ? defaultLineItemsFromRequest(mockReq) : []
-  );
+  const [lineItems, setLineItems] = useState<RequestLineItem[]>([]);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [draftUnitCny, setDraftUnitCny] = useState('');
   const [draftRmb, setDraftRmb] = useState('');
@@ -147,9 +143,7 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
           }
         }
       })
-      .catch(() => {
-        if (mockReq) setLineItems(loadRfqLineItems(mockReq));
-      })
+      .catch(() => { /* request not found / network error — handled by notFound guard below */ })
       .finally(() => setApiLoading(false));
   }
 
@@ -200,20 +194,20 @@ export default function SourcingRequestDetailPage({ params }: { params: Promise<
     fetchRequest();
   }, [id]);
 
-  if (!apiLoading && !apiRequest && !mockReq) return notFound();
+  if (!apiLoading && !apiRequest) return notFound();
 
-  const displayStatus = apiRequest?.status ?? (mockReq?.status as string) ?? 'SUBMITTED';
-  const displayRequestId = apiRequest?.requestNumber ?? mockReq?.requestId ?? id;
+  const displayStatus = apiRequest?.status ?? 'SUBMITTED';
+  const displayRequestId = apiRequest?.requestNumber ?? id;
   const displayDate = apiRequest
     ? new Date(apiRequest.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-    : (mockReq?.date ?? '');
+    : '';
   const displayBudget = apiRequest?.totalBudgetINR
     ? `₹${Number(apiRequest.totalBudgetINR).toLocaleString('en-IN')}`
-    : (mockReq?.totalBudget ?? '—');
+    : '—';
 
-  const clientCompany = apiRequest?.client?.companyName ?? mockClients.find(c => c.name === mockReq?.client)?.company ?? '—';
-  const clientEmail = apiRequest?.client?.user?.email ?? mockClients.find(c => c.name === mockReq?.client)?.email ?? '';
-  const clientGstin = mockClients.find(c => c.name === mockReq?.client)?.gstin ?? '—';
+  const clientCompany = apiRequest?.client?.companyName ?? '—';
+  const clientEmail = apiRequest?.client?.user?.email ?? '';
+  const clientGstin = apiRequest?.client?.gstin ?? apiRequest?.client?.gstNumber ?? '—';
 
   const convertedOrderNumber: string | null = (() => {
     if (displayStatus !== 'CONVERTED') return null;

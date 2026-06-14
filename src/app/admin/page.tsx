@@ -3,12 +3,18 @@ import React from 'react';
 import Link from 'next/link';
 import AdminLayout from '@/components/AdminLayout';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, Cell } from 'recharts';
+import dynamic from 'next/dynamic';
 import { ShoppingBag, Users, Truck, Clock, IndianRupee, AlertTriangle, ArrowRight, Sun, Plus, Download, MapPin, Eye, Camera } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import { useRouter } from 'next/navigation';
 import { adminApi, type AdminStats } from '@/lib/api/admin.api';
+
+// Lazy-load the recharts-backed charts so recharts is excluded from the
+// dashboard's initial bundle (it loads on the client after first paint).
+const ChartSkeleton = () => <div className="h-[240px] w-full rounded-lg bg-muted/40 animate-pulse" />;
+const RevenueChart = dynamic(() => import('@/components/admin/DashboardCharts').then(m => m.RevenueChart), { ssr: false, loading: ChartSkeleton });
+const OrdersByStatusChart = dynamic(() => import('@/components/admin/DashboardCharts').then(m => m.OrdersByStatusChart), { ssr: false, loading: ChartSkeleton });
 
 function Kpi({ icon: Icon, label, value, sub, accent, color, onClick }: any) {
   return (
@@ -118,29 +124,12 @@ export default function AdminDashboardPage() {
         {perms.canSeeGrandTotalsAndMargins && (
         <div className="lg:col-span-2 bg-card rounded-xl border border-border shadow-card p-5">
           <div className="flex items-center justify-between mb-3"><h3 className="font-700">Monthly Revenue</h3><span className="text-xs text-muted-foreground">Last 6 months</span></div>
-          <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={stats?.monthlyRevenue ?? []}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-              <XAxis dataKey="month" tickLine={false} axisLine={false} style={{ fontSize: 11 }} />
-              <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `₹${(v/100000).toFixed(0)}L`} style={{ fontSize: 11 }} />
-              <Tooltip formatter={(v: any) => `₹${(v/100000).toFixed(2)}L`} contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0' }} />
-              <Line type="monotone" dataKey="revenue" stroke="#4A3B52" strokeWidth={3} dot={{ fill: '#4A3B52', r: 4 }} />
-            </LineChart>
-          </ResponsiveContainer>
+          <RevenueChart data={stats?.monthlyRevenue ?? []} />
         </div>
         )}
         <div className={`bg-card rounded-xl border border-border shadow-card p-5 ${perms.canSeeGrandTotalsAndMargins ? '' : 'lg:max-w-xl'}`}>
           <div className="flex items-center justify-between mb-3"><h3 className="font-700">Orders by Status</h3></div>
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={stats?.ordersByStatus ?? []} layout="vertical" margin={{ left: 8 }}>
-              <XAxis type="number" tickLine={false} axisLine={false} style={{ fontSize: 10 }} />
-              <YAxis type="category" dataKey="name" width={80} tickLine={false} axisLine={false} style={{ fontSize: 10 }} />
-              <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0' }} />
-              <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                {(stats?.ordersByStatus ?? []).map((d, i) => <Cell key={i} fill={d.color} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          <OrdersByStatusChart data={stats?.ordersByStatus ?? []} />
         </div>
       </div>
 

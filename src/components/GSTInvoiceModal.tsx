@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { X } from 'lucide-react';
 
 export interface GSTData {
@@ -23,8 +23,20 @@ function fmtINR(n: number): string {
 }
 
 export default function GSTInvoiceModal({ order, onClose, onGenerate }: GSTInvoiceModalProps) {
+  const popoverRef = useRef<HTMLDivElement>(null);
   const [gstRate, setGstRate] = useState(18);
   const [clientGSTIN, setClientGSTIN] = useState('');
+
+  // Close when clicking outside the anchored popover.
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [onClose]);
 
   const taxableAmount = useMemo(() => {
     const rawItems: any[] = order?.lineItems || order?.items || order?.orderItems || [];
@@ -48,17 +60,15 @@ export default function GSTInvoiceModal({ order, onClose, onGenerate }: GSTInvoi
 
   return (
     <div
-      className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4"
-      onClick={onClose}
+      ref={popoverRef}
+      className="absolute left-0 top-full mt-1.5 z-[9999] w-80 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-xl border border-gray-200 p-5 text-left"
+      style={{ minWidth: '320px' }}
     >
-      <div
-        className="bg-white rounded-xl shadow-xl w-full max-w-md p-6"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-700 text-gray-900">GST Invoice Details</h2>
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-700 text-gray-900">Invoice Details</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 

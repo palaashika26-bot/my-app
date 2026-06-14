@@ -3,9 +3,9 @@
 import React, { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
 import { ordersApi } from '@/lib/api/orders.api';
+import { downscaleImageToDataUrl } from '@/lib/upload';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { ArrowLeft, CheckCircle, AlertTriangle, Upload, Truck, Package } from 'lucide-react';
 
@@ -30,71 +30,89 @@ interface OutboundShipment {
   deliverySlip: string | null;
 }
 
-async function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
 export default function WarehouseOrderDetailPage({ params }: { params: Promise<{ orderId: string }> }) {
   const { orderId } = use(params);
-  const { user } = useAuth();
   const { addToast } = useToast();
 
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [notFoundState, setNotFoundState] = useState(false);
 
+  // Section 3 — Missing items report
+  const [itemReports, setItemReports] = useState<ItemReport[]>([]);
+  const [reportSubmitted, setReportSubmitted] = useState(false);
+  const [submittingReport, setSubmittingReport] = useState(false);
+
+  // Section 4 — Repacking details
+  const [repack, setRepack] = useState<RepackDetails>({ weight: '', volume: '', note: '', photos: [] });
+  const [repackSaved, setRepackSaved] = useState(false);
+  const [savingRepack, setSavingRepack] = useState(false);
+
+  // Section 5 — Outbound shipment
+  const [outbound, setOutbound] = useState<OutboundShipment>({ trackingId: '', finalPackingList: null, deliverySlip: null });
+  const [outboundSent, setOutboundSent] = useState(false);
+  const [sendingOutbound, setSendingOutbound] = useState(false);
+
+  // Load the order and its persisted warehouse report from the backend.
   useEffect(() => {
-    ordersApi.getOrderById(orderId)
-      .then(r => {
-        const data = r.data?.data;
-        if (!data) { setNotFoundState(true); return; }
-        setOrder(data);
-      })
-      .catch(() => setNotFoundState(true))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    setLoading(true);
+    Promise.allSettled([
+      ordersApi.getOrderById(orderId),
+      ordersApi.getWarehouseReport(orderId),
+    ]).then(([orderRes, reportRes]) => {
+      if (cancelled) return;
+
+      if (orderRes.status !== 'fulfilled' || !orderRes.value.data?.data) {
+        setNotFoundState(true);
+        return;
+      }
+      const data = orderRes.value.data.data;
+      setOrder(data);
+
+      const orderItems = (data.items || []).map((item: any) => ({
+        name: item.product?.name || item.notes || 'Unknown Product',
+        qty: item.quantity,
+      }));
+
+      const report = reportRes.status === 'fulfilled' ? reportRes.value.data?.data : null;
+      const savedItemReports: ItemReport[] | null = Array.isArray(report?.itemReports) ? report.itemReports : null;
+
+      // Seed item reports from the saved report when present, otherwise from order items.
+      setItemReports(
+        savedItemReports && savedItemReports.length
+          ? savedItemReports
+          : orderItems.map((it: { name: string; qty: number }) => ({
+              name: it.name, qty: it.qty, allOk: true, issueDescription: '', issuePhoto: null,
+            })),
+      );
+      setReportSubmitted(!!report?.reportSubmitted);
+
+      setRepack({
+        weight: report?.finalWeightKg != null ? String(report.finalWeightKg) : '',
+        volume: report?.finalVolumeCbm != null ? String(report.finalVolumeCbm) : '',
+        note: report?.repackNotes ?? '',
+        photos: Array.isArray(report?.repackPhotos) ? report.repackPhotos : [],
+      });
+      setRepackSaved(!!report?.repackSaved);
+
+      setOutbound({
+        trackingId: report?.outboundTrackingId ?? '',
+        finalPackingList: report?.packingListUrl ?? null,
+        deliverySlip: report?.deliverySlipUrl ?? null,
+      });
+      setOutboundSent(!!report?.sentToChina);
+    }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [orderId]);
 
   if (loading) return <div className="p-10 text-center text-muted-foreground">Loading...</div>;
   if (notFoundState || !order) { notFound(); return null; }
 
   const orderItems = (order.items || []).map((item: any) => ({
-    name: item.product?.name || 'Unknown Product',
+    name: item.product?.name || item.notes || 'Unknown Product',
     qty: item.quantity,
   }));
-
-  // Section 3 — Missing items report
-  const [itemReports, setItemReports] = useState<ItemReport[]>(() =>
-    orderItems.map((it: { name: string; qty: number }) => ({ name: it.name, qty: it.qty, allOk: true, issueDescription: '', issuePhoto: null }))
-  );
-  const [reportSubmitted, setReportSubmitted] = useState(false);
-
-  // Section 4 — Repacking details
-  const [repack, setRepack] = useState<RepackDetails>({ weight: '', volume: '', note: '', photos: [] });
-  const [repackSaved, setRepackSaved] = useState(false);
-
-  // Section 5 — Outbound shipment
-  const [outbound, setOutbound] = useState<OutboundShipment>({ trackingId: '', finalPackingList: null, deliverySlip: null });
-  const [outboundSent, setOutboundSent] = useState(false);
-
-  useEffect(() => {
-    try {
-      const r = localStorage.getItem(`warehouse-report-${orderId}`);
-      if (r) { setItemReports(JSON.parse(r)); setReportSubmitted(true); }
-    } catch {}
-    try {
-      const rp = localStorage.getItem(`warehouse-repack-${orderId}`);
-      if (rp) { setRepack(JSON.parse(rp)); setRepackSaved(true); }
-    } catch {}
-    try {
-      const ob = localStorage.getItem(`warehouse-outbound-${orderId}`);
-      if (ob) { setOutbound(JSON.parse(ob)); setOutboundSent(true); }
-    } catch {}
-  }, [orderId]);
 
   function updateItemReport(idx: number, patch: Partial<ItemReport>) {
     setItemReports((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
@@ -102,77 +120,108 @@ export default function WarehouseOrderDetailPage({ params }: { params: Promise<{
 
   async function handleIssuePhoto(idx: number, files: FileList | null) {
     if (!files?.length) return;
-    const dataUrl = await readFileAsDataUrl(files[0]);
-    updateItemReport(idx, { issuePhoto: dataUrl });
+    try {
+      const dataUrl = await downscaleImageToDataUrl(files[0]);
+      updateItemReport(idx, { issuePhoto: dataUrl });
+    } catch {
+      addToast({ type: 'error', title: 'Could not read photo' });
+    }
   }
 
-  function submitReport() {
-    const payload = { orderId, items: itemReports, reportedAt: new Date().toISOString(), staffId: user?.staffId };
-    localStorage.setItem(`warehouse-report-${orderId}`, JSON.stringify(itemReports));
-    const notifications = JSON.parse(localStorage.getItem('notifications-admin') ?? '[]');
-    notifications.unshift({
-      id: `wh-report-${Date.now()}`,
-      title: 'Warehouse Report Submitted',
-      description: `Staff ${user?.name} submitted item report for ${order.orderNumber || order.id}.`,
-      time: 'Just now',
-      read: false,
-      type: 'alert',
-      href: `/admin/orders/${orderId}`,
-    });
-    localStorage.setItem('notifications-admin', JSON.stringify(notifications));
-    setReportSubmitted(true);
-    addToast({ type: 'success', title: 'Report submitted', description: 'Admin and sourcing staff have been notified.' });
+  async function submitReport() {
+    setSubmittingReport(true);
+    try {
+      await ordersApi.updateWarehouseReport(orderId, {
+        itemReports,
+        reportSubmitted: true,
+      });
+      setReportSubmitted(true);
+      addToast({ type: 'success', title: 'Report submitted', description: 'Admin and sourcing staff have been notified.' });
+    } catch {
+      addToast({ type: 'error', title: 'Could not submit report', description: 'Please check your connection and try again.' });
+    } finally {
+      setSubmittingReport(false);
+    }
   }
 
   async function handleRepackPhotos(files: FileList | null) {
     if (!files?.length) return;
-    const urls = await Promise.all(Array.from(files).map(readFileAsDataUrl));
-    setRepack((prev) => ({ ...prev, photos: [...prev.photos, ...urls] }));
+    try {
+      const urls = await Promise.all(Array.from(files).map((f) => downscaleImageToDataUrl(f)));
+      setRepack((prev) => ({ ...prev, photos: [...prev.photos, ...urls] }));
+    } catch {
+      addToast({ type: 'error', title: 'Could not read photos' });
+    }
   }
 
-  function saveRepackDetails() {
-    localStorage.setItem(`warehouse-repack-${orderId}`, JSON.stringify(repack));
-    localStorage.setItem(`warehouse-repack-photos-${orderId}`, JSON.stringify(repack.photos));
-    setRepackSaved(true);
-    addToast({ type: 'success', title: 'Repacking details saved' });
+  async function saveRepackDetails() {
+    setSavingRepack(true);
+    try {
+      await ordersApi.updateWarehouseReport(orderId, {
+        finalWeightKg: repack.weight ? parseFloat(repack.weight) : null,
+        finalVolumeCbm: repack.volume ? parseFloat(repack.volume) : null,
+        repackNotes: repack.note || null,
+        repackPhotos: repack.photos,
+        repackSaved: true,
+      });
+      setRepackSaved(true);
+      addToast({ type: 'success', title: 'Repacking details saved' });
+    } catch {
+      addToast({ type: 'error', title: 'Could not save', description: 'Please try again.' });
+    } finally {
+      setSavingRepack(false);
+    }
   }
 
   async function handleFinalPackingList(files: FileList | null) {
     if (!files?.length) return;
-    const dataUrl = await readFileAsDataUrl(files[0]);
-    setOutbound((prev) => ({ ...prev, finalPackingList: dataUrl }));
-    localStorage.setItem(`warehouse-final-packinglist-${orderId}`, dataUrl);
+    const file = files[0];
+    try {
+      // Images are downscaled; PDFs are passed through as a data URL.
+      const dataUrl = file.type.startsWith('image/')
+        ? await downscaleImageToDataUrl(file)
+        : await new Promise<string>((resolve, reject) => {
+            const r = new FileReader();
+            r.onload = () => resolve(String(r.result));
+            r.onerror = () => reject(r.error);
+            r.readAsDataURL(file);
+          });
+      setOutbound((prev) => ({ ...prev, finalPackingList: dataUrl }));
+    } catch {
+      addToast({ type: 'error', title: 'Could not read file' });
+    }
   }
 
   async function handleDeliverySlip(files: FileList | null) {
     if (!files?.length) return;
-    const dataUrl = await readFileAsDataUrl(files[0]);
-    setOutbound((prev) => ({ ...prev, deliverySlip: dataUrl }));
-    localStorage.setItem(`warehouse-delivery-slip-${orderId}`, dataUrl);
+    try {
+      const dataUrl = await downscaleImageToDataUrl(files[0]);
+      setOutbound((prev) => ({ ...prev, deliverySlip: dataUrl }));
+    } catch {
+      addToast({ type: 'error', title: 'Could not read photo' });
+    }
   }
 
-  function markSentToChina() {
+  async function markSentToChina() {
     if (!outbound.trackingId.trim()) {
       addToast({ type: 'error', title: 'Tracking ID required', description: 'Enter the outbound tracking number first.' });
       return;
     }
-    const payload = { ...outbound, sentAt: new Date().toISOString(), staffId: user?.staffId };
-    localStorage.setItem(`warehouse-outbound-${orderId}`, JSON.stringify(payload));
-    const assignments = JSON.parse(localStorage.getItem(`order-assignment-${orderId}`) ?? '{}');
-    localStorage.setItem(`order-assignment-${orderId}`, JSON.stringify({ ...assignments, stage: 'sent_to_china', trackingId: outbound.trackingId }));
-    const notifications = JSON.parse(localStorage.getItem('notifications-admin') ?? '[]');
-    notifications.unshift({
-      id: `wh-sent-${Date.now()}`,
-      title: 'Sent to China Warehouse',
-      description: `${order.orderNumber || order.id} marked as sent. Tracking: ${outbound.trackingId}`,
-      time: 'Just now',
-      read: false,
-      type: 'order',
-      href: `/admin/orders/${orderId}`,
-    });
-    localStorage.setItem('notifications-admin', JSON.stringify(notifications));
-    setOutboundSent(true);
-    addToast({ type: 'success', title: 'Order marked as sent', description: `Tracking ID: ${outbound.trackingId}` });
+    setSendingOutbound(true);
+    try {
+      await ordersApi.updateWarehouseReport(orderId, {
+        outboundTrackingId: outbound.trackingId.trim(),
+        packingListUrl: outbound.finalPackingList,
+        deliverySlipUrl: outbound.deliverySlip,
+        sentToChina: true,
+      });
+      setOutboundSent(true);
+      addToast({ type: 'success', title: 'Order marked as sent', description: `Tracking ID: ${outbound.trackingId}` });
+    } catch {
+      addToast({ type: 'error', title: 'Could not update', description: 'Please try again.' });
+    } finally {
+      setSendingOutbound(false);
+    }
   }
 
   return (
@@ -276,7 +325,9 @@ export default function WarehouseOrderDetailPage({ params }: { params: Promise<{
             <CheckCircle className="w-4 h-4" /> Report submitted
           </div>
         ) : (
-          <button onClick={submitReport} className="btn-primary mt-4 px-4 py-2 text-sm">Submit Report</button>
+          <button onClick={submitReport} disabled={submittingReport} className="btn-primary mt-4 px-4 py-2 text-sm disabled:opacity-50">
+            {submittingReport ? 'Submitting…' : 'Submit Report'}
+          </button>
         )}
       </div>
 
@@ -342,7 +393,9 @@ export default function WarehouseOrderDetailPage({ params }: { params: Promise<{
             <CheckCircle className="w-4 h-4" /> Repacking details saved
           </div>
         ) : (
-          <button onClick={saveRepackDetails} className="btn-primary mt-4 px-4 py-2 text-sm">Save Repacking Details</button>
+          <button onClick={saveRepackDetails} disabled={savingRepack} className="btn-primary mt-4 px-4 py-2 text-sm disabled:opacity-50">
+            {savingRepack ? 'Saving…' : 'Save Repacking Details'}
+          </button>
         )}
       </div>
 
@@ -396,8 +449,8 @@ export default function WarehouseOrderDetailPage({ params }: { params: Promise<{
             <CheckCircle className="w-4 h-4" /> Marked as sent to China Warehouse — Tracking: {outbound.trackingId}
           </div>
         ) : (
-          <button onClick={markSentToChina} className="btn-primary mt-4 px-4 py-2 text-sm inline-flex items-center gap-2">
-            <Truck className="w-4 h-4" /> Mark as Sent to China Warehouse
+          <button onClick={markSentToChina} disabled={sendingOutbound} className="btn-primary mt-4 px-4 py-2 text-sm inline-flex items-center gap-2 disabled:opacity-50">
+            <Truck className="w-4 h-4" /> {sendingOutbound ? 'Saving…' : 'Mark as Sent to China Warehouse'}
           </button>
         )}
       </div>

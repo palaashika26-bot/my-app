@@ -9,10 +9,8 @@ import { ordersApi } from '@/lib/api/orders.api';
 import { ordersCache } from '@/lib/api/ordersCache';
 import { useToast } from '@/components/ui/Toast';
 import { ArrowLeft, CheckCircle2, XCircle, Circle, MapPin, Upload, Download, FileText, AlertTriangle, Mail, Edit3, MessageSquare, Camera, UserCheck, CreditCard, Eye, X, RefreshCw } from 'lucide-react';
-import { generateInvoice } from '@/lib/generateInvoice';
-import { generateGSTInvoice } from '@/lib/generateGSTInvoice';
-import { generateCommercialInvoice } from '@/lib/generateCommercialInvoice';
-import { generatePackingList } from '@/lib/generatePackingList';
+// Invoice/PDF generators are heavy (jsPDF). They are dynamically imported inside
+// the click handlers so jsPDF stays out of this page's initial bundle.
 import type { GSTData } from '@/components/GSTInvoicePopover';
 import { paymentsApi } from '@/lib/api/payments.api';
 import ProductImage from '@/components/ProductImage';
@@ -752,12 +750,61 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
           )}
           {(payments.some((p: any) => p.status === 'VERIFIED') || apiOrder?.status === 'CONFIRMED' || mockOrder?.status === 'Payment Confirmed') && (
             <>
-              <button
-                onClick={() => setShowGSTModal(true)}
-                className="px-3 py-2 text-xs font-600 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 inline-flex items-center gap-1.5"
-              >
-                <Download className="w-3.5 h-3.5" /> Download Invoice
-              </button>
+              <div className="relative inline-block">
+                <button
+                  onClick={() => setShowGSTModal(p => !p)}
+                  className="px-3 py-2 text-xs font-600 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 inline-flex items-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" /> Download Invoice
+                </button>
+                {showGSTModal && (() => {
+                  const normalized = apiOrder ? {
+                    orderId:         apiOrder.orderNumber,
+                    date:            new Date(apiOrder.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                    client:          apiOrder.client?.companyName ?? clientName,
+                    lineItems:       (apiOrder.items?.length
+                      ? apiOrder.items.map((item: any) => ({
+                          name:         item.product?.name ?? item.notes ?? 'Item',
+                          qty:          Number(item.quantity ?? 1),
+                          unitPriceInr: parseFloat(item.unitPriceINR || '0'),
+                          totalInr:     parseFloat(item.totalINR    || '0'),
+                          imageUrl:     item.imageUrl ?? item.product?.images?.[0] ?? null,
+                        }))
+                      : displayItems.map((item: any) => ({
+                          name:         item.name,
+                          qty:          item.qty,
+                          unitPriceInr: item.qty > 0 ? Math.round(item.totalInr / item.qty) : 0,
+                          totalInr:     item.totalInr,
+                          imageUrl:     item.imageUrl ?? null,
+                        }))
+                    ),
+                    requestPayments: (apiOrder as any).requestPayments ?? [],
+                  } : {
+                    orderId:         mockOrder?.orderId,
+                    date:            mockOrder?.date,
+                    client:          clientName,
+                    lineItems:       displayItems.map((item: any) => ({
+                      name:         item.name,
+                      qty:          item.qty,
+                      unitPriceInr: item.qty > 0 ? Math.round(item.totalInr / item.qty) : 0,
+                      totalInr:     item.totalInr,
+                      imageUrl:     item.imageUrl ?? null,
+                    })),
+                    requestPayments: payments,
+                  };
+                  return (
+                    <GSTInvoiceModal
+                      order={normalized}
+                      onClose={() => setShowGSTModal(false)}
+                      onGenerate={async (gstData) => {
+                        const { generateInvoice } = await import('@/lib/generateInvoice');
+                        generateInvoice(normalized, gstData);
+                        setShowGSTModal(false);
+                      }}
+                    />
+                  );
+                })()}
+              </div>
               <div className="relative inline-block">
                 <button
                   onClick={() => setShowGSTPopover(p => !p)}
@@ -846,59 +893,16 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
 
                         addToast({ type: 'success', title: 'GST Invoice saved', description: 'Client has been notified.' });
                       }}
-                      onDownload={(gstData) => generateGSTInvoice(normalizedForGST, gstData)}
+                      onDownload={async (gstData) => {
+                        const { generateGSTInvoice } = await import('@/lib/generateGSTInvoice');
+                        generateGSTInvoice(normalizedForGST, gstData);
+                      }}
                     />
                   );
                 })()}
               </div>
             </>
           )}
-          {showGSTModal && (() => {
-            const normalized = apiOrder ? {
-              orderId:         apiOrder.orderNumber,
-              date:            new Date(apiOrder.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-              client:          apiOrder.client?.companyName ?? clientName,
-              lineItems:       (apiOrder.items?.length
-                ? apiOrder.items.map((item: any) => ({
-                    name:         item.product?.name ?? item.notes ?? 'Item',
-                    qty:          Number(item.quantity ?? 1),
-                    unitPriceInr: parseFloat(item.unitPriceINR || '0'),
-                    totalInr:     parseFloat(item.totalINR    || '0'),
-                    imageUrl:     item.imageUrl ?? item.product?.images?.[0] ?? null,
-                  }))
-                : displayItems.map((item: any) => ({
-                    name:         item.name,
-                    qty:          item.qty,
-                    unitPriceInr: item.qty > 0 ? Math.round(item.totalInr / item.qty) : 0,
-                    totalInr:     item.totalInr,
-                    imageUrl:     item.imageUrl ?? null,
-                  }))
-              ),
-              requestPayments: (apiOrder as any).requestPayments ?? [],
-            } : {
-              orderId:         mockOrder?.orderId,
-              date:            mockOrder?.date,
-              client:          clientName,
-              lineItems:       displayItems.map((item: any) => ({
-                name:         item.name,
-                qty:          item.qty,
-                unitPriceInr: item.qty > 0 ? Math.round(item.totalInr / item.qty) : 0,
-                totalInr:     item.totalInr,
-                imageUrl:     item.imageUrl ?? null,
-              })),
-              requestPayments: payments,
-            };
-            return (
-              <GSTInvoiceModal
-                order={normalized}
-                onClose={() => setShowGSTModal(false)}
-                onGenerate={(gstData) => {
-                  generateInvoice(normalized, gstData);
-                  setShowGSTModal(false);
-                }}
-              />
-            );
-          })()}
         </div>
       </div>
 
@@ -1043,14 +1047,14 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
                 <span className="flex items-center gap-2"><FileText className="w-4 h-4 text-muted-foreground" />Commercial Invoice</span>
                 <div className="flex gap-1">
                   <button onClick={() => uploadDoc('Commercial Invoice')} className="btn-secondary px-2 py-1 text-xs inline-flex items-center gap-1"><Upload className="w-3 h-3" /> Upload</button>
-                  <button onClick={() => generateCommercialInvoice(apiOrder ?? mockOrder)} className="text-[#4A3B52] text-xs font-600 px-2 py-1 hover:underline inline-flex items-center gap-1"><Download className="w-3 h-3" /> Download</button>
+                  <button onClick={async () => { const { generateCommercialInvoice } = await import('@/lib/generateCommercialInvoice'); generateCommercialInvoice(apiOrder ?? mockOrder); }} className="text-[#4A3B52] text-xs font-600 px-2 py-1 hover:underline inline-flex items-center gap-1"><Download className="w-3 h-3" /> Download</button>
                 </div>
               </li>
               <li className="flex items-center justify-between py-2 border-b border-border last:border-0 text-sm">
                 <span className="flex items-center gap-2"><FileText className="w-4 h-4 text-muted-foreground" />Packing List</span>
                 <div className="flex gap-1">
                   <button onClick={() => uploadDoc('Packing List')} className="btn-secondary px-2 py-1 text-xs inline-flex items-center gap-1"><Upload className="w-3 h-3" /> Upload</button>
-                  <button onClick={() => generatePackingList(apiOrder ?? mockOrder)} className="text-[#4A3B52] text-xs font-600 px-2 py-1 hover:underline inline-flex items-center gap-1"><Download className="w-3 h-3" /> Download</button>
+                  <button onClick={async () => { const { generatePackingList } = await import('@/lib/generatePackingList'); generatePackingList(apiOrder ?? mockOrder); }} className="text-[#4A3B52] text-xs font-600 px-2 py-1 hover:underline inline-flex items-center gap-1"><Download className="w-3 h-3" /> Download</button>
                 </div>
               </li>
             </ul>
