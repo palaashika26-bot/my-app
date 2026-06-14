@@ -11,6 +11,7 @@ import { ArrowLeft, Camera, Check, X, MessageSquare, Send, Package, Pencil, Uplo
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import type { RequestLineItem, PerProductQuoteStatus } from '@/lib/mockData';
 import { persistRfqLineItems } from '@/lib/rfqLineItems';
+import { downscaleImageToDataUrl } from '@/lib/upload';
 import { loadPaymentProof, savePaymentConfirmed, loadPaymentConfirmed } from '@/lib/paymentStore';
 import { requestsApi } from '@/lib/api/requests.api';
 import { paymentsApi } from '@/lib/api/payments.api';
@@ -67,6 +68,10 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
   const [apiLoading, setApiLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [lineItems, setLineItems] = useState<RequestLineItem[]>([]);
+  // Mirror of lineItems for reading the latest value inside async handlers
+  // (image upload) without persisting from within a setState updater.
+  const lineItemsRef = useRef<RequestLineItem[]>([]);
+  useEffect(() => { lineItemsRef.current = lineItems; }, [lineItems]);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [draftRmb, setDraftRmb] = useState('');
   const [msg, setMsg] = useState('');
@@ -322,31 +327,43 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
     }
   }
 
-  function handleImageUpload(lineId: string, e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleImageUpload(lineId: string, e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const ALLOWED = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!ALLOWED.includes(file.type)) {
-      alert('Only JPG, PNG, and WEBP images are allowed.');
-      e.target.value = '';
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      alert('File too large. Maximum size is 10MB.');
-      e.target.value = '';
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const dataUrl = ev.target?.result as string;
-      setLineItems(prev => {
-        const next = prev.map(l => l.id === lineId ? { ...l, imageUrl: dataUrl } : l);
-        persistRfqLineItems(id, next);
-        return next;
-      });
-    };
-    reader.readAsDataURL(file);
     e.target.value = '';
+    if (!file) return;
+    // Accept any image/* (iPhone camera capture can deliver HEIC, which the
+    // downscale step normalises to JPEG). Reject obvious non-images only.
+    if (file.type && !file.type.startsWith('image/')) {
+      addToast({ type: 'warning', title: 'Only image files are allowed.' });
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      addToast({ type: 'warning', title: 'File too large', description: 'Maximum size is 25MB.' });
+      return;
+    }
+
+    // Downscale to a compact data URL before persisting. iPhone photos as raw
+    // base64 overflow Safari's sessionStorage quota; the previous code threw
+    // QuotaExceededError inside a setState updater and crashed the page.
+    let dataUrl: string;
+    try {
+      dataUrl = await downscaleImageToDataUrl(file);
+    } catch {
+      addToast({ type: 'error', title: 'Could not read image', description: 'Please try a different photo.' });
+      return;
+    }
+
+    const next = lineItemsRef.current.map(l => (l.id === lineId ? { ...l, imageUrl: dataUrl } : l));
+    setLineItems(next);
+    // Persist outside the updater so a storage failure can never crash React.
+    const ok = persistRfqLineItems(id, next);
+    if (!ok) {
+      addToast({
+        type: 'warning',
+        title: 'Image shown but not saved locally',
+        description: 'Storage is full on this device — the preview works but may not survive a refresh.',
+      });
+    }
   }
 
   async function handleRespondToCounter(lineId: string) {

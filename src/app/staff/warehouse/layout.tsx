@@ -19,6 +19,7 @@ import { useAuth } from '@/context/AuthContext';
 import { eliosWholesale } from '@/lib/brandAssets';
 import { STAFF_ROLE_LABELS } from '@/lib/staffRoles';
 import { notificationsApi, type ApiNotification } from '@/lib/api/notifications.api';
+import { TOKEN_KEY } from '@/lib/api/axiosClient';
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -31,14 +32,10 @@ function timeAgo(iso: string): string {
   return `${days} day${days > 1 ? 's' : ''} ago`;
 }
 
-interface DemoOrder {
-  orderId: string;
+interface WarehouseSearchOrder {
+  id: string;
+  orderNumber: string;
   clientName: string;
-  items: string[];
-  stage: string;
-  assignedAt: string;
-  packagingListUploaded: boolean;
-  reportSubmitted: boolean;
 }
 
 function initialsFromName(name: string) {
@@ -59,7 +56,8 @@ export default function StaffWarehouseLayout({ children }: { children: React.Rea
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<DemoOrder[]>([]);
+  const [searchResults, setSearchResults] = useState<WarehouseSearchOrder[]>([]);
+  const allOrdersRef = useRef<WarehouseSearchOrder[]>([]);
   const [showSearchDrop, setShowSearchDrop] = useState(false);
   const [today, setToday] = useState('');
   const [notifs, setNotifs] = useState<ApiNotification[]>([]);
@@ -99,6 +97,26 @@ export default function StaffWarehouseLayout({ children }: { children: React.Rea
     return () => clearInterval(interval);
   }, [fetchNotifs]);
 
+  // Load warehouse-stage orders once so the header search works against real data.
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null;
+    if (!token) return;
+    fetch(`/api/orders`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' })
+      .then((r) => r.json())
+      .then((json) => {
+        const all: any[] = json?.data ?? [];
+        allOrdersRef.current = all
+          .filter((o) => o.status === 'REPACKING' || o.completedStages?.includes('Repacking Warehouse'))
+          .map((o) => ({
+            id: o.id,
+            orderNumber: o.orderNumber,
+            clientName: o.client?.companyName
+              ?? (o.client?.user ? `${o.client.user.firstName} ${o.client.user.lastName}` : '—'),
+          }));
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
@@ -118,20 +136,14 @@ export default function StaffWarehouseLayout({ children }: { children: React.Rea
       setShowSearchDrop(false);
       return;
     }
-    try {
-      const stored = localStorage.getItem('warehouse-demo-orders');
-      const orders: DemoOrder[] = stored ? JSON.parse(stored) : [];
-      const lower = q.toLowerCase();
-      const filtered = orders.filter(
-        (o) =>
-          o.orderId.toLowerCase().includes(lower) ||
-          o.clientName.toLowerCase().includes(lower)
-      );
-      setSearchResults(filtered);
-      setShowSearchDrop(true);
-    } catch {
-      setSearchResults([]);
-    }
+    const lower = q.toLowerCase();
+    const filtered = allOrdersRef.current.filter(
+      (o) =>
+        o.orderNumber.toLowerCase().includes(lower) ||
+        o.clientName.toLowerCase().includes(lower)
+    );
+    setSearchResults(filtered);
+    setShowSearchDrop(true);
   }
 
   const unreadCount = notifs.filter((n) => !readIds.has(n.id) && !n.read).length;
@@ -246,8 +258,8 @@ export default function StaffWarehouseLayout({ children }: { children: React.Rea
               <div className="absolute top-full left-0 right-0 mt-1 bg-card rounded-xl shadow-card-lg border border-border z-50 overflow-hidden">
                 {searchResults.map((order) => (
                   <Link
-                    key={order.orderId}
-                    href={`/staff/warehouse/orders/${order.orderId}`}
+                    key={order.id}
+                    href={`/staff/warehouse/orders/${order.id}`}
                     onClick={() => {
                       setShowSearchDrop(false);
                       setQuery('');
@@ -256,7 +268,7 @@ export default function StaffWarehouseLayout({ children }: { children: React.Rea
                   >
                     <Package className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                     <div>
-                      <p className="font-600 font-tabular">{order.orderId}</p>
+                      <p className="font-600 font-tabular">{order.orderNumber}</p>
                       <p className="text-xs text-muted-foreground">{order.clientName}</p>
                     </div>
                   </Link>

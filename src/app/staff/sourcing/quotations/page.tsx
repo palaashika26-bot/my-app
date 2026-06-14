@@ -1,9 +1,8 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
-import { mockRequests, mockClients } from '@/lib/adminMockData';
-import StatusBadge from '@/components/ui/StatusBadge';
+import { requestsApi } from '@/lib/api/requests.api';
 import { useToast } from '@/components/ui/Toast';
 import {
   FileText, Search, Filter, Send, CheckCircle2, XCircle,
@@ -21,14 +20,20 @@ const TABS: { key: Tab; label: string; color: string }[] = [
   { key: 'rejected', label: 'Rejected',           color: 'text-red-600' },
 ];
 
-// Map request status → quotation tab
+// Map backend/display request status → quotation tab.
 function tabForStatus(status: string): Tab {
-  if (status === 'Quotation in Progress') return 'sent';
-  if (status === 'Awaiting Approval')     return 'awaiting';
-  if (['Payment Pending', 'Payment Confirmed', 'Sourcing',
-       'At China Warehouse', 'Completed'].includes(status)) return 'accepted';
-  if (status === 'Exception')             return 'rejected';
+  if (['QUOTED', 'Awaiting Approval'].includes(status)) return 'awaiting';
+  if (['ACCEPTED', 'CONVERTED', 'PARTIALLY_ACCEPTED', 'Payment Pending', 'Payment Confirmed',
+       'Sourcing', 'At China Warehouse', 'Completed'].includes(status)) return 'accepted';
+  if (['REJECTED', 'CANCELLED', 'Cancelled', 'Exception'].includes(status)) return 'rejected';
+  // SUBMITTED / REVIEWING / 'Quotation in Progress' and anything else
   return 'sent';
+}
+
+// A request belongs on the Quotations page once it has entered the quoting
+// pipeline (anything past a brand-new, untouched SUBMITTED request).
+function isQuotation(status: string): boolean {
+  return status !== 'SUBMITTED';
 }
 
 // Quotation badge styling
@@ -40,12 +45,6 @@ const STATUS_CHIP: Record<Tab, { bg: string; text: string; label: string }> = {
   rejected: { bg: 'bg-red-100',        text: 'text-red-700',       label: 'Rejected' },
 };
 
-// Build quotation rows from mockRequests (exclude pure "Request Submitted" with no quote work)
-const QUOTATION_STATUSES = [
-  'Quotation in Progress', 'Awaiting Approval', 'Payment Pending',
-  'Payment Confirmed', 'Sourcing', 'At China Warehouse', 'Completed', 'Exception',
-];
-
 interface QuotRow {
   id: string;
   requestId: string;
@@ -55,38 +54,32 @@ interface QuotRow {
   itemNames: string;
   budget: string;
   date: string;
-  quotedDate: string;
   status: string;
   tab: Tab;
   lineCount: number;
 }
 
-function buildRows(): QuotRow[] {
-  return mockRequests
-    .filter(r => QUOTATION_STATUSES.includes(r.status as string))
-    .map(r => {
-      const client = mockClients?.find((c: any) => c.name === r.client);
-      const tab = tabForStatus(r.status as string);
-      // fake a "quoted date" a few days after request date
-      const quotedDate = r.date; // simplification — same as request date
-      return {
-        id: r.id,
-        requestId: r.requestId,
-        client: r.client ?? '—',
-        clientEmail: client?.email ?? '—',
-        items: r.items,
-        itemNames: r.itemNames,
-        budget: r.totalBudget,
-        date: r.date,
-        quotedDate,
-        status: r.status as string,
-        tab,
-        lineCount: r.lineItems?.length ?? r.items,
-      };
-    });
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-const ALL_ROWS = buildRows();
+// Map a live API request into a quotation row.
+function mapApiRequest(req: any): QuotRow {
+  const itemCount = req.items?.length ?? 0;
+  return {
+    id: req.id,
+    requestId: req.requestNumber,
+    client: req.client?.companyName ?? '—',
+    clientEmail: req.client?.user?.email ?? '—',
+    items: itemCount,
+    itemNames: (req.items ?? []).map((i: any) => i.productName).join(', '),
+    budget: req.totalBudgetINR ? `₹${Number(req.totalBudgetINR).toLocaleString('en-IN')}` : '—',
+    date: fmtDate(req.createdAt),
+    status: req.status,
+    tab: tabForStatus(req.status),
+    lineCount: itemCount,
+  };
+}
 
 // ─── Sort helpers ─────────────────────────────────────────────────────────────
 type SortKey = 'requestId' | 'client' | 'date' | 'items';
@@ -94,6 +87,8 @@ type SortKey = 'requestId' | 'client' | 'date' | 'items';
 export default function SourcingQuotationsPage() {
   const { addToast } = useToast();
 
+  const [allRows, setAllRows] = useState<QuotRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>('all');
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('date');
@@ -104,13 +99,24 @@ export default function SourcingQuotationsPage() {
   // Local status overrides (staff can mark accepted / rejected inline)
   const [overrides, setOverrides] = useState<Record<string, Tab>>({});
 
+  useEffect(() => {
+    setLoading(true);
+    requestsApi.getRequests({ limit: 100 })
+      .then((r) => {
+        const apiData = r.data?.data ?? [];
+        setAllRows(apiData.filter((req: any) => isQuotation(req.status)).map(mapApiRequest));
+      })
+      .catch(() => setAllRows([]))
+      .finally(() => setLoading(false));
+  }, []);
+
   function effectiveTab(row: QuotRow): Tab {
     return overrides[row.id] ?? row.tab;
   }
 
   // ── Filter ────────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
-    let rows = ALL_ROWS;
+    let rows = allRows;
     if (activeTab !== 'all') rows = rows.filter(r => effectiveTab(r) === activeTab);
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -130,7 +136,7 @@ export default function SourcingQuotationsPage() {
     });
     return rows;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, search, sortKey, sortAsc, overrides]);
+  }, [allRows, activeTab, search, sortKey, sortAsc, overrides]);
 
   const totalPages = Math.ceil(filtered.length / pageSize);
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -152,11 +158,11 @@ export default function SourcingQuotationsPage() {
 
   // ── Tab counts ────────────────────────────────────────────────────────────
   const counts = useMemo(() => {
-    const c: Record<Tab, number> = { all: ALL_ROWS.length, sent: 0, awaiting: 0, accepted: 0, rejected: 0 };
-    ALL_ROWS.forEach(r => { c[effectiveTab(r)]++; });
+    const c: Record<Tab, number> = { all: allRows.length, sent: 0, awaiting: 0, accepted: 0, rejected: 0 };
+    allRows.forEach(r => { c[effectiveTab(r)]++; });
     return c;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overrides]);
+  }, [allRows, overrides]);
 
   const SortIcon = ({ k }: { k: SortKey }) =>
     sortKey === k
@@ -262,7 +268,13 @@ export default function SourcingQuotationsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {paginated.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                    Loading quotations…
+                  </td>
+                </tr>
+              ) : paginated.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">
                     <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
@@ -410,7 +422,7 @@ export default function SourcingQuotationsPage() {
       )}
 
       {/* Empty global state */}
-      {ALL_ROWS.length === 0 && (
+      {!loading && allRows.length === 0 && (
         <div className="bg-card rounded-xl border border-border shadow-card p-12 text-center mt-4">
           <Send className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
           <p className="font-600 text-foreground">No quotations sent yet</p>

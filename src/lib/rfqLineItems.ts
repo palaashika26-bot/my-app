@@ -38,7 +38,18 @@ export function loadRfqLineItems(_req: any): RequestLineItem[] {
   return [];
 }
 
-export function persistRfqLineItems(reqId: string, lines: RequestLineItem[]) {
-  if (typeof window === 'undefined') return;
-  sessionStorage.setItem(storageKey(reqId), JSON.stringify(lines));
+/**
+ * Persist line items to sessionStorage. Returns false (instead of throwing) when
+ * the write fails — most commonly Safari's QuotaExceededError when a line item
+ * carries a large base64 image. The caller keeps the in-memory state regardless;
+ * a thrown error here would otherwise crash the React tree mid-update.
+ */
+export function persistRfqLineItems(reqId: string, lines: RequestLineItem[]): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    sessionStorage.setItem(storageKey(reqId), JSON.stringify(lines));
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -542,12 +542,51 @@ export default function SourcingOrderDetailPage({ params }: { params: Promise<{ 
           </button>
           {(payments.some((p: any) => p.status === 'VERIFIED') || apiOrder?.status === 'CONFIRMED' || initial?.status === 'Payment Confirmed') && (
             <>
-              <button
-                onClick={() => setShowGSTModal(true)}
-                className="px-3 py-2 text-xs font-600 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 inline-flex items-center gap-1.5"
-              >
-                <Download className="w-3.5 h-3.5" /> Download Invoice
-              </button>
+              <div className="relative inline-block">
+                <button
+                  onClick={() => setShowGSTModal(p => !p)}
+                  className="px-3 py-2 text-xs font-600 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 inline-flex items-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" /> Download Invoice
+                </button>
+                {showGSTModal && (() => {
+                  const normalized = apiOrder ? {
+                    orderId:         apiOrder.orderNumber,
+                    date:            new Date(apiOrder.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                    client:          apiOrder.client?.companyName ?? '—',
+                    lineItems:       (apiOrder.items ?? []).map((item: any) => ({
+                      name:         item.product?.name ?? item.notes ?? 'Item',
+                      qty:          Number(item.quantity ?? 1),
+                      unitPriceInr: parseFloat(item.unitPriceINR || '0'),
+                      totalInr:     parseFloat(item.totalINR   || '0'),
+                      imageUrl:     item.imageUrl ?? item.product?.imageUrl ?? null,
+                    })),
+                    requestPayments: apiOrder.requestPayments ?? [],
+                  } : {
+                    orderId:         initial?.orderId,
+                    date:            initial?.date,
+                    client:          typeof initial?.client === 'string' ? initial.client : '—',
+                    lineItems:       items.map((item: any) => ({
+                      name:         item.name,
+                      qty:          item.qty,
+                      unitPriceInr: item.qty > 0 ? Math.round(item.totalInr / item.qty) : 0,
+                      totalInr:     item.totalInr,
+                      imageUrl:     item.imageUrl ?? null,
+                    })),
+                    requestPayments: payments,
+                  };
+                  return (
+                    <GSTInvoiceModal
+                      order={normalized}
+                      onClose={() => setShowGSTModal(false)}
+                      onGenerate={(gstData) => {
+                        generateInvoice(normalized, gstData);
+                        setShowGSTModal(false);
+                      }}
+                    />
+                  );
+                })()}
+              </div>
               <div className="relative inline-block">
                 <button
                   onClick={() => setShowGSTPopover(p => !p)}
@@ -602,43 +641,6 @@ export default function SourcingOrderDetailPage({ params }: { params: Promise<{ 
               </div>
             </>
           )}
-          {showGSTModal && (() => {
-            const normalized = apiOrder ? {
-              orderId:         apiOrder.orderNumber,
-              date:            new Date(apiOrder.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-              client:          apiOrder.client?.companyName ?? '—',
-              lineItems:       (apiOrder.items ?? []).map((item: any) => ({
-                name:         item.product?.name ?? item.notes ?? 'Item',
-                qty:          Number(item.quantity ?? 1),
-                unitPriceInr: parseFloat(item.unitPriceINR || '0'),
-                totalInr:     parseFloat(item.totalINR   || '0'),
-                imageUrl:     item.imageUrl ?? item.product?.imageUrl ?? null,
-              })),
-              requestPayments: apiOrder.requestPayments ?? [],
-            } : {
-              orderId:         initial?.orderId,
-              date:            initial?.date,
-              client:          typeof initial?.client === 'string' ? initial.client : '—',
-              lineItems:       items.map((item: any) => ({
-                name:         item.name,
-                qty:          item.qty,
-                unitPriceInr: item.qty > 0 ? Math.round(item.totalInr / item.qty) : 0,
-                totalInr:     item.totalInr,
-                imageUrl:     item.imageUrl ?? null,
-              })),
-              requestPayments: payments,
-            };
-            return (
-              <GSTInvoiceModal
-                order={normalized}
-                onClose={() => setShowGSTModal(false)}
-                onGenerate={(gstData) => {
-                  generateInvoice(normalized, gstData);
-                  setShowGSTModal(false);
-                }}
-              />
-            );
-          })()}
         </div>
       </div>
 

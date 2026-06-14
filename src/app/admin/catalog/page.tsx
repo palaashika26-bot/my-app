@@ -1,5 +1,5 @@
 ﻿'use client';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import AdminLayout from '@/components/AdminLayout';
 import { useToast } from '@/components/ui/Toast';
 import { Plus, Pencil, Trash2, X, Search, Tag, ImageIcon, Download, Upload } from 'lucide-react';
@@ -213,20 +213,19 @@ export default function AdminCatalogPage() {
   const [deleteCatTarget, setDeleteCatTarget] = useState<StripCategory | null>(null);
   const [savingCat, setSavingCat] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadProducts = useCallback(async () => {
     setLoading(true);
-    productsApi.getProducts({ limit: 100 })
-      .then(res => {
-        if (!cancelled) {
-          const data = res.data?.data || [];
-          setProducts(data.map(mapApiToCatalog));
-        }
-      })
-      .catch(() => { if (!cancelled) setProducts([]); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    try {
+      const res = await productsApi.getProducts({ limit: 100 });
+      setProducts((res.data?.data || []).map(mapApiToCatalog));
+    } catch {
+      setProducts([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { loadProducts(); }, [loadProducts]);
 
   useEffect(() => {
     try {
@@ -983,7 +982,7 @@ export default function AdminCatalogPage() {
       <ImportProductsModal
         isOpen={showImportModal}
         onClose={() => setShowImportModal(false)}
-        onSuccess={() => setShowImportModal(false)}
+        onSuccess={() => { setShowImportModal(false); loadProducts(); }}
       />
     </AdminLayout>
   );

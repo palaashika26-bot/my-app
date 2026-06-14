@@ -50,7 +50,7 @@ const STAGE_ORDER = [
   'In Transit', 'Arrived India Warehouse', 'Out for Delivery', 'Completed',
 ];
 
-function deriveOrderStatus(o: ApiOrder): OrderStatus {
+export function deriveOrderStatus(o: ApiOrder): OrderStatus {
   const cs = o.completedStages;
   if (cs && cs.length > 0) {
     let maxIdx = -1;
@@ -62,7 +62,7 @@ function deriveOrderStatus(o: ApiOrder): OrderStatus {
   return (ORDER_STATUS_MAP[o.status] ?? 'Request Submitted') as OrderStatus;
 }
 
-const REQUEST_STATUS_MAP: Record<string, OrderStatus> = {
+export const REQUEST_STATUS_MAP: Record<string, OrderStatus> = {
   SUBMITTED: 'Request Submitted',
   REVIEWING: 'Quotation in Progress',
   QUOTED: 'Awaiting Approval',

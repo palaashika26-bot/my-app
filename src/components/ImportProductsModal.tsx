@@ -38,6 +38,10 @@ export default function ImportProductsModal({ isOpen, onClose, onSuccess }: Prop
 
   async function handleUpload() {
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setError('CSV is too large (max 5MB).');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
